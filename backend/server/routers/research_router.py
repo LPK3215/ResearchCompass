@@ -1,0 +1,727 @@
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from server.utils.auth_middleware import get_required_user
+from yuxi.services.research_paper_service import (
+    get_paper_evidence_view,
+    get_paper_view,
+    list_paper_chunks_view,
+    list_papers_view,
+    update_paper_view,
+)
+from yuxi.services.research_search_service import ResearchSearchError, get_search_run, search_papers
+from yuxi.services.academic_trend_service import AcademicTrendError, get_academic_trends
+from yuxi.services.academic_paper_analysis_service import (
+    AcademicPaperAnalysisError,
+    enqueue_paper_analysis,
+    get_latest_paper_analysis,
+    get_paper_analysis_run,
+)
+from yuxi.services.academic_graph_sync_service import (
+    AcademicGraphSyncError,
+    enqueue_academic_graph_sync,
+    get_academic_graph_relations,
+    get_academic_graph_network,
+    get_academic_graph_sync_run,
+    list_academic_graph_conflicts,
+)
+from yuxi.services.academic_paper_import_service import (
+    AcademicPaperImportError,
+    import_external_paper,
+    search_external_papers,
+)
+from yuxi.services.research_user_study_service import (
+    ResearchUserStudyError,
+    ResearchUserStudyService,
+)
+from yuxi.services.academic_paper_analysis_evaluation_service import (
+    AcademicPaperAnalysisEvaluationError,
+    AcademicPaperAnalysisEvaluationService,
+)
+from yuxi.storage.postgres.models_business import User
+
+research = APIRouter(prefix="/research", tags=["research"])
+
+
+class PaperMetadataUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=2000)
+    abstract: str | None = Field(default=None, max_length=200_000)
+    authors: list[str] | None = Field(default=None, max_length=100)
+    publication_year: int | None = Field(default=None, ge=1500, le=datetime.now(UTC).year + 1)
+    venue: str | None = Field(default=None, max_length=512)
+    doi: str | None = Field(default=None, max_length=512)
+    keywords: list[str] | None = Field(default=None, max_length=100)
+    language: str | None = Field(default=None, pattern=r"^[a-z]{2,3}(?:-[A-Z]{2})?$")
+    external_ids: dict[str, str] | None = None
+    citation_count: int | None = Field(default=None, ge=0)
+
+    @field_validator("title", "venue", "doi", "language")
+    @classmethod
+    def strip_text(cls, value: str | None) -> str | None:
+        return value.strip() if isinstance(value, str) else value
+
+    @field_validator("authors", "keywords")
+    @classmethod
+    def normalize_text_list(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        normalized = [item.strip() for item in value if item.strip()]
+        if len(normalized) != len(value):
+            raise ValueError("列表项不能为空")
+        if any(len(item) > 512 for item in normalized):
+            raise ValueError("列表项长度不能超过 512 个字符")
+        return normalized
+
+    @model_validator(mode="after")
+    def require_update(self):
+        if not self.model_fields_set:
+            raise ValueError("至少提供一个需要更新的字段")
+        return self
+
+
+class ResearchSearchRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=4000)
+    top_k: int = Field(default=10, ge=1, le=50)
+    recall_top_k: int = Field(default=50, ge=10, le=200)
+    year_from: int | None = Field(default=None, ge=1500)
+    year_to: int | None = Field(default=None, ge=1500)
+    chat_model: str | None = Field(default=None, max_length=512)
+    reranker_model: str | None = Field(default=None, max_length=512)
+
+    @model_validator(mode="after")
+    def validate_search(self):
+        if self.year_from is not None and self.year_to is not None and self.year_from > self.year_to:
+            raise ValueError("year_from 不能大于 year_to")
+        if self.recall_top_k < self.top_k:
+            raise ValueError("recall_top_k 不能小于 top_k")
+        return self
+
+
+class AcademicGraphSyncRequest(BaseModel):
+    paper_ids: list[str] = Field(default_factory=list, max_length=500)
+    citation_limit: int = Field(default=100, ge=0, le=5000)
+    reference_limit: int = Field(default=100, ge=0, le=5000)
+
+    @field_validator("paper_ids")
+    @classmethod
+    def normalize_paper_ids(cls, value: list[str]) -> list[str]:
+        normalized = [item.strip() for item in value]
+        if any(not item for item in normalized):
+            raise ValueError("paper_ids 不能包含空值")
+        return list(dict.fromkeys(normalized))
+
+
+class AcademicPaperAnalysisRequest(BaseModel):
+    model_spec: str | None = Field(default=None, max_length=512)
+
+
+class CreatePaperAnalysisEvaluationRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    description: str = Field(default="", max_length=4000)
+    paper_ids: list[str] = Field(..., min_length=2, max_length=20)
+    model_spec: str = Field(..., min_length=1, max_length=512)
+
+    @field_validator("name", "model_spec")
+    @classmethod
+    def normalize_required_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("字段不能为空")
+        return normalized
+
+    @field_validator("paper_ids")
+    @classmethod
+    def normalize_paper_ids(cls, value: list[str]) -> list[str]:
+        normalized = [item.strip() for item in value]
+        if any(not item for item in normalized):
+            raise ValueError("paper_ids 不能包含空值")
+        return list(dict.fromkeys(normalized))
+
+
+class SubmitPaperAnalysisBlindScoreRequest(BaseModel):
+    blind_scores: dict[str, Any]
+    notes: str = Field(default="", max_length=4000)
+
+
+class CreateUserStudyRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    description: str = Field(default="", max_length=4000)
+    participant_count: int = Field(default=5, ge=3, le=20)
+    consent_text: str | None = Field(default=None, min_length=1, max_length=4000)
+
+
+class SubmitUserStudyResponseRequest(BaseModel):
+    token: str = Field(..., min_length=20, max_length=256)
+    consent: bool
+    research_stage: str = Field(..., pattern=r"^(undergraduate|master|doctoral|other)$")
+    research_experience: str = Field(..., pattern=r"^(none|under_1_year|1_to_3_years|over_3_years)$")
+    task_scores: dict[str, int]
+    sus_scores: dict[str, int]
+    overall_rating: int = Field(..., ge=1, le=5)
+    recommend_score: int = Field(..., ge=0, le=10)
+    feedback: str = Field(default="", max_length=4000)
+
+
+class PublicUserStudyTokenRequest(BaseModel):
+    token: str = Field(..., min_length=20, max_length=256)
+
+
+def _search_http_error(exc: ResearchSearchError) -> HTTPException:
+    status = {
+        "forbidden": 403,
+        "knowledge_base_not_found": 404,
+        "run_not_found": 404,
+        "invalid_query": 422,
+        "invalid_filter": 422,
+        "invalid_retrieval_config": 422,
+        "unsupported_knowledge_base": 409,
+        "graph_not_ready": 409,
+        "citation_graph_seed_missing": 409,
+        "citation_graph_seed_invalid": 409,
+        "chat_model_unavailable": 409,
+        "reranker_unavailable": 409,
+        "query_rewrite_invalid": 502,
+        "evidence_missing_paper": 502,
+        "retrieval_failure": 502,
+        "citation_graph_failure": 502,
+    }.get(exc.error_type, 502)
+    return HTTPException(status_code=status, detail={"error": exc.error_type, "message": exc.message})
+
+
+def _graph_http_error(exc: AcademicGraphSyncError) -> HTTPException:
+    status = {
+        "forbidden": 403,
+        "paper_not_found": 404,
+        "graph_paper_not_found": 404,
+        "sync_run_not_found": 404,
+        "task_enqueue_failed": 503,
+        "graph_sync_active": 409,
+    }.get(exc.error_type, 502)
+    return HTTPException(status_code=status, detail={"error": exc.error_type, "message": exc.message})
+
+
+def _analysis_http_error(exc: AcademicPaperAnalysisError) -> HTTPException:
+    status = {
+        "forbidden": 403,
+        "paper_not_found": 404,
+        "analysis_run_not_found": 404,
+        "analysis_model_unavailable": 409,
+        "analysis_active": 409,
+        "paper_content_missing": 409,
+        "task_enqueue_failed": 503,
+    }.get(exc.error_type, 502)
+    return HTTPException(status_code=status, detail={"error": exc.error_type, "message": exc.message})
+
+
+def _analysis_evaluation_http_error(exc: AcademicPaperAnalysisEvaluationError) -> HTTPException:
+    status = {
+        "evaluation_not_found": 404,
+        "evaluation_item_not_found": 404,
+        "paper_not_found": 404,
+        "evaluation_item_not_ready": 409,
+        "analysis_model_unavailable": 409,
+        "paper_content_missing": 409,
+        "task_enqueue_failed": 503,
+        "invalid_papers": 422,
+        "invalid_score": 422,
+        "forbidden": 403,
+    }.get(exc.error_type, 502)
+    return HTTPException(status_code=status, detail={"error": exc.error_type, "message": exc.message})
+
+
+def _trend_http_error(exc: AcademicTrendError) -> HTTPException:
+    status = {"forbidden": 403, "invalid_filter": 422}.get(exc.error_type, 502)
+    return HTTPException(status_code=status, detail={"error": exc.error_type, "message": exc.message})
+
+
+def _paper_import_http_error(exc: AcademicPaperImportError) -> HTTPException:
+    status = {
+        "forbidden": 403,
+        "paper_already_imported": 409,
+        "file_already_imported": 409,
+        "paper_pdf_unavailable": 409,
+        "paper_pdf_too_large": 413,
+        "unsupported_knowledge_base": 409,
+        "paper_import_enqueue_failed": 503,
+        "paper_import_record_failed": 502,
+        "invalid_search_query": 422,
+    }.get(exc.error_type, 502)
+    return HTTPException(status_code=status, detail={"error": exc.error_type, "message": exc.message})
+
+
+def _user_study_http_error(exc: ResearchUserStudyError) -> HTTPException:
+    status = {
+        "study_not_found": 404,
+        "invite_not_found": 404,
+        "invite_used": 409,
+        "study_closed": 409,
+        "consent_required": 422,
+        "invalid_participant_count": 422,
+        "invalid_response": 422,
+    }.get(exc.error_type, 502)
+    return HTTPException(status_code=status, detail={"error": exc.error_type, "message": exc.message})
+
+
+@research.get("/databases/{kb_id}/papers")
+async def list_papers(
+    kb_id: str,
+    query: str | None = Query(default=None, max_length=500),
+    year_from: int | None = Query(default=None, ge=1500),
+    year_to: int | None = Query(default=None, ge=1500),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+    current_user: User = Depends(get_required_user),
+):
+    if year_from is not None and year_to is not None and year_from > year_to:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=422, detail="year_from 不能大于 year_to")
+    return await list_papers_view(
+        kb_id=kb_id,
+        current_user=current_user,
+        query=query,
+        year_from=year_from,
+        year_to=year_to,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@research.post("/databases/{kb_id}/user-studies")
+async def create_user_study(
+    kb_id: str,
+    payload: CreateUserStudyRequest,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await ResearchUserStudyService().create_study(
+            kb_id=kb_id,
+            current_user=current_user,
+            name=payload.name,
+            description=payload.description,
+            participant_count=payload.participant_count,
+            consent_text=payload.consent_text,
+        )
+    except ResearchUserStudyError as exc:
+        raise _user_study_http_error(exc) from exc
+
+
+@research.get("/databases/{kb_id}/user-studies")
+async def list_user_studies(kb_id: str, current_user: User = Depends(get_required_user)):
+    try:
+        return await ResearchUserStudyService().list_studies(kb_id=kb_id, current_user=current_user)
+    except ResearchUserStudyError as exc:
+        raise _user_study_http_error(exc) from exc
+
+
+@research.get("/databases/{kb_id}/user-studies/{study_id}")
+async def get_user_study_report(kb_id: str, study_id: str, current_user: User = Depends(get_required_user)):
+    try:
+        return await ResearchUserStudyService().get_study_report(
+            kb_id=kb_id, study_id=study_id, current_user=current_user
+        )
+    except ResearchUserStudyError as exc:
+        raise _user_study_http_error(exc) from exc
+
+
+@research.post("/databases/{kb_id}/user-studies/{study_id}/close")
+async def close_user_study(kb_id: str, study_id: str, current_user: User = Depends(get_required_user)):
+    try:
+        await ResearchUserStudyService().close_study(kb_id=kb_id, study_id=study_id, current_user=current_user)
+        return {"status": "closed"}
+    except ResearchUserStudyError as exc:
+        raise _user_study_http_error(exc) from exc
+
+
+@research.get("/databases/{kb_id}/user-studies/{study_id}/export")
+async def export_user_study(kb_id: str, study_id: str, current_user: User = Depends(get_required_user)):
+    try:
+        filename, content = await ResearchUserStudyService().export_study_csv(
+            kb_id=kb_id, study_id=study_id, current_user=current_user
+        )
+        return Response(
+            content=content.encode("utf-8-sig"),
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except ResearchUserStudyError as exc:
+        raise _user_study_http_error(exc) from exc
+
+
+@research.post("/user-studies/public/resolve")
+async def get_public_user_study(payload: PublicUserStudyTokenRequest):
+    try:
+        return await ResearchUserStudyService().get_public_study(payload.token)
+    except ResearchUserStudyError as exc:
+        raise _user_study_http_error(exc) from exc
+
+
+@research.post("/user-studies/public/responses")
+async def submit_public_user_study_response(payload: SubmitUserStudyResponseRequest):
+    try:
+        return await ResearchUserStudyService().submit_public_response(
+            token=payload.token,
+            consent=payload.consent,
+            research_stage=payload.research_stage,
+            research_experience=payload.research_experience,
+            task_scores=payload.task_scores,
+            sus_scores=payload.sus_scores,
+            overall_rating=payload.overall_rating,
+            recommend_score=payload.recommend_score,
+            feedback=payload.feedback,
+        )
+    except ResearchUserStudyError as exc:
+        raise _user_study_http_error(exc) from exc
+
+
+@research.get("/databases/{kb_id}/trends")
+async def academic_trends(
+    kb_id: str,
+    year_from: int | None = Query(default=None, ge=1500),
+    year_to: int | None = Query(default=None, ge=1500),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=10000, ge=1, le=50000),
+    top_keywords: int = Query(default=20, ge=1, le=100),
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await get_academic_trends(
+            kb_id=kb_id,
+            current_user=current_user,
+            year_from=year_from,
+            year_to=year_to,
+            offset=offset,
+            limit=limit,
+            top_keywords=top_keywords,
+        )
+    except AcademicTrendError as exc:
+        raise _trend_http_error(exc) from exc
+
+
+@research.get("/databases/{kb_id}/external-papers/search")
+async def search_external_paper_catalog(
+    kb_id: str,
+    query: str = Query(..., min_length=1, max_length=500),
+    limit: int = Query(default=10, ge=1, le=20),
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await search_external_papers(
+            kb_id=kb_id,
+            current_user=current_user,
+            query=query,
+            limit=limit,
+        )
+    except AcademicPaperImportError as exc:
+        raise _paper_import_http_error(exc) from exc
+
+
+class ExternalPaperImportRequest(BaseModel):
+    identifier: str = Field(..., min_length=1, max_length=256)
+
+
+@research.post("/databases/{kb_id}/external-papers/import")
+async def import_external_paper_route(
+    kb_id: str,
+    payload: ExternalPaperImportRequest,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await import_external_paper(
+            kb_id=kb_id,
+            identifier=payload.identifier,
+            current_user=current_user,
+        )
+    except AcademicPaperImportError as exc:
+        raise _paper_import_http_error(exc) from exc
+
+
+@research.post("/databases/{kb_id}/search")
+async def strict_research_search(
+    kb_id: str,
+    payload: ResearchSearchRequest,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await search_papers(
+            kb_id=kb_id,
+            current_user=current_user,
+            query=payload.query,
+            top_k=payload.top_k,
+            recall_top_k=payload.recall_top_k,
+            year_from=payload.year_from,
+            year_to=payload.year_to,
+            chat_model=payload.chat_model,
+            reranker_model=payload.reranker_model,
+        )
+    except ResearchSearchError as exc:
+        raise _search_http_error(exc) from exc
+
+
+@research.get("/search-runs/{run_id}")
+async def research_search_run(run_id: str, current_user: User = Depends(get_required_user)):
+    try:
+        return await get_search_run(run_id=run_id, current_user=current_user)
+    except ResearchSearchError as exc:
+        raise _search_http_error(exc) from exc
+
+
+@research.post("/databases/{kb_id}/academic-graph/sync")
+async def sync_academic_graph(
+    kb_id: str,
+    payload: AcademicGraphSyncRequest,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await enqueue_academic_graph_sync(
+            kb_id=kb_id,
+            current_user=current_user,
+            paper_ids=payload.paper_ids,
+            citation_limit=payload.citation_limit,
+            reference_limit=payload.reference_limit,
+        )
+    except AcademicGraphSyncError as exc:
+        raise _graph_http_error(exc) from exc
+
+
+@research.get("/academic-graph/sync-runs/{run_id}")
+async def academic_graph_sync_run(run_id: str, current_user: User = Depends(get_required_user)):
+    try:
+        return await get_academic_graph_sync_run(run_id=run_id, current_user=current_user)
+    except AcademicGraphSyncError as exc:
+        raise _graph_http_error(exc) from exc
+
+
+@research.get("/academic-graph/sync-runs/{run_id}/conflicts")
+async def academic_graph_conflicts(
+    run_id: str,
+    resolution_status: str | None = Query(default=None, pattern=r"^(unresolved|resolved|dismissed)$"),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await list_academic_graph_conflicts(
+            run_id=run_id,
+            current_user=current_user,
+            resolution_status=resolution_status,
+            offset=offset,
+            limit=limit,
+        )
+    except AcademicGraphSyncError as exc:
+        raise _graph_http_error(exc) from exc
+
+
+@research.get("/databases/{kb_id}/academic-graph")
+async def academic_graph_network(
+    kb_id: str,
+    center_paper_id: str | None = Query(default=None, max_length=64),
+    depth: int = Query(default=1, ge=1, le=3),
+    limit: int = Query(default=200, ge=1, le=500),
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await get_academic_graph_network(
+            kb_id=kb_id,
+            current_user=current_user,
+            center_paper_id=center_paper_id,
+            depth=depth,
+            limit=limit,
+        )
+    except AcademicGraphSyncError as exc:
+        raise _graph_http_error(exc) from exc
+
+
+@research.get("/databases/{kb_id}/academic-graph/relations/{graph_paper_id}")
+async def academic_graph_relations(
+    kb_id: str,
+    graph_paper_id: str,
+    limit: int = Query(default=20, ge=1, le=100),
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await get_academic_graph_relations(
+            kb_id=kb_id,
+            current_user=current_user,
+            graph_paper_id=graph_paper_id,
+            limit=limit,
+        )
+    except AcademicGraphSyncError as exc:
+        raise _graph_http_error(exc) from exc
+
+
+@research.get("/databases/{kb_id}/papers/{paper_id}")
+async def get_paper(kb_id: str, paper_id: str, current_user: User = Depends(get_required_user)):
+    return await get_paper_view(kb_id=kb_id, paper_id=paper_id, current_user=current_user)
+
+
+@research.get("/databases/{kb_id}/papers/{paper_id}/chunks")
+async def list_paper_chunks(
+    kb_id: str,
+    paper_id: str,
+    section_type: str | None = Query(default=None, max_length=64),
+    chunk_id: str | None = Query(default=None, max_length=128),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=500),
+    current_user: User = Depends(get_required_user),
+):
+    return await list_paper_chunks_view(
+        kb_id=kb_id,
+        paper_id=paper_id,
+        current_user=current_user,
+        section_type=section_type,
+        chunk_id=chunk_id,
+        offset=offset,
+        limit=limit,
+    )
+
+
+@research.get("/databases/{kb_id}/papers/{paper_id}/evidence/{chunk_id}")
+async def get_paper_evidence(kb_id: str, paper_id: str, chunk_id: str, current_user: User = Depends(get_required_user)):
+    return await get_paper_evidence_view(
+        kb_id=kb_id,
+        paper_id=paper_id,
+        chunk_id=chunk_id,
+        current_user=current_user,
+    )
+
+
+@research.post("/databases/{kb_id}/papers/{paper_id}/analysis")
+async def analyze_paper(
+    kb_id: str,
+    paper_id: str,
+    payload: AcademicPaperAnalysisRequest,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await enqueue_paper_analysis(
+            kb_id=kb_id,
+            paper_id=paper_id,
+            current_user=current_user,
+            model_spec=payload.model_spec,
+        )
+    except AcademicPaperAnalysisError as exc:
+        raise _analysis_http_error(exc) from exc
+
+
+@research.get("/paper-analysis-runs/{run_id}")
+async def paper_analysis_run(run_id: str, current_user: User = Depends(get_required_user)):
+    try:
+        return await get_paper_analysis_run(run_id=run_id, current_user=current_user)
+    except AcademicPaperAnalysisError as exc:
+        raise _analysis_http_error(exc) from exc
+
+
+@research.get("/databases/{kb_id}/papers/{paper_id}/analysis/latest")
+async def latest_paper_analysis(kb_id: str, paper_id: str, current_user: User = Depends(get_required_user)):
+    try:
+        return await get_latest_paper_analysis(kb_id=kb_id, paper_id=paper_id, current_user=current_user)
+    except AcademicPaperAnalysisError as exc:
+        raise _analysis_http_error(exc) from exc
+
+
+@research.post("/databases/{kb_id}/paper-analysis-evaluations")
+async def create_paper_analysis_evaluation(
+    kb_id: str,
+    payload: CreatePaperAnalysisEvaluationRequest,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await AcademicPaperAnalysisEvaluationService().create_evaluation(
+            kb_id=kb_id,
+            current_user=current_user,
+            name=payload.name,
+            description=payload.description,
+            paper_ids=payload.paper_ids,
+            model_spec=payload.model_spec,
+        )
+    except AcademicPaperAnalysisEvaluationError as exc:
+        raise _analysis_evaluation_http_error(exc) from exc
+
+
+@research.get("/databases/{kb_id}/paper-analysis-evaluations")
+async def list_paper_analysis_evaluations(kb_id: str, current_user: User = Depends(get_required_user)):
+    try:
+        return await AcademicPaperAnalysisEvaluationService().list_evaluations(
+            kb_id=kb_id, current_user=current_user
+        )
+    except AcademicPaperAnalysisEvaluationError as exc:
+        raise _analysis_evaluation_http_error(exc) from exc
+
+
+@research.get("/databases/{kb_id}/paper-analysis-evaluations/{evaluation_id}")
+async def get_paper_analysis_evaluation_report(
+    kb_id: str, evaluation_id: str, current_user: User = Depends(get_required_user)
+):
+    try:
+        return await AcademicPaperAnalysisEvaluationService().get_report(
+            kb_id=kb_id, evaluation_id=evaluation_id, current_user=current_user
+        )
+    except AcademicPaperAnalysisEvaluationError as exc:
+        raise _analysis_evaluation_http_error(exc) from exc
+
+
+@research.get("/databases/{kb_id}/paper-analysis-evaluations/{evaluation_id}/blind-items")
+async def list_paper_analysis_blind_items(
+    kb_id: str, evaluation_id: str, current_user: User = Depends(get_required_user)
+):
+    try:
+        return await AcademicPaperAnalysisEvaluationService().list_blind_items(
+            kb_id=kb_id, evaluation_id=evaluation_id, current_user=current_user
+        )
+    except AcademicPaperAnalysisEvaluationError as exc:
+        raise _analysis_evaluation_http_error(exc) from exc
+
+
+@research.get("/databases/{kb_id}/paper-analysis-evaluations/{evaluation_id}/blind-items/{item_id}")
+async def get_paper_analysis_blind_item(
+    kb_id: str, evaluation_id: str, item_id: str, current_user: User = Depends(get_required_user)
+):
+    try:
+        return await AcademicPaperAnalysisEvaluationService().get_blind_item(
+            kb_id=kb_id, evaluation_id=evaluation_id, item_id=item_id, current_user=current_user
+        )
+    except AcademicPaperAnalysisEvaluationError as exc:
+        raise _analysis_evaluation_http_error(exc) from exc
+
+
+@research.post("/databases/{kb_id}/paper-analysis-evaluations/{evaluation_id}/blind-items/{item_id}/scores")
+async def submit_paper_analysis_blind_score(
+    kb_id: str,
+    evaluation_id: str,
+    item_id: str,
+    payload: SubmitPaperAnalysisBlindScoreRequest,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await AcademicPaperAnalysisEvaluationService().submit_blind_score(
+            kb_id=kb_id,
+            evaluation_id=evaluation_id,
+            item_id=item_id,
+            current_user=current_user,
+            blind_scores=payload.blind_scores,
+            notes=payload.notes,
+        )
+    except AcademicPaperAnalysisEvaluationError as exc:
+        raise _analysis_evaluation_http_error(exc) from exc
+
+
+@research.patch("/databases/{kb_id}/papers/{paper_id}")
+async def update_paper(
+    kb_id: str,
+    paper_id: str,
+    payload: PaperMetadataUpdate,
+    current_user: User = Depends(get_required_user),
+):
+    return await update_paper_view(
+        kb_id=kb_id,
+        paper_id=paper_id,
+        current_user=current_user,
+        updates=payload.model_dump(exclude_unset=True),
+    )

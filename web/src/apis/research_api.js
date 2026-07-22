@@ -1,0 +1,178 @@
+import { apiGet, apiRequest } from './base'
+
+const buildQuery = (params = {}) => {
+  const query = new URLSearchParams()
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      query.set(key, String(value))
+    }
+  })
+  return query.toString()
+}
+
+export const researchApi = {
+  listPapers: (kbId, params = {}) => {
+    const query = buildQuery(params)
+    return apiGet(`/api/research/databases/${encodeURIComponent(kbId)}/papers${query ? `?${query}` : ''}`)
+  },
+
+  getPaper: (kbId, paperId) =>
+    apiGet(
+      `/api/research/databases/${encodeURIComponent(kbId)}/papers/${encodeURIComponent(paperId)}`
+    ),
+
+  listPaperChunks: (kbId, paperId, params = {}) => {
+    const query = buildQuery(params)
+    return apiGet(
+      `/api/research/databases/${encodeURIComponent(kbId)}/papers/${encodeURIComponent(paperId)}/chunks${query ? `?${query}` : ''}`
+    )
+  },
+
+  getPaperEvidence: (kbId, paperId, chunkId) =>
+    apiGet(
+      `/api/research/databases/${encodeURIComponent(kbId)}/papers/${encodeURIComponent(paperId)}/evidence/${encodeURIComponent(chunkId)}`
+    ),
+
+  analyzePaper: (kbId, paperId, payload = {}) =>
+    apiRequest(
+      `/api/research/databases/${encodeURIComponent(kbId)}/papers/${encodeURIComponent(paperId)}/analysis`,
+      { method: 'POST', body: JSON.stringify(payload) }
+    ),
+
+  getPaperAnalysisRun: (runId) =>
+    apiGet(`/api/research/paper-analysis-runs/${encodeURIComponent(runId)}`),
+
+  getLatestPaperAnalysis: (kbId, paperId) =>
+    apiGet(
+      `/api/research/databases/${encodeURIComponent(kbId)}/papers/${encodeURIComponent(paperId)}/analysis/latest`
+    ),
+
+  createPaperAnalysisEvaluation: (kbId, payload) =>
+    apiRequest(
+      `/api/research/databases/${encodeURIComponent(kbId)}/paper-analysis-evaluations`,
+      { method: 'POST', body: JSON.stringify(payload) }
+    ),
+
+  listPaperAnalysisEvaluations: (kbId) =>
+    apiGet(`/api/research/databases/${encodeURIComponent(kbId)}/paper-analysis-evaluations`),
+
+  getPaperAnalysisEvaluation: (kbId, evaluationId) =>
+    apiGet(
+      `/api/research/databases/${encodeURIComponent(kbId)}/paper-analysis-evaluations/${encodeURIComponent(evaluationId)}`
+    ),
+
+  listPaperAnalysisBlindItems: (kbId, evaluationId) =>
+    apiGet(
+      `/api/research/databases/${encodeURIComponent(kbId)}/paper-analysis-evaluations/${encodeURIComponent(evaluationId)}/blind-items`
+    ),
+
+  getPaperAnalysisBlindItem: (kbId, evaluationId, itemId) =>
+    apiGet(
+      `/api/research/databases/${encodeURIComponent(kbId)}/paper-analysis-evaluations/${encodeURIComponent(evaluationId)}/blind-items/${encodeURIComponent(itemId)}`
+    ),
+
+  submitPaperAnalysisBlindScore: (kbId, evaluationId, itemId, payload) =>
+    apiRequest(
+      `/api/research/databases/${encodeURIComponent(kbId)}/paper-analysis-evaluations/${encodeURIComponent(evaluationId)}/blind-items/${encodeURIComponent(itemId)}/scores`,
+      { method: 'POST', body: JSON.stringify(payload) }
+    ),
+
+  updatePaper: (kbId, paperId, payload) =>
+    apiRequest(
+      `/api/research/databases/${encodeURIComponent(kbId)}/papers/${encodeURIComponent(paperId)}`,
+      { method: 'PATCH', body: JSON.stringify(payload) }
+    ),
+
+  searchPapers: (kbId, payload) =>
+    apiRequest(
+      `/api/research/databases/${encodeURIComponent(kbId)}/search`,
+      { method: 'POST', body: JSON.stringify(payload) }
+    ),
+
+  getSearchRun: (runId) => apiGet(`/api/research/search-runs/${encodeURIComponent(runId)}`),
+
+  syncAcademicGraph: (kbId, payload) =>
+    apiRequest(
+      `/api/research/databases/${encodeURIComponent(kbId)}/academic-graph/sync`,
+      { method: 'POST', body: JSON.stringify(payload) }
+    ),
+
+  getAcademicGraphSyncRun: (runId) =>
+    apiGet(`/api/research/academic-graph/sync-runs/${encodeURIComponent(runId)}`),
+
+  listAcademicGraphConflicts: (runId, params = {}) => {
+    const query = buildQuery(params)
+    return apiGet(
+      `/api/research/academic-graph/sync-runs/${encodeURIComponent(runId)}/conflicts${query ? `?${query}` : ''}`
+    )
+  },
+
+  getAcademicGraph: (kbId, params = {}) => {
+    const query = buildQuery(params)
+    return apiGet(
+      `/api/research/databases/${encodeURIComponent(kbId)}/academic-graph${query ? `?${query}` : ''}`
+    )
+  },
+
+  getAcademicGraphRelations: (kbId, graphPaperId, params = {}) => {
+    const query = buildQuery(params)
+    return apiGet(
+      `/api/research/databases/${encodeURIComponent(kbId)}/academic-graph/relations/${encodeURIComponent(graphPaperId)}${query ? `?${query}` : ''}`
+    )
+  },
+
+  searchExternalPapers: (kbId, query, limit = 10) => {
+    const queryString = buildQuery({ query, limit })
+    return apiGet(
+      `/api/research/databases/${encodeURIComponent(kbId)}/external-papers/search?${queryString}`
+    )
+  },
+
+  importExternalPaper: (kbId, identifier) =>
+    apiRequest(
+      `/api/research/databases/${encodeURIComponent(kbId)}/external-papers/import`,
+      { method: 'POST', body: JSON.stringify({ identifier }) }
+    ),
+
+  getAcademicTrends: (kbId, params = {}) => {
+    const query = buildQuery(params)
+    return apiGet(
+      `/api/research/databases/${encodeURIComponent(kbId)}/trends${query ? `?${query}` : ''}`
+    )
+  },
+
+  createUserStudy: (kbId, payload) =>
+    apiRequest(`/api/research/databases/${encodeURIComponent(kbId)}/user-studies`, {
+      method: 'POST', body: JSON.stringify(payload)
+    }),
+
+  listUserStudies: (kbId) =>
+    apiGet(`/api/research/databases/${encodeURIComponent(kbId)}/user-studies`),
+
+  getUserStudy: (kbId, studyId) =>
+    apiGet(`/api/research/databases/${encodeURIComponent(kbId)}/user-studies/${encodeURIComponent(studyId)}`),
+
+  closeUserStudy: (kbId, studyId) =>
+    apiRequest(`/api/research/databases/${encodeURIComponent(kbId)}/user-studies/${encodeURIComponent(studyId)}/close`, {
+      method: 'POST', body: JSON.stringify({})
+    }),
+
+  exportUserStudy: (kbId, studyId) =>
+    apiRequest(
+      `/api/research/databases/${encodeURIComponent(kbId)}/user-studies/${encodeURIComponent(studyId)}/export`,
+      { method: 'GET' }, true, 'blob'
+    )
+}
+
+export const publicUserStudyApi = {
+  getStudy: (token) => apiRequest(
+    '/api/research/user-studies/public/resolve',
+    { method: 'POST', body: JSON.stringify({ token }) }, false
+  ),
+  submitResponse: (token, payload) => apiRequest(
+    '/api/research/user-studies/public/responses',
+    { method: 'POST', body: JSON.stringify({ token, ...payload }) }, false
+  )
+}
+
+export default researchApi

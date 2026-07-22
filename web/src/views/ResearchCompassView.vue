@@ -1,0 +1,2642 @@
+<template>
+  <div class="research-view layout-container">
+    <PageHeader title="科研罗盘" :loading="loading || databasesLoading" :show-border="true">
+      <template #info>
+        <span class="header-summary">知识图谱驱动的学术文献分析</span>
+      </template>
+      <template #actions>
+        <a-button
+          v-if="userStore.isAdmin"
+          class="lucide-icon-btn"
+          @click="openKnowledgeManagement"
+        >
+          <template #icon><Database :size="15" /></template>
+          管理论文库
+        </a-button>
+        <a-button
+          v-if="userStore.isAdmin"
+          class="lucide-icon-btn"
+          :disabled="!selectedKbId"
+          @click="externalImportOpen = true"
+        >
+          <template #icon><BookOpenText :size="15" /></template>
+          导入公开论文
+        </a-button>
+        <a-button
+          v-if="userStore.isAdmin"
+          class="lucide-icon-btn"
+          :loading="graphSyncLoading"
+          :disabled="!selectedKbId"
+          @click="syncAcademicGraph"
+        >
+          <template #icon><Network :size="15" /></template>
+          同步引用图谱
+        </a-button>
+        <a-button class="lucide-icon-btn" :loading="loading" @click="loadPapers">
+          <template #icon><RefreshCw :size="15" /></template>
+          刷新
+        </a-button>
+      </template>
+    </PageHeader>
+
+    <main class="research-content">
+      <a-tabs v-model:active-key="activeMode" class="research-tabs">
+        <a-tab-pane key="library" tab="论文库" />
+        <a-tab-pane key="search" tab="智能检索" />
+        <a-tab-pane key="graph" tab="引用图谱" />
+        <a-tab-pane key="trends" tab="研究趋势" />
+        <a-tab-pane key="analysis-evaluations" tab="分析对比" />
+        <a-tab-pane v-if="userStore.isAdmin" key="user-studies" tab="用户评测" />
+      </a-tabs>
+
+      <section v-if="activeMode === 'user-studies'" class="user-studies-workspace">
+        <div class="toolbar-field database-field">
+          <label for="studies-database">论文知识库</label>
+          <a-select
+            id="studies-database"
+            v-model:value="selectedKbId"
+            :options="databaseOptions"
+            :loading="databasesLoading"
+            show-search
+            option-filter-prop="label"
+            @change="handleDatabaseChange"
+          />
+        </div>
+        <UserStudyManager v-if="selectedKbId" :kb-id="selectedKbId" />
+        <a-empty v-else description="请选择论文知识库后创建用户评测" class="page-empty" />
+      </section>
+
+      <section v-if="activeMode === 'analysis-evaluations'" class="user-studies-workspace">
+        <div class="toolbar-field database-field">
+          <label for="analysis-evaluation-database">论文知识库</label>
+          <a-select
+            id="analysis-evaluation-database"
+            v-model:value="selectedKbId"
+            :options="databaseOptions"
+            :loading="databasesLoading"
+            show-search
+            option-filter-prop="label"
+            @change="handleDatabaseChange"
+          />
+        </div>
+        <PaperAnalysisEvaluationManager v-if="selectedKbId" :kb-id="selectedKbId" @open-paper="openPaper" />
+        <a-empty v-else description="请选择论文知识库后创建分析对比" class="page-empty" />
+      </section>
+
+      <section v-if="activeMode === 'search'" class="search-workspace">
+        <div class="search-form">
+          <div class="search-options">
+            <div class="toolbar-field">
+              <label for="search-database">论文知识库</label>
+              <a-select
+                id="search-database"
+                v-model:value="selectedKbId"
+                :options="databaseOptions"
+                :loading="databasesLoading"
+                show-search
+                option-filter-prop="label"
+                @change="handleDatabaseChange"
+              />
+            </div>
+            <div class="toolbar-field">
+              <label>发表年份</label>
+              <div class="year-range">
+                <a-input-number v-model:value="searchFilters.yearFrom" :min="1500" :max="maxPublicationYear" placeholder="起始" />
+                <span>至</span>
+                <a-input-number v-model:value="searchFilters.yearTo" :min="1500" :max="maxPublicationYear" placeholder="结束" />
+              </div>
+            </div>
+            <div class="toolbar-field compact-option">
+              <label for="search-top-k">返回论文数</label>
+              <a-input-number id="search-top-k" v-model:value="searchFilters.topK" :min="1" :max="50" />
+            </div>
+            <div class="toolbar-field compact-option">
+              <label for="search-recall-k">候选证据数</label>
+              <a-input-number id="search-recall-k" v-model:value="searchFilters.recallTopK" :min="10" :max="200" />
+            </div>
+          </div>
+          <label for="research-query" class="query-label">自然语言研究问题</label>
+          <a-textarea
+            id="research-query"
+            v-model:value="searchQuery"
+            :rows="4"
+            :maxlength="4000"
+            show-count
+            placeholder="例如：近五年基于图神经网络的药物分子性质预测方法有哪些共同局限？"
+            @keydown.ctrl.enter="runResearchSearch"
+          />
+          <div class="search-form-footer">
+            <span>严格模式：查询改写、向量 + BM25、Cross-Encoder、PPR 图谱均必须成功</span>
+            <a-button type="primary" :loading="searchLoading" :disabled="!selectedKbId || !searchQuery.trim()" @click="runResearchSearch">
+              <template #icon><Search :size="15" /></template>
+              开始检索
+            </a-button>
+          </div>
+        </div>
+        <a-result v-if="searchError" status="error" title="科研检索失败" :sub-title="searchError">
+          <template #extra><a-button @click="runResearchSearch">重新执行</a-button></template>
+        </a-result>
+        <div v-else-if="searchResult" class="search-result-shell">
+          <div class="search-result-summary">
+            <div>
+              <h2>{{ searchResult.total }} 篇相关论文</h2>
+              <p>改写查询：{{ searchResult.rewritten_query }}</p>
+              <div class="query-keywords">
+                <a-tag v-for="keyword in searchResult.keywords" :key="keyword">{{ keyword }}</a-tag>
+              </div>
+            </div>
+            <div class="run-meta">
+              <span>运行 {{ searchResult.run_id }}</span>
+              <span v-for="(duration, stage) in searchResult.stage_timings" :key="stage">{{ stage }} {{ duration }} ms</span>
+            </div>
+          </div>
+          <section v-if="searchResult.graph_expansion?.items?.length" class="citation-expansion-panel">
+            <div class="search-paper-heading">
+              <div>
+                <h3>引用图谱扩展</h3>
+                <p>
+                  {{ searchResult.graph_expansion.seed_count }} 个种子论文沿 CITES 网络扩展出
+                  {{ searchResult.graph_expansion.expanded_count }} 篇关联论文
+                </p>
+              </div>
+              <a-tag color="blue">PPR {{ searchResult.graph_expansion.citation_count }} 条边</a-tag>
+            </div>
+            <div class="citation-expansion-list">
+              <article
+                v-for="paper in searchResult.graph_expansion.items"
+                :key="paper.graph_paper_id"
+                class="citation-expansion-item"
+              >
+                <div>
+                  <strong>{{ paper.title || '未命名论文' }}</strong>
+                  <p>{{ paper.publication_year || '年份未知' }} · {{ paper.venue || '来源未知' }}</p>
+                </div>
+                <a-tag>图分数 {{ Number(paper.graph_score).toFixed(3) }}</a-tag>
+              </article>
+            </div>
+          </section>
+          <div class="search-result-list">
+            <article v-for="item in searchResult.items" :key="item.paper_id" class="search-paper-card">
+              <div class="search-paper-heading">
+                <div>
+                  <h3>{{ item.title }}</h3>
+                  <p>{{ item.authors?.join('、') }}<span v-if="item.publication_year"> · {{ item.publication_year }}</span></p>
+                </div>
+                <span class="ranking-score">{{ Number(item.ranking_score).toFixed(3) }}</span>
+              </div>
+              <div class="score-row">
+                <template v-for="(score, name) in item.scores" :key="name">
+                  <a-tag v-if="score !== null">{{ name }} {{ Number(score).toFixed(3) }}</a-tag>
+                </template>
+              </div>
+              <div class="evidence-list">
+                <div v-for="evidence in item.evidence" :key="evidence.chunk_id" class="evidence-item">
+                  <div class="evidence-heading">
+                    <span>{{ evidence.section_title || evidence.section_type || '论文内容' }}</span>
+                    <span v-if="evidence.source_page_start">页码 {{ evidence.source_page_start }}<template v-if="evidence.source_page_end && evidence.source_page_end !== evidence.source_page_start">–{{ evidence.source_page_end }}</template></span>
+                    <span v-if="evidence.start_char_pos !== null">字符 {{ evidence.start_char_pos }}–{{ evidence.end_char_pos }}</span>
+                  </div>
+                  <p>{{ evidence.content }}</p>
+                  <a-button
+                    v-if="evidence.locator"
+                    type="link"
+                    size="small"
+                    class="evidence-source-link"
+                    @click="openEvidence(item, evidence)"
+                  >
+                    查看原文定位
+                  </a-button>
+                </div>
+              </div>
+              <a-button type="link" class="paper-detail-link" @click="openPaper(item)">查看论文详情</a-button>
+            </article>
+          </div>
+        </div>
+        <a-empty v-else description="输入研究问题后开始严格混合检索" class="page-empty" />
+      </section>
+
+      <section v-else-if="activeMode === 'graph'" class="graph-workspace">
+        <div class="graph-toolbar">
+          <div class="toolbar-field database-field">
+            <label for="graph-database">论文知识库</label>
+            <a-select
+              id="graph-database"
+              v-model:value="selectedKbId"
+              :options="databaseOptions"
+              :loading="databasesLoading"
+              show-search
+              option-filter-prop="label"
+              @change="handleDatabaseChange"
+            />
+          </div>
+          <div class="graph-counts" v-if="graphData">
+            <span>{{ graphData.counts.papers }} 篇论文</span>
+            <span>{{ graphData.counts.citations }} 条引用</span>
+            <span>{{ graphData.counts.authors }} 位作者</span>
+            <span>{{ graphData.counts.topics }} 个主题</span>
+          </div>
+          <a-button :loading="graphLoading" :disabled="!selectedKbId" @click="loadAcademicGraph">刷新图谱</a-button>
+        </div>
+        <a-alert
+          v-if="graphSyncRun"
+          :type="graphSyncRun.status === 'failed' ? 'error' : graphSyncRun.status === 'success' ? 'success' : graphSyncRun.status === 'completed_with_conflicts' ? 'warning' : 'info'"
+          show-icon
+          :message="graphSyncStatusMessage"
+          :description="graphSyncRun.error_message || `已处理 ${graphSyncRun.processed_papers} 篇，发现 ${graphSyncRun.conflict_count} 个元数据冲突`"
+        />
+        <section v-if="graphSyncRun?.conflict_count" class="graph-conflicts">
+          <div class="graph-conflict-heading">
+            <h3>待处理元数据冲突</h3>
+            <a-button size="small" :loading="graphConflictsLoading" @click="loadGraphConflicts">
+              刷新明细
+            </a-button>
+          </div>
+          <a-skeleton v-if="graphConflictsLoading" active :paragraph="{ rows: 3 }" />
+          <a-result
+            v-else-if="graphConflictsError"
+            status="error"
+            title="冲突明细加载失败"
+            :sub-title="graphConflictsError"
+          />
+          <a-empty v-else-if="!graphConflicts.length" description="没有可显示的冲突记录" />
+          <article
+            v-else
+            v-for="conflict in graphConflicts"
+            :key="conflict.conflict_id"
+            class="graph-conflict-item"
+          >
+            <div class="graph-conflict-heading">
+              <strong>{{ conflict.message }}</strong>
+              <a-tag color="orange">{{ graphConflictTypeLabel(conflict.conflict_type) }}</a-tag>
+            </div>
+            <p>字段：{{ conflict.field_name || '身份映射' }}</p>
+            <div class="graph-conflict-values">
+              <div><span>本地值</span><pre>{{ formatConflictValue(conflict.local_value) }}</pre></div>
+              <div><span>远端值</span><pre>{{ formatConflictValue(conflict.remote_value) }}</pre></div>
+            </div>
+          </article>
+          <a-pagination
+            v-if="graphConflictsTotal > graphConflictsPageSize"
+            v-model:current="graphConflictsPage"
+            :page-size="graphConflictsPageSize"
+            :total="graphConflictsTotal"
+            size="small"
+            @change="loadGraphConflicts"
+          />
+        </section>
+        <a-result v-if="graphError" status="error" title="引用图谱加载失败" :sub-title="graphError" />
+        <div v-else-if="graphLoading" class="papers-loading"><a-skeleton active :paragraph="{ rows: 10 }" /></div>
+        <a-empty v-else-if="!graphData?.nodes?.length" class="page-empty" description="当前知识库还没有学术引用图谱">
+          <a-button v-if="userStore.isAdmin" type="primary" :loading="graphSyncLoading" @click="syncAcademicGraph">同步 Semantic Scholar 引用数据</a-button>
+        </a-empty>
+        <div v-else class="academic-graph-layout">
+          <div class="academic-graph-canvas">
+            <GraphCanvas
+              :graph-data="graphCanvasData"
+              label-field="name"
+              :node-style-options="academicNodeStyles"
+              @node-click="handleAcademicGraphNodeClick"
+              @canvas-click="selectedGraphNode = null"
+            />
+          </div>
+          <aside v-if="selectedGraphNode" class="graph-selection-panel">
+            <span class="node-type-label">{{ graphNodeTypeLabel(selectedGraphNode.raw_type) }}</span>
+            <h3>{{ selectedGraphNode.title || selectedGraphNode.name }}</h3>
+            <template v-if="selectedGraphNode.raw_type === 'paper'">
+              <p>{{ selectedGraphNode.publication_year || '年份未知' }} · {{ selectedGraphNode.venue || '来源未知' }}</p>
+              <p>被引 {{ selectedGraphNode.citation_count || 0 }} 次</p>
+              <a-tag v-if="selectedGraphNode.is_library_paper" color="blue">论文库论文</a-tag>
+              <a-button
+                type="primary"
+                block
+                :loading="relationsLoading"
+                @click="loadGraphRelations(selectedGraphNode.id)"
+              >
+                发现两跳关联
+              </a-button>
+              <a-alert
+                v-if="relationsError"
+                type="error"
+                show-icon
+                :message="relationsError"
+              />
+              <div v-if="graphRelations.length" class="graph-relations-list">
+                <h4>可解释关联</h4>
+                <article v-for="relation in graphRelations" :key="relation.target_graph_paper_id" class="graph-relation-item">
+                  <div class="graph-relation-title">
+                    <strong>{{ relation.target?.title || '未知论文' }}</strong>
+                    <a-tag>{{ relationTypeLabel(relation.relation_type) }}</a-tag>
+                  </div>
+                  <p>经由：{{ relation.intermediate?.title || '未知论文' }}</p>
+                  <div class="graph-relation-evidence">
+                    <span v-for="edge in relation.edges" :key="edge.citation_id">
+                      {{ edge.direction === 'outgoing' ? '引用' : '被引用' }}
+                      <template v-if="edge.is_influential"> · 重要引用</template>
+                    </span>
+                  </div>
+                </article>
+              </div>
+            </template>
+          </aside>
+        </div>
+        <div class="graph-network-list">
+          <article v-for="paper in graphPapers" :key="paper.id" class="graph-paper-node">
+            <div class="graph-paper-heading">
+              <h3>{{ paper.title }}</h3>
+              <a-tag v-if="paper.is_library_paper" color="blue">论文库</a-tag>
+            </div>
+            <p>{{ paper.publication_year || '年份未知' }} · {{ paper.venue || '来源未知' }}</p>
+            <div class="graph-node-meta">
+              <span>被引 {{ paper.citation_count || 0 }}</span>
+              <span>入边 {{ graphDegree(paper.id).incoming }}</span>
+              <span>出边 {{ graphDegree(paper.id).outgoing }}</span>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section v-else-if="activeMode === 'trends'" class="trends-workspace">
+        <div class="trends-toolbar">
+          <div class="toolbar-field database-field">
+            <label for="trends-database">论文知识库</label>
+            <a-select
+              id="trends-database"
+              v-model:value="selectedKbId"
+              :options="databaseOptions"
+              :loading="databasesLoading"
+              show-search
+              option-filter-prop="label"
+              @change="handleDatabaseChange"
+            />
+          </div>
+          <div class="toolbar-field">
+            <label>发表年份</label>
+            <div class="year-range">
+              <a-input-number v-model:value="trendFilters.yearFrom" :min="1500" :max="maxPublicationYear" placeholder="起始" />
+              <span>至</span>
+              <a-input-number v-model:value="trendFilters.yearTo" :min="1500" :max="maxPublicationYear" placeholder="结束" />
+            </div>
+          </div>
+          <a-button type="primary" :loading="trendLoading" :disabled="!selectedKbId" @click="loadTrends">
+            <template #icon><RefreshCw :size="15" /></template>
+            分析趋势
+          </a-button>
+        </div>
+        <a-result v-if="trendError" status="error" title="研究趋势加载失败" :sub-title="trendError">
+          <template #extra><a-button @click="loadTrends">重新加载</a-button></template>
+        </a-result>
+        <div v-else-if="trendLoading" class="papers-loading"><a-skeleton active :paragraph="{ rows: 8 }" /></div>
+        <a-empty v-else-if="!trendData || trendData.scope.total_papers === 0" class="page-empty" description="当前筛选范围没有论文趋势数据" />
+        <div v-else class="trends-content">
+          <div class="trend-summary-cards">
+            <article><span>样本论文</span><strong>{{ trendData.scope.total_papers }}</strong></article>
+            <article><span>覆盖年份</span><strong>{{ trendData.publication_trend.length }}</strong></article>
+            <article><span>关键词</span><strong>{{ trendData.keyword_totals.length }}</strong></article>
+            <article><span>引用网络年份</span><strong>{{ trendData.citation_trend.length }}</strong></article>
+          </div>
+          <div class="trend-chart-grid">
+            <section class="trend-chart-card">
+              <header><h3>论文数量与引用趋势</h3><span>按论文发表年份统计</span></header>
+              <div ref="publicationTrendChartRef" class="trend-chart"></div>
+            </section>
+            <section class="trend-chart-card">
+              <header><h3>高频研究关键词</h3><span>论文元数据关键词</span></header>
+              <div ref="keywordTrendChartRef" class="trend-chart"></div>
+            </section>
+          </div>
+          <section class="keyword-evolution-card">
+            <header><h3>关键词演进</h3><span>选择关键词查看跨年份变化</span></header>
+            <div class="keyword-chip-row">
+              <button
+                v-for="keyword in trendData.keyword_trends"
+                :key="keyword.keyword"
+                type="button"
+                :class="{ active: selectedTrendKeyword === keyword.keyword }"
+                @click="selectTrendKeyword(keyword.keyword)"
+              >
+                {{ keyword.keyword }} <span>{{ keyword.total }}</span>
+              </button>
+            </div>
+            <div v-if="selectedTrendKeywordData" class="keyword-evolution-grid">
+              <div v-for="item in selectedTrendKeywordData.years" :key="item.year" class="keyword-year-item">
+                <span>{{ item.year }}</span><strong>{{ item.count }}</strong>
+              </div>
+            </div>
+            <a-empty v-else description="暂无关键词演进数据" />
+          </section>
+          <section class="keyword-evolution-card emerging-directions-card">
+            <header><h3>新兴研究方向</h3><span>近两年关键词增长</span></header>
+            <div v-if="trendData.emerging_directions?.length" class="emerging-direction-list">
+              <article v-for="direction in trendData.emerging_directions" :key="direction.keyword">
+                <div>
+                  <strong>{{ direction.keyword }}</strong>
+                  <span>{{ direction.first_year }}–{{ direction.last_year }}</span>
+                </div>
+                <a-tag color="green">增长 {{ direction.growth }}</a-tag>
+              </article>
+            </div>
+            <a-empty v-else description="暂未识别出新兴方向" />
+          </section>
+        </div>
+      </section>
+      <template v-else>
+      <section class="research-toolbar" aria-label="论文筛选">
+        <div class="toolbar-field database-field">
+          <label for="research-database">论文知识库</label>
+          <a-select
+            id="research-database"
+            v-model:value="selectedKbId"
+            :options="databaseOptions"
+            :loading="databasesLoading"
+            placeholder="请选择论文知识库"
+            show-search
+            option-filter-prop="label"
+            @change="handleDatabaseChange"
+          />
+        </div>
+        <div class="toolbar-field search-field">
+          <label for="paper-search">搜索论文</label>
+          <a-input-search
+            id="paper-search"
+            v-model:value="filters.query"
+            placeholder="标题、作者、DOI 或期刊 / 会议"
+            allow-clear
+            @search="applyFilters"
+          />
+        </div>
+        <div class="toolbar-field year-field">
+          <label>发表年份</label>
+          <div class="year-range">
+            <a-input-number
+              v-model:value="filters.yearFrom"
+              :min="1500"
+              :max="maxPublicationYear"
+              placeholder="起始"
+            />
+            <span>至</span>
+            <a-input-number
+              v-model:value="filters.yearTo"
+              :min="1500"
+              :max="maxPublicationYear"
+              placeholder="结束"
+            />
+          </div>
+        </div>
+        <div class="toolbar-actions">
+          <a-button type="primary" :disabled="!selectedKbId" @click="applyFilters">筛选</a-button>
+          <a-button :disabled="!hasFilters" @click="resetFilters">重置</a-button>
+        </div>
+      </section>
+
+      <a-result
+        v-if="databasesError"
+        status="error"
+        title="知识库加载失败"
+        :sub-title="databasesError"
+      >
+        <template #extra>
+          <a-button @click="loadDatabases">重新加载</a-button>
+        </template>
+      </a-result>
+
+      <a-empty
+        v-else-if="!databasesLoading && databases.length === 0"
+        class="page-empty"
+        description="当前没有可访问的文档知识库"
+      >
+        <a-button v-if="userStore.isAdmin" type="primary" @click="openKnowledgeManagement">
+          创建论文知识库
+        </a-button>
+      </a-empty>
+
+      <template v-else-if="selectedKbId">
+        <section class="list-summary">
+          <div>
+            <h2>{{ selectedDatabase?.name || '论文库' }}</h2>
+            <p>{{ selectedDatabase?.description || '暂无知识库说明' }}</p>
+          </div>
+          <div class="summary-count">
+            <BookOpenText :size="16" />
+            <span>{{ total }} 篇论文</span>
+          </div>
+        </section>
+
+        <div v-if="loading && papers.length === 0" class="papers-loading">
+          <a-skeleton active :paragraph="{ rows: 8 }" />
+        </div>
+
+        <a-result
+          v-else-if="papersError"
+          status="error"
+          title="论文列表加载失败"
+          :sub-title="papersError"
+        >
+          <template #extra>
+            <a-button @click="loadPapers">重新加载</a-button>
+          </template>
+        </a-result>
+
+        <a-empty
+          v-else-if="papers.length === 0"
+          class="page-empty"
+          :description="hasFilters ? '没有符合筛选条件的论文' : '当前知识库还没有完成入库的学术论文'"
+        >
+          <template v-if="userStore.isAdmin && !hasFilters">
+            <p class="empty-hint">上传论文后请选择 Academic Paper 分块策略并执行入库。</p>
+            <a-button type="primary" @click="openSelectedKnowledgeBase">上传并入库论文</a-button>
+          </template>
+          <a-button v-else-if="hasFilters" @click="resetFilters">清除筛选</a-button>
+        </a-empty>
+
+        <div v-else class="paper-list" :class="{ refreshing: loading }">
+          <article
+            v-for="paper in papers"
+            :key="paper.paper_id"
+            class="paper-row"
+            tabindex="0"
+            @click="openPaper(paper)"
+            @keydown.enter="openPaper(paper)"
+          >
+            <div class="paper-icon" aria-hidden="true">
+              <FileText :size="20" />
+            </div>
+            <div class="paper-main">
+              <div class="paper-title-row">
+                <h3>{{ paper.title }}</h3>
+                <span class="metadata-status" :class="statusClass(paper.metadata_status)">
+                  {{ statusLabel(paper.metadata_status) }}
+                </span>
+              </div>
+              <p v-if="paper.authors?.length" class="paper-authors">
+                {{ formatAuthors(paper.authors) }}
+              </p>
+              <p v-if="paper.abstract" class="paper-abstract">{{ paper.abstract }}</p>
+              <div class="paper-metadata">
+                <span v-if="paper.publication_year">
+                  <CalendarDays :size="13" />
+                  {{ paper.publication_year }}
+                </span>
+                <span v-if="paper.venue">
+                  <Landmark :size="13" />
+                  {{ paper.venue }}
+                </span>
+                <span v-if="paper.doi" :title="paper.doi">
+                  <Link :size="13" />
+                  {{ paper.doi }}
+                </span>
+                <span v-if="paper.citation_count !== null">
+                  <Quote :size="13" />
+                  被引 {{ paper.citation_count }}
+                </span>
+              </div>
+              <div v-if="paper.keywords?.length" class="paper-keywords">
+                <a-tag v-for="keyword in paper.keywords.slice(0, 6)" :key="keyword">
+                  {{ keyword }}
+                </a-tag>
+                <span v-if="paper.keywords.length > 6">+{{ paper.keywords.length - 6 }}</span>
+              </div>
+            </div>
+            <ChevronRight class="paper-open-icon" :size="18" aria-label="查看论文详情" />
+          </article>
+        </div>
+
+        <div v-if="total > pageSize" class="pagination-row">
+          <a-pagination
+            v-model:current="page"
+            v-model:page-size="pageSize"
+            :total="total"
+            :page-size-options="['20', '50', '100']"
+            show-size-changer
+            show-quick-jumper
+            :show-total="(value) => `共 ${value} 篇`"
+            @change="loadPapers"
+            @show-size-change="handlePageSizeChange"
+          />
+        </div>
+      </template>
+      </template>
+    </main>
+
+    <a-modal
+      v-model:open="externalImportOpen"
+      title="导入 Semantic Scholar 公开论文"
+      width="760px"
+      :footer="null"
+      destroy-on-close
+    >
+      <p class="external-import-help">
+        输入论文标题、DOI 或 Semantic Scholar Paper ID。系统只导入 Semantic Scholar 声明的公开 PDF，下载后会自动进入 Academic Paper 分块、解析和 Milvus 索引任务。
+      </p>
+      <div class="external-import-search-row">
+        <a-input
+          v-model:value="externalImportQuery"
+          placeholder="例如：Attention Is All You Need 或 10.48550/arXiv.1706.03762"
+          :maxlength="500"
+          @press-enter="searchExternalPaperCatalog"
+        />
+        <a-button type="primary" :loading="externalSearchLoading" @click="searchExternalPaperCatalog">
+          搜索
+        </a-button>
+      </div>
+      <a-alert v-if="externalImportError" type="error" show-icon :message="externalImportError" />
+      <a-spin v-if="externalSearchLoading" />
+      <a-empty v-else-if="externalSearchPerformed && !externalPapers.length" description="没有找到可导入的论文" />
+      <div v-else class="external-paper-results">
+        <article v-for="paper in externalPapers" :key="paper.paper_id" class="external-paper-result">
+          <div>
+            <h3>{{ paper.title || '未命名论文' }}</h3>
+            <p>{{ paper.authors?.join('、') || '作者未知' }}<span v-if="paper.publication_year"> · {{ paper.publication_year }}</span></p>
+            <p v-if="paper.abstract" class="external-paper-abstract">{{ paper.abstract }}</p>
+            <div class="external-paper-meta">
+              <a-tag v-if="paper.doi">DOI {{ paper.doi }}</a-tag>
+              <a-tag v-if="paper.is_open_access" color="green">公开获取</a-tag>
+              <a-tag v-else color="orange">无公开 PDF</a-tag>
+              <span v-if="paper.citation_count !== null && paper.citation_count !== undefined">被引 {{ paper.citation_count }}</span>
+            </div>
+          </div>
+          <a-button
+            type="primary"
+            :disabled="!paper.open_access_url || externalImportingId === paper.paper_id"
+            :loading="externalImportingId === paper.paper_id"
+            @click="importExternalPaperItem(paper)"
+          >
+            导入并索引
+          </a-button>
+        </article>
+      </div>
+    </a-modal>
+
+    <PaperDetailDrawer
+      :open="detailOpen"
+      :kb-id="selectedKbId"
+      :paper-id="selectedPaperId"
+      :can-edit="userStore.isAdmin"
+      @close="closePaper"
+      @updated="handlePaperUpdated"
+    />
+
+    <a-drawer
+      :open="evidenceOpen"
+      title="证据原文定位"
+      :width="520"
+      @close="closeEvidence"
+    >
+      <a-spin v-if="evidenceLoading" />
+      <a-result v-else-if="evidenceError" status="error" title="原文定位失败" :sub-title="evidenceError" />
+      <div v-else-if="selectedEvidence" class="evidence-detail">
+        <div class="evidence-detail-meta">
+          <a-tag color="blue">{{ selectedEvidence.section_title || selectedEvidence.section_type || '论文内容' }}</a-tag>
+          <span v-if="selectedEvidence.source_page_start">
+            PDF 页码 {{ selectedEvidence.source_page_start }}<template v-if="selectedEvidence.source_page_end && selectedEvidence.source_page_end !== selectedEvidence.source_page_start">–{{ selectedEvidence.source_page_end }}</template>
+          </span>
+          <a-tag v-if="hasPdfRectLocator" color="purple">
+            {{ evidencePdfHighlightRects.length }} 处 PDF 文本坐标
+          </a-tag>
+          <span v-if="selectedEvidence.start_char_pos !== null">
+            字符 {{ selectedEvidence.start_char_pos }}–{{ selectedEvidence.end_char_pos }}
+          </span>
+        </div>
+        <div v-if="hasPdfPageLocator" class="evidence-pdf-actions">
+          <a-button
+            type="primary"
+            size="small"
+            :loading="evidencePdfLoading"
+            @click="openEvidencePdf"
+          >
+            预览 PDF 原文页码 {{ evidencePdfPage }}
+          </a-button>
+          <span v-if="hasPdfRectLocator">页码与文本坐标均来自原始 PDF 文本层检索，预览中会叠加真实覆盖层。</span>
+          <span v-else>页码来自原始 PDF 文本匹配；未命中稳定文本坐标时不提供覆盖层。</span>
+        </div>
+        <div v-if="evidencePdfDocument" ref="evidencePdfPreviewRef" class="evidence-pdf-preview">
+          <div
+            class="evidence-pdf-page"
+            :style="{ aspectRatio: evidencePdfAspectRatio || '1 / 1' }"
+          >
+            <canvas ref="evidencePdfCanvasRef" aria-label="论文 PDF 原文页" />
+            <div class="evidence-pdf-highlights" aria-hidden="true">
+              <span
+                v-for="(rect, index) in evidencePdfHighlightRects"
+                :key="`${rect.left}-${rect.top}-${index}`"
+                class="evidence-pdf-highlight"
+                :style="rect"
+              />
+            </div>
+          </div>
+          <a-spin v-if="evidencePdfRendering" class="evidence-pdf-rendering" />
+        </div>
+        <a-alert v-if="evidencePdfError" type="error" show-icon :message="evidencePdfError" />
+        <pre>{{ selectedEvidence.content }}</pre>
+        <a-alert
+          type="info"
+          show-icon
+          :message="hasPdfRectLocator ? '已定位到原始 PDF 页码与文本坐标' : (hasPdfPageLocator ? '已定位到原始 PDF 页码' : '当前定位基于解析后的原文字符区间')"
+          :description="hasPdfRectLocator ? `已匹配 ${evidencePdfHighlightRects.length} 处 PDF 文本矩形（页 ${evidencePdfPage}），坐标来自 PyMuPDF 文本检索。` : (hasPdfPageLocator ? 'PDF 预览会打开匹配到的起始页；当前证据未命中可检索的稳定文本矩形。' : '如果原始 PDF 没有稳定的页码映射，系统不会伪造页码或覆盖层。')"
+        />
+        <div class="evidence-download-actions">
+          <a-button
+            v-if="selectedEvidenceFile?.original_download_path"
+            :loading="evidenceDownloadVariant === 'original'"
+            @click="downloadEvidenceFile('original')"
+          >
+            下载原始文件
+          </a-button>
+          <a-button
+            v-if="selectedEvidenceFile?.parsed_download_path"
+            :loading="evidenceDownloadVariant === 'parsed'"
+            @click="downloadEvidenceFile('parsed')"
+          >
+            下载解析 Markdown
+          </a-button>
+        </div>
+      </div>
+    </a-drawer>
+  </div>
+</template>
+
+<script setup>
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
+import * as echarts from 'echarts'
+import { message } from 'ant-design-vue'
+import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist'
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+import { useRouter } from 'vue-router'
+import {
+  BookOpenText,
+  CalendarDays,
+  ChevronRight,
+  Database,
+  FileText,
+  Landmark,
+  Link,
+  Network,
+  Quote,
+  RefreshCw,
+  Search
+} from 'lucide-vue-next'
+import { databaseApi } from '@/apis/knowledge_api'
+import { researchApi } from '@/apis/research_api'
+import { downloadWorkspaceKnowledgeFile } from '@/apis/workspace_api'
+import PaperDetailDrawer from '@/components/research/PaperDetailDrawer.vue'
+import UserStudyManager from '@/components/research/UserStudyManager.vue'
+import PaperAnalysisEvaluationManager from '@/components/research/PaperAnalysisEvaluationManager.vue'
+import GraphCanvas from '@/components/GraphCanvas.vue'
+import PageHeader from '@/components/shared/PageHeader.vue'
+import { useUserStore } from '@/stores/user'
+
+GlobalWorkerOptions.workerSrc = pdfWorkerUrl
+
+const router = useRouter()
+const userStore = useUserStore()
+const databases = ref([])
+const databasesLoading = ref(false)
+const databasesError = ref('')
+const selectedKbId = ref('')
+const papers = ref([])
+const loading = ref(false)
+const papersError = ref('')
+const total = ref(0)
+const page = ref(1)
+const pageSize = ref(20)
+const detailOpen = ref(false)
+const selectedPaperId = ref('')
+const evidenceOpen = ref(false)
+const evidenceLoading = ref(false)
+const evidenceError = ref('')
+const selectedEvidence = ref(null)
+const selectedEvidenceFile = ref(null)
+const evidenceDownloadVariant = ref('')
+const evidencePdfLoading = ref(false)
+const evidencePdfRendering = ref(false)
+const evidencePdfError = ref('')
+const evidencePdfDocument = shallowRef(null)
+const evidencePdfPreviewRef = ref(null)
+const evidencePdfCanvasRef = ref(null)
+const evidencePdfAspectRatio = ref('')
+const externalImportOpen = ref(false)
+const externalImportQuery = ref('')
+const externalPapers = ref([])
+const externalSearchLoading = ref(false)
+const externalSearchPerformed = ref(false)
+const externalImportError = ref('')
+const externalImportingId = ref('')
+const maxPublicationYear = new Date().getFullYear() + 1
+const activeMode = ref('library')
+const searchQuery = ref('')
+const searchLoading = ref(false)
+const searchError = ref('')
+const searchResult = ref(null)
+const graphLoading = ref(false)
+const graphError = ref('')
+const graphData = ref(null)
+const graphSyncLoading = ref(false)
+const graphSyncRun = ref(null)
+const graphConflicts = ref([])
+const graphConflictsLoading = ref(false)
+const graphConflictsError = ref('')
+const graphConflictsTotal = ref(0)
+const graphConflictsPage = ref(1)
+const graphConflictsPageSize = 20
+const selectedGraphNode = ref(null)
+const graphRelations = ref([])
+const relationsLoading = ref(false)
+const relationsError = ref('')
+const trendData = ref(null)
+const trendLoading = ref(false)
+const trendError = ref('')
+const trendFilters = reactive({ yearFrom: null, yearTo: null })
+const selectedTrendKeyword = ref('')
+const publicationTrendChartRef = ref(null)
+const keywordTrendChartRef = ref(null)
+let publicationTrendChart = null
+let keywordTrendChart = null
+let graphSyncTimer = null
+let evidencePdfLoadingTask = null
+let evidencePdfRenderTask = null
+let evidencePdfRequestId = 0
+const searchFilters = reactive({
+  yearFrom: null,
+  yearTo: null,
+  topK: 10,
+  recallTopK: 50
+})
+
+const filters = reactive({
+  query: '',
+  yearFrom: null,
+  yearTo: null
+})
+
+const selectedDatabase = computed(() =>
+  databases.value.find((database) => database.kb_id === selectedKbId.value)
+)
+const databaseOptions = computed(() =>
+  databases.value.map((database) => ({
+    value: database.kb_id,
+    label: database.name
+  }))
+)
+const hasFilters = computed(() => Boolean(filters.query || filters.yearFrom || filters.yearTo))
+const graphPapers = computed(() => (graphData.value?.nodes || []).filter((node) => node.type === 'paper'))
+const graphCanvasData = computed(() => ({
+  nodes: (graphData.value?.nodes || []).map((node) => ({
+    ...node,
+    name: node.title || node.name || node.id,
+    raw_type: node.type,
+    type: graphNodeTypeLabel(node.type)
+  })),
+  edges: (graphData.value?.edges || []).map((edge) => ({
+    ...edge,
+    source_id: edge.source,
+    target_id: edge.target
+  }))
+}))
+const academicNodeStyles = {
+  style: {
+    size: (node) => {
+      const original = node.data?.original || {}
+      if (original.type !== '论文') return original.type === '作者' ? 22 : 18
+      return Math.min(24 + Math.log10(Number(original.citation_count || 0) + 1) * 10, 54)
+    }
+  }
+}
+const graphSyncStatusMessage = computed(() => {
+  if (!graphSyncRun.value) return ''
+  return {
+    pending: '学术图谱同步等待执行',
+    running: '正在同步 Semantic Scholar 学术图谱',
+    success: '学术引用图谱同步完成',
+    completed_with_conflicts: '学术引用图谱同步完成，但存在待处理冲突',
+    failed: '学术引用图谱同步失败'
+  }[graphSyncRun.value.status] || graphSyncRun.value.status
+})
+const selectedTrendKeywordData = computed(() =>
+  (trendData.value?.keyword_trends || []).find((item) => item.keyword === selectedTrendKeyword.value)
+)
+const evidencePdfPage = computed(() => Number(selectedEvidence.value?.source_page_start || 0))
+const hasPdfPageLocator = computed(() => (
+  ['pdf_page_range', 'pdf_page_rect'].includes(selectedEvidence.value?.locator_type)
+  && Number.isInteger(evidencePdfPage.value)
+  && evidencePdfPage.value > 0
+  && Boolean(selectedEvidenceFile.value?.original_available)
+))
+
+const toPdfHighlightStyle = (rect) => {
+  if (
+    Number(rect?.page) !== evidencePdfPage.value
+    || !['nx0', 'ny0', 'nx1', 'ny1'].every((key) => Number.isFinite(Number(rect?.[key])))
+  ) return null
+
+  const x0 = Number(rect.nx0)
+  const y0 = Number(rect.ny0)
+  const x1 = Number(rect.nx1)
+  const y1 = Number(rect.ny1)
+  if (x0 < 0 || y0 < 0 || x1 > 1 || y1 > 1 || x1 <= x0 || y1 <= y0) return null
+
+  const rotation = ((Number(rect.rotation) || 0) % 360 + 360) % 360
+  const displayRect = {
+    0: [x0, y0, x1, y1],
+    90: [1 - y1, x0, 1 - y0, x1],
+    180: [1 - x1, 1 - y1, 1 - x0, 1 - y0],
+    270: [y0, 1 - x1, y1, 1 - x0]
+  }[rotation]
+  if (!displayRect) return null
+  const [left, top, right, bottom] = displayRect
+  return {
+    left: `${left * 100}%`,
+    top: `${top * 100}%`,
+    width: `${(right - left) * 100}%`,
+    height: `${(bottom - top) * 100}%`
+  }
+}
+
+const evidencePdfHighlightRects = computed(() => (
+  (selectedEvidence.value?.source_rects || [])
+    .map(toPdfHighlightStyle)
+    .filter(Boolean)
+))
+const hasPdfRectLocator = computed(() => (
+  selectedEvidence.value?.locator_type === 'pdf_page_rect'
+  && evidencePdfHighlightRects.value.length > 0
+  && hasPdfPageLocator.value
+))
+
+const graphConflictTypeLabel = (type) => ({
+  paper_not_found: '远端论文不存在',
+  paper_match_not_found: '未找到严格匹配',
+  paper_match_ambiguous: '匹配结果不唯一',
+  paper_title_conflict: '标题不一致',
+  paper_year_conflict: '年份不一致',
+  graph_identity_conflict: '图谱身份冲突'
+})[type] || type
+const relationTypeLabel = (type) => ({
+  citation_chain: '引用链',
+  shared_reference: '共同参考文献',
+  shared_citation: '共同被引',
+  reverse_citation_chain: '反向引用链'
+})[type] || type
+const formatConflictValue = (value) => value === null ? '无' : JSON.stringify(value, null, 2)
+
+const statusLabels = {
+  extracted: '已提取',
+  verified: '已校正',
+  pending_reindex: '同步中',
+  sync_failed: '同步失败'
+}
+
+const statusLabel = (status) => statusLabels[status] || status || '未知状态'
+const statusClass = (status) => `status-${status || 'unknown'}`
+const formatAuthors = (authors) => {
+  if (authors.length <= 6) return authors.join('、')
+  return `${authors.slice(0, 6).join('、')} 等 ${authors.length} 位作者`
+}
+
+const loadDatabases = async () => {
+  databasesLoading.value = true
+  databasesError.value = ''
+  try {
+    const result = await databaseApi.getAccessibleDatabases()
+    databases.value = (result.databases || []).filter((database) => database.supports_documents)
+    if (!selectedKbId.value || !databases.value.some((item) => item.kb_id === selectedKbId.value)) {
+      selectedKbId.value = databases.value[0]?.kb_id || ''
+    }
+  } catch (error) {
+    databasesError.value = error.message || '无法加载可访问知识库'
+  } finally {
+    databasesLoading.value = false
+  }
+}
+
+const loadPapers = async () => {
+  if (!selectedKbId.value) {
+    papers.value = []
+    total.value = 0
+    return
+  }
+  if (filters.yearFrom && filters.yearTo && filters.yearFrom > filters.yearTo) {
+    papersError.value = '起始年份不能大于结束年份'
+    return
+  }
+
+  loading.value = true
+  papersError.value = ''
+  try {
+    const result = await researchApi.listPapers(selectedKbId.value, {
+      query: filters.query.trim(),
+      year_from: filters.yearFrom,
+      year_to: filters.yearTo,
+      page: page.value,
+      page_size: pageSize.value
+    })
+    papers.value = result.items || []
+    total.value = result.total || 0
+    if (page.value > 1 && papers.value.length === 0 && total.value > 0) {
+      page.value = Math.ceil(total.value / pageSize.value)
+      await loadPapers()
+    }
+  } catch (error) {
+    papersError.value = error.message || '无法加载论文列表'
+  } finally {
+    loading.value = false
+  }
+}
+
+const renderTrendCharts = async () => {
+  await nextTick()
+  if (!trendData.value) return
+  if (publicationTrendChart) publicationTrendChart.dispose()
+  if (keywordTrendChart) keywordTrendChart.dispose()
+  if (publicationTrendChartRef.value) {
+    publicationTrendChart = echarts.init(publicationTrendChartRef.value)
+    const rows = trendData.value.publication_trend || []
+    publicationTrendChart.setOption({
+      tooltip: { trigger: 'axis' },
+      legend: { data: ['论文数', '引用数'] },
+      grid: { left: 42, right: 18, top: 42, bottom: 28 },
+      xAxis: { type: 'category', data: rows.map((item) => item.year) },
+      yAxis: { type: 'value', minInterval: 1 },
+      series: [
+        { name: '论文数', type: 'line', smooth: true, data: rows.map((item) => item.papers) },
+        { name: '引用数', type: 'line', smooth: true, data: rows.map((item) => item.citations) }
+      ]
+    })
+  }
+  if (keywordTrendChartRef.value) {
+    keywordTrendChart = echarts.init(keywordTrendChartRef.value)
+    const rows = trendData.value.keyword_totals || []
+    keywordTrendChart.setOption({
+      tooltip: { trigger: 'axis' },
+      grid: { left: 100, right: 18, top: 18, bottom: 28 },
+      xAxis: { type: 'value', minInterval: 1 },
+      yAxis: { type: 'category', data: rows.slice().reverse().map((item) => item.keyword) },
+      series: [{ type: 'bar', data: rows.slice().reverse().map((item) => item.total), barMaxWidth: 22 }]
+    })
+  }
+}
+
+const loadTrends = async () => {
+  if (!selectedKbId.value) return
+  if (trendFilters.yearFrom && trendFilters.yearTo && trendFilters.yearFrom > trendFilters.yearTo) {
+    trendError.value = '起始年份不能大于结束年份'
+    return
+  }
+  trendLoading.value = true
+  trendError.value = ''
+  try {
+    trendData.value = await researchApi.getAcademicTrends(selectedKbId.value, {
+      year_from: trendFilters.yearFrom,
+      year_to: trendFilters.yearTo,
+      top_keywords: 20,
+      limit: 50000
+    })
+    selectedTrendKeyword.value = trendData.value.keyword_trends?.[0]?.keyword || ''
+    await renderTrendCharts()
+  } catch (error) {
+    trendError.value = error.message || '研究趋势加载失败'
+  } finally {
+    trendLoading.value = false
+  }
+}
+
+const selectTrendKeyword = (keyword) => {
+  selectedTrendKeyword.value = keyword
+}
+
+const runResearchSearch = async () => {
+  if (!selectedKbId.value || !searchQuery.value.trim()) return
+  if (searchFilters.yearFrom && searchFilters.yearTo && searchFilters.yearFrom > searchFilters.yearTo) {
+    searchError.value = '起始年份不能大于结束年份'
+    return
+  }
+  if (searchFilters.recallTopK < searchFilters.topK) {
+    searchError.value = '候选证据数不能小于返回论文数'
+    return
+  }
+  searchLoading.value = true
+  searchError.value = ''
+  try {
+    searchResult.value = await researchApi.searchPapers(selectedKbId.value, {
+      query: searchQuery.value.trim(),
+      top_k: searchFilters.topK,
+      recall_top_k: searchFilters.recallTopK,
+      year_from: searchFilters.yearFrom,
+      year_to: searchFilters.yearTo
+    })
+  } catch (error) {
+    searchError.value = error.message || '科研检索失败'
+  } finally {
+    searchLoading.value = false
+  }
+}
+
+const openEvidence = async (paper, evidence) => {
+  closeEvidence()
+  evidenceOpen.value = true
+  evidenceLoading.value = true
+  evidenceError.value = ''
+  selectedEvidence.value = null
+  selectedEvidenceFile.value = null
+  try {
+    const result = await researchApi.getPaperEvidence(selectedKbId.value, paper.paper_id, evidence.chunk_id)
+    selectedEvidence.value = result.evidence
+    selectedEvidenceFile.value = result.file
+  } catch (error) {
+    evidenceError.value = error.message || '证据原文定位失败'
+  } finally {
+    evidenceLoading.value = false
+  }
+}
+
+const disposeEvidencePdf = () => {
+  evidencePdfRenderTask?.cancel()
+  evidencePdfRenderTask = null
+  evidencePdfLoadingTask?.destroy()
+  evidencePdfLoadingTask = null
+  const pdfDocument = evidencePdfDocument.value
+  evidencePdfDocument.value = null
+  if (pdfDocument) void pdfDocument.destroy()
+  evidencePdfAspectRatio.value = ''
+  evidencePdfRendering.value = false
+}
+
+const renderEvidencePdfPage = async () => {
+  const pdfDocument = evidencePdfDocument.value
+  const preview = evidencePdfPreviewRef.value
+  const canvas = evidencePdfCanvasRef.value
+  if (!pdfDocument || !preview || !canvas) return
+  if (evidencePdfPage.value > pdfDocument.numPages) {
+    throw new Error(`定位页码 ${evidencePdfPage.value} 超出 PDF 总页数 ${pdfDocument.numPages}`)
+  }
+
+  evidencePdfRendering.value = true
+  const page = await pdfDocument.getPage(evidencePdfPage.value)
+  const baseViewport = page.getViewport({ scale: 1 })
+  const scale = Math.max(preview.clientWidth / baseViewport.width, 0.1)
+  const viewport = page.getViewport({ scale })
+  const outputScale = Math.min(window.devicePixelRatio || 1, 2)
+  const context = canvas.getContext('2d', { alpha: false })
+  if (!context) throw new Error('浏览器无法创建 PDF Canvas 渲染上下文')
+
+  evidencePdfAspectRatio.value = `${viewport.width} / ${viewport.height}`
+  canvas.width = Math.floor(viewport.width * outputScale)
+  canvas.height = Math.floor(viewport.height * outputScale)
+  canvas.style.width = `${viewport.width}px`
+  canvas.style.height = `${viewport.height}px`
+  evidencePdfRenderTask = page.render({
+    canvasContext: context,
+    transform: outputScale === 1 ? null : [outputScale, 0, 0, outputScale, 0, 0],
+    viewport
+  })
+  try {
+    await evidencePdfRenderTask.promise
+  } finally {
+    evidencePdfRenderTask = null
+    evidencePdfRendering.value = false
+  }
+}
+
+const openEvidencePdf = async () => {
+  if (!hasPdfPageLocator.value || evidencePdfLoading.value || evidencePdfDocument.value) return
+  const requestId = ++evidencePdfRequestId
+  evidencePdfLoading.value = true
+  evidencePdfError.value = ''
+  try {
+    const response = await downloadWorkspaceKnowledgeFile(
+      selectedKbId.value,
+      selectedEvidenceFile.value.file_id,
+      'original'
+    )
+    const contentType = response.headers.get('content-type') || ''
+    if (!contentType.includes('application/pdf')) {
+      throw new Error('原始文件不是 PDF，无法按页码预览')
+    }
+    evidencePdfLoadingTask = getDocument({ data: new Uint8Array(await response.arrayBuffer()) })
+    const pdfDocument = await evidencePdfLoadingTask.promise
+    if (requestId !== evidencePdfRequestId || !evidenceOpen.value) {
+      await pdfDocument.destroy()
+      return
+    }
+    evidencePdfLoadingTask = null
+    evidencePdfDocument.value = pdfDocument
+    await nextTick()
+    await renderEvidencePdfPage()
+  } catch (error) {
+    if (requestId === evidencePdfRequestId) {
+      const errorMessage = error.message || 'PDF 原文加载失败'
+      disposeEvidencePdf()
+      evidencePdfError.value = errorMessage
+      message.error(errorMessage)
+    }
+  } finally {
+    if (requestId === evidencePdfRequestId) evidencePdfLoading.value = false
+  }
+}
+
+const closeEvidence = () => {
+  evidencePdfRequestId += 1
+  evidenceOpen.value = false
+  disposeEvidencePdf()
+  evidencePdfLoading.value = false
+  evidencePdfError.value = ''
+}
+
+const searchExternalPaperCatalog = async () => {
+  const query = externalImportQuery.value.trim()
+  if (!selectedKbId.value || !query) {
+    externalImportError.value = '请输入论文标题、DOI 或 Semantic Scholar Paper ID'
+    return
+  }
+  externalSearchLoading.value = true
+  externalSearchPerformed.value = true
+  externalImportError.value = ''
+  try {
+    const result = await researchApi.searchExternalPapers(selectedKbId.value, query, 10)
+    externalPapers.value = result.items || []
+  } catch (error) {
+    externalPapers.value = []
+    externalImportError.value = error.message || '外部论文搜索失败'
+  } finally {
+    externalSearchLoading.value = false
+  }
+}
+
+const importExternalPaperItem = async (paper) => {
+  if (!paper?.paper_id || externalImportingId.value) return
+  externalImportingId.value = paper.paper_id
+  externalImportError.value = ''
+  try {
+    const result = await researchApi.importExternalPaper(selectedKbId.value, paper.paper_id)
+    message.success(`已提交“${result.title}”导入任务`)
+    externalImportOpen.value = false
+    externalPapers.value = []
+    externalImportQuery.value = ''
+    externalSearchPerformed.value = false
+    await loadPapers()
+  } catch (error) {
+    externalImportError.value = error.message || '外部论文导入失败'
+  } finally {
+    externalImportingId.value = ''
+  }
+}
+
+const downloadEvidenceFile = async (variant) => {
+  const file = selectedEvidenceFile.value
+  if (!file?.file_id || evidenceDownloadVariant.value) return
+  evidenceDownloadVariant.value = variant
+  try {
+    const response = await downloadWorkspaceKnowledgeFile(selectedKbId.value, file.file_id, variant)
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    const originalName = file.filename || `paper-${file.file_id}`
+    anchor.download = variant === 'parsed'
+      ? `${originalName.replace(/\.[^.]+$/, '')}.md`
+      : originalName
+    anchor.click()
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    message.error(error.message || '文件下载失败')
+  } finally {
+    evidenceDownloadVariant.value = ''
+  }
+}
+
+const loadAcademicGraph = async () => {
+  if (!selectedKbId.value) return
+  graphLoading.value = true
+  graphError.value = ''
+  try {
+    graphData.value = await researchApi.getAcademicGraph(selectedKbId.value, { depth: 2, limit: 300 })
+  } catch (error) {
+    graphError.value = error.message || '引用图谱加载失败'
+  } finally {
+    graphLoading.value = false
+  }
+}
+
+const pollGraphSync = async (runId) => {
+  clearTimeout(graphSyncTimer)
+  try {
+    graphSyncRun.value = await researchApi.getAcademicGraphSyncRun(runId)
+    if (['pending', 'running'].includes(graphSyncRun.value.status)) {
+      graphSyncTimer = setTimeout(() => pollGraphSync(runId), 2000)
+    } else {
+      graphSyncLoading.value = false
+      if (['success', 'completed_with_conflicts'].includes(graphSyncRun.value.status)) await loadAcademicGraph()
+      if (graphSyncRun.value.conflict_count) await loadGraphConflicts()
+    }
+  } catch (error) {
+    graphSyncLoading.value = false
+    graphError.value = error.message || '同步状态查询失败'
+  }
+}
+
+const loadGraphConflicts = async () => {
+  if (!graphSyncRun.value?.run_id) return
+  graphConflictsLoading.value = true
+  graphConflictsError.value = ''
+  try {
+    const result = await researchApi.listAcademicGraphConflicts(graphSyncRun.value.run_id, {
+      resolution_status: 'unresolved',
+      offset: (graphConflictsPage.value - 1) * graphConflictsPageSize,
+      limit: graphConflictsPageSize
+    })
+    graphConflicts.value = result.items || []
+    graphConflictsTotal.value = result.total || 0
+  } catch (error) {
+    graphConflictsError.value = error.message || '元数据冲突明细加载失败'
+  } finally {
+    graphConflictsLoading.value = false
+  }
+}
+
+const syncAcademicGraph = async () => {
+  if (!selectedKbId.value) return
+  graphSyncLoading.value = true
+  graphError.value = ''
+  try {
+    const result = await researchApi.syncAcademicGraph(selectedKbId.value, {
+      paper_ids: [],
+      citation_limit: 100,
+      reference_limit: 100
+    })
+    graphSyncRun.value = { run_id: result.run_id, status: result.status, processed_papers: 0, conflict_count: 0 }
+    await pollGraphSync(result.run_id)
+  } catch (error) {
+    graphSyncLoading.value = false
+    graphError.value = error.message || '学术图谱同步启动失败'
+  }
+}
+
+const graphDegree = (paperId) => {
+  const citations = (graphData.value?.edges || []).filter((edge) => edge.type === 'CITES')
+  return {
+    incoming: citations.filter((edge) => edge.target === paperId).length,
+    outgoing: citations.filter((edge) => edge.source === paperId).length
+  }
+}
+
+const graphNodeTypeLabel = (type) => ({ paper: '论文', author: '作者', topic: '主题' })[type] || type
+const handleAcademicGraphNodeClick = (node) => {
+  selectedGraphNode.value = node?.data?.original || null
+  graphRelations.value = []
+  relationsError.value = ''
+}
+
+const loadGraphRelations = async (graphPaperId) => {
+  if (!selectedKbId.value || !graphPaperId) return
+  relationsLoading.value = true
+  relationsError.value = ''
+  try {
+    const result = await researchApi.getAcademicGraphRelations(selectedKbId.value, graphPaperId, { limit: 20 })
+    graphRelations.value = result.relations || []
+    if (!graphRelations.value.length) relationsError.value = '当前节点没有可解释的两跳关联'
+  } catch (error) {
+    relationsError.value = error.message || '关联发现失败'
+  } finally {
+    relationsLoading.value = false
+  }
+}
+
+const handleDatabaseChange = () => {
+  page.value = 1
+  closePaper()
+  loadPapers()
+  graphData.value = null
+  selectedGraphNode.value = null
+  graphRelations.value = []
+  relationsError.value = ''
+  graphSyncRun.value = null
+  graphConflicts.value = []
+  graphConflictsTotal.value = 0
+  graphConflictsPage.value = 1
+  graphConflictsError.value = ''
+  trendData.value = null
+  selectedTrendKeyword.value = ''
+  if (activeMode.value === 'graph') loadAcademicGraph()
+  if (activeMode.value === 'trends') loadTrends()
+}
+
+const applyFilters = () => {
+  page.value = 1
+  loadPapers()
+}
+
+const resetFilters = () => {
+  Object.assign(filters, { query: '', yearFrom: null, yearTo: null })
+  page.value = 1
+  loadPapers()
+}
+
+const handlePageSizeChange = () => {
+  page.value = 1
+  loadPapers()
+}
+
+const openPaper = (paper) => {
+  selectedPaperId.value = paper.paper_id
+  detailOpen.value = true
+}
+
+const closePaper = () => {
+  detailOpen.value = false
+  selectedPaperId.value = ''
+}
+
+const handlePaperUpdated = (result) => {
+  const index = papers.value.findIndex((paper) => paper.paper_id === result.paper.paper_id)
+  if (index >= 0) papers.value[index] = result.paper
+}
+
+const openKnowledgeManagement = () => router.push({ path: '/extensions', query: { tab: 'knowledge' } })
+const openSelectedKnowledgeBase = () => {
+  if (!selectedKbId.value) return
+  router.push(`/extensions/knowledgebase/${encodeURIComponent(selectedKbId.value)}`)
+}
+
+onMounted(async () => {
+  await loadDatabases()
+  await loadPapers()
+})
+
+watch(activeMode, (mode) => {
+  if (mode === 'graph' && !graphData.value) loadAcademicGraph()
+  if (mode === 'trends' && !trendData.value) loadTrends()
+})
+
+onBeforeUnmount(() => {
+  evidencePdfRequestId += 1
+  clearTimeout(graphSyncTimer)
+  publicationTrendChart?.dispose()
+  keywordTrendChart?.dispose()
+  disposeEvidencePdf()
+})
+</script>
+
+<style scoped lang="less">
+.research-view {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--gray-0);
+}
+
+.header-summary {
+  color: var(--color-text-tertiary);
+  font-size: 13px;
+}
+
+.research-content {
+  height: calc(100% - 57px);
+  padding: 20px var(--page-padding) 32px;
+  overflow-y: auto;
+}
+
+.research-tabs {
+  margin-bottom: 14px;
+}
+
+.search-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.trends-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.user-studies-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.trends-toolbar {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--gray-150);
+  border-radius: 8px;
+  background: var(--gray-10);
+}
+
+.trends-toolbar .database-field {
+  min-width: 260px;
+  margin-right: auto;
+}
+
+.trends-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.trend-summary-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.trend-summary-cards article:nth-child(4) strong {
+  color: var(--main-color);
+}
+
+.trend-summary-cards article {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 14px;
+  border: 1px solid var(--gray-150);
+  border-radius: 8px;
+  background: var(--gray-10);
+}
+
+.trend-summary-cards span {
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+
+.trend-summary-cards strong {
+  color: var(--color-text);
+  font-size: 22px;
+}
+
+.trend-chart-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 14px;
+}
+
+.trend-chart-card,
+.keyword-evolution-card {
+  padding: 14px;
+  border: 1px solid var(--gray-150);
+  border-radius: 8px;
+  background: var(--gray-0);
+}
+
+.trend-chart-card header,
+.keyword-evolution-card header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.trend-chart-card h3,
+.keyword-evolution-card h3 {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 15px;
+}
+
+.trend-chart-card header span,
+.keyword-evolution-card header span {
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+}
+
+.trend-chart {
+  width: 100%;
+  height: 300px;
+  margin-top: 8px;
+}
+
+.keyword-evolution-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.keyword-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.keyword-chip-row button {
+  padding: 5px 9px;
+  border: 1px solid var(--gray-150);
+  border-radius: 999px;
+  color: var(--color-text-secondary);
+  background: var(--gray-10);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.keyword-chip-row button.active,
+.keyword-chip-row button:hover {
+  border-color: var(--main-300);
+  color: var(--main-color);
+  background: var(--main-30);
+}
+
+.keyword-chip-row span {
+  margin-left: 4px;
+  color: var(--color-text-tertiary);
+}
+
+.keyword-evolution-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 8px;
+}
+
+.keyword-year-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--gray-25);
+}
+
+.keyword-year-item span {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.keyword-year-item strong {
+  color: var(--main-color);
+}
+
+.emerging-direction-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 8px;
+}
+
+.emerging-direction-list article {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 6px;
+  background: var(--gray-25);
+}
+
+.emerging-direction-list article div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.emerging-direction-list strong {
+  color: var(--color-text);
+  font-size: 13px;
+}
+
+.emerging-direction-list span {
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+}
+
+.search-form,
+.search-result-shell {
+  padding: 18px;
+  border: 1px solid var(--gray-150);
+  border-radius: 8px;
+  background: var(--gray-0);
+}
+
+.search-form label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.search-options {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.3fr) minmax(250px, 1fr) 110px 110px;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 16px;
+}
+
+.compact-option :deep(.ant-input-number) {
+  width: 100%;
+}
+
+.query-label {
+  margin-top: 2px;
+}
+
+.query-keywords {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.paper-detail-link {
+  margin-top: 8px;
+  padding: 0;
+}
+
+.search-form-footer,
+.search-result-summary,
+.search-paper-heading,
+.evidence-heading,
+.run-meta,
+.score-row {
+  display: flex;
+  align-items: center;
+}
+
+.search-form-footer {
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+
+.search-result-summary {
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--gray-100);
+}
+
+.search-result-summary h2,
+.search-result-summary p {
+  margin: 0;
+}
+
+.search-result-summary h2 {
+  color: var(--color-text);
+  font-size: 17px;
+}
+
+.search-result-summary p {
+  margin-top: 5px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.run-meta {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px 10px;
+  max-width: 48%;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+}
+
+.search-result-list,
+.evidence-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.search-result-list {
+  margin-top: 14px;
+}
+
+.citation-expansion-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 14px;
+  border: 1px solid var(--gray-150);
+  border-radius: 8px;
+  background: var(--gray-10);
+}
+
+.citation-expansion-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 8px;
+}
+
+.citation-expansion-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--gray-150);
+  border-radius: 6px;
+  background: var(--gray-0);
+}
+
+.citation-expansion-item strong {
+  color: var(--color-text);
+  font-size: 13px;
+}
+
+.citation-expansion-item p {
+  margin: 4px 0 0;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+}
+
+.search-paper-card {
+  padding: 15px;
+  border: 1px solid var(--gray-150);
+  border-radius: 7px;
+  background: var(--gray-10);
+}
+
+.search-paper-heading {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.search-paper-heading h3,
+.search-paper-heading p {
+  margin: 0;
+}
+
+.search-paper-heading h3 {
+  color: var(--color-text);
+  font-size: 15px;
+}
+
+.search-paper-heading p {
+  margin-top: 4px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.ranking-score {
+  flex: none;
+  color: var(--main-color);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.score-row {
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.evidence-list {
+  margin-top: 12px;
+}
+
+.evidence-item {
+  padding: 10px;
+  border-left: 3px solid var(--main-200);
+  background: var(--gray-0);
+}
+
+.evidence-item p {
+  display: -webkit-box;
+  margin: 5px 0 0;
+  overflow: hidden;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.55;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+}
+
+.evidence-heading {
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+}
+
+.evidence-source-link {
+  padding: 2px 0;
+  margin-top: 5px;
+  font-size: 12px;
+}
+
+.evidence-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.evidence-detail-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.evidence-pdf-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid var(--main-100);
+  border-radius: 7px;
+  background: var(--main-25);
+}
+
+.evidence-pdf-actions span {
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+  .evidence-pdf-preview {
+    position: relative;
+    max-height: 520px;
+    overflow: hidden;
+    border: 1px solid var(--gray-150);
+    border-radius: 7px;
+    background: var(--gray-25);
+    overflow-y: auto;
+  }
+  
+  .evidence-pdf-page {
+    position: relative;
+    width: 100%;
+    min-height: 160px;
+    background: var(--gray-0);
+  }
+
+  .evidence-pdf-page canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  .evidence-pdf-highlights {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  .evidence-pdf-highlight {
+    position: absolute;
+    border: 2px solid var(--color-warning-700);
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--color-warning-100) 48%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-warning-900) 20%, transparent);
+  }
+
+  .evidence-pdf-rendering {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+  }
+
+.evidence-detail pre {
+  max-height: 460px;
+  padding: 12px;
+  overflow: auto;
+  margin: 0;
+  border-radius: 7px;
+  background: var(--gray-25);
+  color: var(--color-text);
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.graph-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.graph-toolbar,
+.graph-counts,
+.graph-paper-heading,
+.graph-node-meta {
+  display: flex;
+  align-items: center;
+}
+
+.graph-toolbar {
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--gray-150);
+  border-radius: 8px;
+  background: var(--gray-10);
+}
+
+.graph-toolbar .database-field {
+  min-width: 260px;
+  margin-right: auto;
+}
+
+.graph-counts {
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.graph-conflicts {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--gray-150);
+  border-radius: 8px;
+  background: var(--gray-10);
+}
+
+.graph-conflict-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.graph-conflict-heading h3 {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 14px;
+}
+
+.graph-conflict-item {
+  padding: 12px;
+  border: 1px solid var(--gray-150);
+  border-radius: 7px;
+  background: var(--gray-0);
+}
+
+.graph-conflict-item p {
+  margin: 7px 0;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.graph-conflict-values {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.graph-conflict-values span {
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+}
+
+.graph-conflict-values pre {
+  max-height: 160px;
+  margin: 4px 0 0;
+  padding: 8px;
+  overflow: auto;
+  border-radius: 5px;
+  background: var(--gray-50);
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.academic-graph-layout {
+  position: relative;
+  height: 600px;
+  min-height: 420px;
+  overflow: hidden;
+  border: 1px solid var(--gray-150);
+  border-radius: 8px;
+  background: var(--gray-0);
+}
+
+.academic-graph-canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.graph-selection-panel {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 20;
+  width: min(320px, calc(100% - 28px));
+  padding: 14px;
+  border: 1px solid var(--gray-150);
+  border-radius: 8px;
+  background: var(--color-trans-light);
+  box-shadow: 0 8px 24px var(--shadow-2);
+  backdrop-filter: blur(12px);
+
+  h3 {
+    margin: 6px 0;
+    color: var(--color-text);
+    font-size: 15px;
+    line-height: 1.45;
+  }
+
+  p {
+    margin: 4px 0;
+    color: var(--color-text-secondary);
+    font-size: 12px;
+  }
+}
+
+.graph-selection-panel > .ant-btn {
+  margin-top: 12px;
+}
+
+.graph-relations-list {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--gray-150);
+
+  h4 {
+    margin: 0 0 8px;
+    color: var(--color-text);
+    font-size: 13px;
+  }
+}
+
+.graph-relation-item {
+  padding: 9px 0;
+  border-bottom: 1px solid var(--gray-100);
+
+  &:last-child {
+    border-bottom: 0;
+  }
+
+  p {
+    margin: 4px 0;
+  }
+}
+
+.graph-relation-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+
+  strong {
+    color: var(--color-text);
+    font-size: 12px;
+    line-height: 1.4;
+  }
+}
+
+.graph-relation-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+}
+
+.external-import-help {
+  margin: 0 0 14px;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}
+
+.external-import-search-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.external-paper-results {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 520px;
+  overflow-y: auto;
+}
+
+.external-paper-result {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--gray-150);
+  border-radius: 8px;
+  background: var(--gray-0);
+
+  h3 {
+    margin: 0;
+    color: var(--color-text);
+    font-size: 14px;
+    line-height: 1.45;
+  }
+
+  p {
+    margin: 5px 0 0;
+    color: var(--color-text-secondary);
+    font-size: 12px;
+  }
+}
+
+.external-paper-abstract {
+  display: -webkit-box;
+  max-width: 560px;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-height: 1.5;
+}
+
+.external-paper-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px 8px;
+  margin-top: 8px;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+}
+
+.node-type-label {
+  color: var(--main-color);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.graph-network-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+}
+
+.graph-paper-node {
+  padding: 13px;
+  border: 1px solid var(--gray-150);
+  border-radius: 7px;
+  background: var(--gray-0);
+
+  h3,
+  p {
+    margin: 0;
+  }
+
+  h3 {
+    color: var(--color-text);
+    font-size: 13px;
+    line-height: 1.45;
+  }
+
+  p {
+    margin-top: 5px;
+    color: var(--color-text-secondary);
+    font-size: 12px;
+  }
+}
+
+.graph-paper-heading {
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.graph-node-meta {
+  gap: 12px;
+  margin-top: 8px;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+}
+
+.research-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(260px, 1.6fr) minmax(260px, 1fr) auto;
+  gap: 14px;
+  align-items: end;
+  padding: 16px;
+  border: 1px solid var(--gray-150);
+  border-radius: 8px;
+  background: var(--gray-10);
+}
+
+.toolbar-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+
+  label {
+    color: var(--color-text-secondary);
+    font-size: 12px;
+    font-weight: 500;
+  }
+}
+
+.year-range,
+.toolbar-actions,
+.list-summary,
+.summary-count,
+.paper-title-row,
+.paper-metadata span,
+.pagination-row {
+  display: flex;
+  align-items: center;
+}
+
+.year-range {
+  gap: 7px;
+
+  :deep(.ant-input-number) {
+    width: 110px;
+  }
+
+  span {
+    color: var(--color-text-tertiary);
+    font-size: 12px;
+  }
+}
+
+.toolbar-actions {
+  gap: 8px;
+}
+
+.list-summary {
+  justify-content: space-between;
+  gap: 20px;
+  margin: 24px 0 12px;
+
+  h2 {
+    margin: 0;
+    color: var(--color-text);
+    font-size: 18px;
+    font-weight: 600;
+  }
+
+  p {
+    max-width: 720px;
+    margin: 4px 0 0;
+    color: var(--color-text-secondary);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+}
+
+.summary-count {
+  flex: none;
+  gap: 7px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+
+.papers-loading,
+.page-empty {
+  padding: 48px 20px;
+  border: 1px solid var(--gray-150);
+  border-radius: 8px;
+}
+
+.empty-hint {
+  margin: 8px 0 12px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+
+.paper-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--gray-150);
+  border-radius: 8px;
+  overflow: hidden;
+
+  &.refreshing {
+    opacity: 0.68;
+    pointer-events: none;
+  }
+}
+
+.paper-row {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) 24px;
+  gap: 14px;
+  align-items: start;
+  padding: 16px 18px;
+  background: var(--gray-0);
+  cursor: pointer;
+  outline: none;
+
+  & + & {
+    border-top: 1px solid var(--gray-100);
+  }
+
+  &:hover,
+  &:focus-visible {
+    background: var(--gray-10);
+  }
+
+  &:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--main-200);
+  }
+}
+
+.paper-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 7px;
+  color: var(--main-color);
+  background: var(--main-30);
+}
+
+.paper-main {
+  min-width: 0;
+}
+
+.paper-title-row {
+  justify-content: space-between;
+  gap: 12px;
+
+  h3 {
+    min-width: 0;
+    margin: 0;
+    color: var(--color-text);
+    font-size: 15px;
+    line-height: 1.45;
+    font-weight: 600;
+  }
+}
+
+.metadata-status {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--gray-600);
+  background: var(--gray-100);
+  font-size: 11px;
+  font-weight: 500;
+
+  &.status-verified {
+    color: var(--color-success-700);
+    background: var(--color-success-50);
+  }
+
+  &.status-pending_reindex {
+    color: var(--color-info-700);
+    background: var(--color-info-50);
+  }
+
+  &.status-sync_failed {
+    color: var(--color-error-700);
+    background: var(--color-error-50);
+  }
+}
+
+.paper-authors,
+.paper-abstract {
+  margin: 5px 0 0;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+
+.paper-abstract {
+  display: -webkit-box;
+  overflow: hidden;
+  line-height: 1.55;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.paper-metadata {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px 16px;
+  margin-top: 10px;
+
+  span {
+    gap: 5px;
+    max-width: 360px;
+    overflow: hidden;
+    color: var(--color-text-tertiary);
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.paper-keywords {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 10px;
+
+  span {
+    color: var(--color-text-tertiary);
+    font-size: 11px;
+  }
+}
+
+.paper-open-icon {
+  align-self: center;
+  color: var(--gray-400);
+}
+
+.pagination-row {
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+
+@media (max-width: 1100px) {
+  .trend-chart-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .trend-summary-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .search-options {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .research-toolbar {
+    grid-template-columns: 1fr 1.4fr;
+  }
+
+  .toolbar-actions {
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 700px) {
+  .trends-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .trends-toolbar .database-field {
+    min-width: 0;
+  }
+
+  .search-options {
+    grid-template-columns: 1fr;
+  }
+
+  .graph-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .graph-toolbar .database-field {
+    min-width: 0;
+  }
+
+  .academic-graph-layout {
+    height: 480px;
+  }
+  .header-summary {
+    display: none;
+  }
+
+  .research-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .year-range :deep(.ant-input-number) {
+    width: calc(50% - 14px);
+  }
+
+  .toolbar-actions {
+    justify-content: stretch;
+
+    :deep(.ant-btn) {
+      flex: 1;
+    }
+  }
+
+  .paper-row {
+    grid-template-columns: 32px minmax(0, 1fr);
+    padding: 14px;
+  }
+
+  .search-form-footer,
+  .search-result-summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .run-meta {
+    justify-content: flex-start;
+    max-width: none;
+  }
+
+  .paper-icon {
+    width: 32px;
+    height: 32px;
+  }
+
+  .paper-open-icon {
+    display: none;
+  }
+
+  .paper-title-row,
+  .list-summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+</style>
