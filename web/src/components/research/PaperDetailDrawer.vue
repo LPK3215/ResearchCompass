@@ -15,15 +15,26 @@
     </template>
 
     <template #extra>
-      <a-button
-        v-if="canEdit && detail?.paper"
-        class="lucide-icon-btn"
-        :disabled="detailLoading"
-        @click="openEditModal"
-      >
-        <template #icon><Pencil :size="15" /></template>
-        校正元数据
-      </a-button>
+      <div class="drawer-extra-actions">
+        <a-button
+          v-if="detail?.paper"
+          class="lucide-icon-btn"
+          :disabled="detailLoading"
+          @click="exportSingleBibtex"
+        >
+          <template #icon><Download :size="15" /></template>
+          BibTeX
+        </a-button>
+        <a-button
+          v-if="canEdit && detail?.paper"
+          class="lucide-icon-btn"
+          :disabled="detailLoading"
+          @click="openEditModal"
+        >
+          <template #icon><Pencil :size="15" /></template>
+          校正元数据
+        </a-button>
+      </div>
     </template>
 
     <div v-if="detailLoading" class="drawer-loading">
@@ -94,6 +105,33 @@
       <section v-if="detail.paper.abstract" class="detail-section">
         <h3>摘要</h3>
         <p class="paper-abstract">{{ detail.paper.abstract }}</p>
+      </section>
+
+      <section class="detail-section">
+        <div class="section-heading-row">
+          <h3>我的标签</h3>
+        </div>
+        <div class="tag-manager">
+          <div class="tag-display-row">
+            <a-tag
+              v-for="tag in paperTags"
+              :key="tag"
+              closable
+              @close="removeTag(tag)"
+            >{{ tag }}</a-tag>
+            <span v-if="paperTags.length === 0" class="no-tags-hint">暂无标签</span>
+          </div>
+          <div class="tag-input-row">
+            <a-input
+              v-model:value="newTag"
+              placeholder="输入标签后回车"
+              style="width: 200px"
+              :maxlength="64"
+              @press-enter="addTag"
+            />
+            <a-button size="small" @click="addTag">添加</a-button>
+          </div>
+        </div>
       </section>
 
       <section class="detail-section analysis-section">
@@ -301,6 +339,7 @@ import { message } from 'ant-design-vue'
 import { useRouter } from 'vue-router'
 import {
   CalendarDays,
+  Download,
   ExternalLink,
   FileText,
   Landmark,
@@ -338,6 +377,8 @@ const drawerWidth = 'min(780px, 100vw)'
 const analysisRun = ref(null)
 const analysisStarting = ref(false)
 let analysisTimer = null
+const paperTags = ref([])
+const newTag = ref('')
 
 const editForm = reactive({
   title: '',
@@ -399,6 +440,7 @@ const loadDetail = async () => {
     detail.value = await researchApi.getPaper(props.kbId, props.paperId)
     await loadChunks()
     await loadLatestAnalysis()
+    await loadPaperTags()
   } catch (error) {
     detailError.value = error.message || '无法加载论文详情'
   } finally {
@@ -416,6 +458,37 @@ const loadLatestAnalysis = async () => {
     }
   } catch {
     analysisRun.value = null
+  }
+}
+
+const loadPaperTags = async () => {
+  if (!props.kbId || !props.paperId) return
+  try {
+    const result = await researchApi.listPaperTags(props.kbId, props.paperId)
+    paperTags.value = result.tags || []
+  } catch {
+    paperTags.value = []
+  }
+}
+
+const addTag = async () => {
+  const tag = newTag.value.trim()
+  if (!tag) return
+  try {
+    await researchApi.addPaperTag(props.kbId, props.paperId, tag)
+    if (!paperTags.value.includes(tag)) paperTags.value.push(tag)
+    newTag.value = ''
+  } catch (error) {
+    message.error(error.message || '添加标签失败')
+  }
+}
+
+const removeTag = async (tag) => {
+  try {
+    await researchApi.removePaperTag(props.kbId, props.paperId, tag)
+    paperTags.value = paperTags.value.filter((t) => t !== tag)
+  } catch (error) {
+    message.error(error.message || '删除标签失败')
   }
 }
 
@@ -452,6 +525,21 @@ const openAnalysisReport = () => {
     name: 'ResearchPaperAnalysis',
     params: { kbId: props.kbId, paperId: props.paperId }
   })
+}
+
+const exportSingleBibtex = async () => {
+  if (!props.kbId || !props.paperId) return
+  try {
+    const blob = await researchApi.exportPapersBibtex(props.kbId, [props.paperId])
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${props.paperId}.bib`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    message.error(error.message || 'BibTeX 导出失败')
+  }
 }
 
 const loadChunks = async () => {
@@ -540,6 +628,8 @@ watch(
       detail.value = null
       chunks.value = []
       analysisRun.value = null
+      paperTags.value = []
+      newTag.value = ''
       return
     }
     activeSectionType.value = ''
@@ -564,6 +654,11 @@ onBeforeUnmount(() => {
 .chunks-loading {
   display: flex;
   align-items: center;
+}
+
+.drawer-extra-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .drawer-title-row {
@@ -844,6 +939,28 @@ onBeforeUnmount(() => {
 
 .full-width {
   width: 100%;
+}
+
+.tag-manager {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tag-display-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tag-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.no-tags-hint {
+  color: var(--color-text-tertiary);
+  font-size: 13px;
 }
 
 @media (max-width: 640px) {

@@ -112,7 +112,7 @@ export async function apiRequest(url, options = {}, requiresAuth = true, respons
         error.message = '没有权限执行此操作'
         throw error
       } else if (response.status === 500) {
-        error.message = '服务器内部错误，请使用 docker logs api-dev 查看详细日志'
+        error.message = '服务器内部错误，请稍后重试或联系管理员'
         throw error
       }
 

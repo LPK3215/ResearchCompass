@@ -22,7 +22,7 @@ async def _create_restricted_database(test_client, admin_headers):
         json={
             "database_name": f"pytest_external_{uuid.uuid4().hex[:8]}",
             "description": "external API test",
-            "embedding_model_spec": "siliconflow-cn:Pro/BAAI/bge-m3",
+            "embedding_model_spec": "siliconflow-cn:BAAI/bge-m3",
             "kb_type": "milvus",
             "additional_params": {},
             "share_config": {"access_level": "user"},

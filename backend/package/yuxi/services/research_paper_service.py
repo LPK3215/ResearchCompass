@@ -67,6 +67,8 @@ async def list_papers_view(
     year_to: int | None,
     page: int,
     page_size: int,
+    sort_by: str = "year",
+    sort_order: str = "desc",
 ) -> dict[str, Any]:
     await _ensure_access(current_user, kb_id)
     offset = (page - 1) * page_size
@@ -77,6 +79,8 @@ async def list_papers_view(
         year_to=year_to,
         offset=offset,
         limit=page_size,
+        sort_by=sort_by,
+        sort_order=sort_order,
     )
     return {
         "items": [_serialize_paper(paper) for paper in papers],
@@ -385,3 +389,106 @@ async def recover_pending_paper_reindexes() -> int:
         )
         recovered += int(created)
     return recovered
+
+
+def _escape_bibtex(value: str) -> str:
+    return str(value or "").replace("&", r"\&").replace("_", r"\_").replace("%", r"\%")
+
+
+def _bibtex_key(paper: Any, index: int) -> str:
+    first_author = (paper.authors or ["anon"])[0] if paper.authors else "anon"
+    surname = first_author.split()[-1] if first_author else "anon"
+    return f"{surname}{paper.publication_year or 'nd'}{index}"
+
+
+def _format_bibtex_authors(authors: list[str]) -> str:
+    if not authors:
+        return ""
+    return " and ".join(authors)
+
+
+def _paper_to_bibtex(paper: Any, index: int) -> str:
+    key = _bibtex_key(paper, index)
+    lines = [f"@article{{{key},"]
+    lines.append(f"  title = {{{_escape_bibtex(paper.title)}}},")
+    authors = _format_bibtex_authors(paper.authors or [])
+    if authors:
+        lines.append(f"  author = {{{_escape_bibtex(authors)}}},")
+    if paper.publication_year is not None:
+        lines.append(f"  year = {{{int(paper.publication_year)}}},")
+    if paper.venue:
+        lines.append(f"  journal = {{{_escape_bibtex(paper.venue)}}},")
+    if paper.doi:
+        lines.append(f"  doi = {{{_escape_bibtex(paper.doi)}}},")
+    if paper.abstract:
+        lines.append(f"  abstract = {{{_escape_bibtex(paper.abstract)}}},")
+    keywords = paper.keywords or []
+    if keywords:
+        lines.append(f"  keywords = {{{_escape_bibtex(', '.join(keywords))}}},")
+    lines.append("}")
+    return "\n".join(lines)
+
+
+async def export_papers_bibtex(
+    *, kb_id: str, current_user: User, paper_ids: list[str] | None = None
+) -> str:
+    await _ensure_access(current_user, kb_id)
+    repo = AcademicPaperRepository()
+    if paper_ids:
+        papers = []
+        for pid in paper_ids:
+            paper = await repo.get_by_paper_id(kb_id=kb_id, paper_id=pid)
+            if paper is not None:
+                papers.append(paper)
+    else:
+        papers = []
+        offset = 0
+        while True:
+            batch, total = await repo.list_by_kb_id(kb_id=kb_id, offset=offset, limit=200)
+            papers.extend(batch)
+            if len(papers) >= total or not batch:
+                break
+            offset += len(batch)
+    return "\n\n".join(_paper_to_bibtex(paper, i) for i, paper in enumerate(papers, start=1))
+
+
+async def list_user_tags_view(*, kb_id: str, current_user: User) -> dict[str, Any]:
+    await _ensure_access(current_user, kb_id)
+    tags = await AcademicPaperRepository().list_tags(kb_id=kb_id, uid=str(current_user.uid))
+    return {"tags": tags}
+
+
+async def list_paper_tags_view(*, kb_id: str, paper_id: str, current_user: User) -> dict[str, Any]:
+    await _ensure_access(current_user, kb_id)
+    tags = await AcademicPaperRepository().list_paper_tags(
+        kb_id=kb_id, paper_id=paper_id, uid=str(current_user.uid)
+    )
+    return {"paper_id": paper_id, "tags": tags}
+
+
+async def add_paper_tag_view(
+    *, kb_id: str, paper_id: str, tag: str, current_user: User
+) -> dict[str, Any]:
+    await _ensure_access(current_user, kb_id)
+    normalized = tag.strip()
+    if not normalized:
+        raise HTTPException(status_code=422, detail="标签不能为空")
+    if len(normalized) > 64:
+        raise HTTPException(status_code=422, detail="标签长度不能超过 64 个字符")
+    paper = await AcademicPaperRepository().get_by_paper_id(kb_id=kb_id, paper_id=paper_id)
+    if paper is None:
+        raise HTTPException(status_code=404, detail="论文不存在")
+    await AcademicPaperRepository().add_tag(
+        kb_id=kb_id, paper_id=paper_id, uid=str(current_user.uid), tag=normalized
+    )
+    return {"paper_id": paper_id, "tag": normalized}
+
+
+async def remove_paper_tag_view(
+    *, kb_id: str, paper_id: str, tag: str, current_user: User
+) -> dict[str, Any]:
+    await _ensure_access(current_user, kb_id)
+    await AcademicPaperRepository().remove_tag(
+        kb_id=kb_id, paper_id=paper_id, uid=str(current_user.uid), tag=tag
+    )
+    return {"paper_id": paper_id, "tag": tag, "removed": True}

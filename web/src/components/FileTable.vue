@@ -811,8 +811,6 @@ const handleDownloadFile = async (record) => {
     return
   }
 
-  console.log('开始下载文件:', { kbId, fileId: record.file_id, record })
-
   try {
     const response = await documentApi.downloadDocument(kbId, record.file_id)
 

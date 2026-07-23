@@ -161,7 +161,35 @@ export const researchApi = {
     apiRequest(
       `/api/research/databases/${encodeURIComponent(kbId)}/user-studies/${encodeURIComponent(studyId)}/export`,
       { method: 'GET' }, true, 'blob'
+    ),
+
+  exportPapersBibtex: (kbId, paperIds = null) => {
+    const query = buildQuery(paperIds ? { paper_ids: paperIds.join(',') } : {})
+    return apiRequest(
+      `/api/research/databases/${encodeURIComponent(kbId)}/papers/export${query ? `?${query}` : ''}`,
+      { method: 'GET' }, true, 'blob'
     )
+  },
+
+  listUserTags: (kbId) =>
+    apiGet(`/api/research/databases/${encodeURIComponent(kbId)}/papers/tags`),
+
+  listPaperTags: (kbId, paperId) =>
+    apiGet(`/api/research/databases/${encodeURIComponent(kbId)}/papers/${encodeURIComponent(paperId)}/tags`),
+
+  addPaperTag: (kbId, paperId, tag) =>
+    apiRequest(
+      `/api/research/databases/${encodeURIComponent(kbId)}/papers/${encodeURIComponent(paperId)}/tags`,
+      { method: 'POST', body: JSON.stringify({ tag }) }
+    ),
+
+  removePaperTag: (kbId, paperId, tag) => {
+    const query = buildQuery({ tag })
+    return apiRequest(
+      `/api/research/databases/${encodeURIComponent(kbId)}/papers/${encodeURIComponent(paperId)}/tags?${query}`,
+      { method: 'DELETE' }
+    )
+  }
 }
 
 export const publicUserStudyApi = {

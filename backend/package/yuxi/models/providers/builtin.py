@@ -27,9 +27,9 @@ BUILTIN_PROVIDERS: list[dict[str, Any]] = [
     {
         "provider_id": "deepseek",
         "display_name": "DeepSeek",
-        "base_url": "https://api.deepseek.com",
+        "base_url": "https://api.deepseek.com/v1",
         "api_key_env": "DEEPSEEK_API_KEY",
-        "models_endpoint": "https://api.deepseek.com/models",
+        "models_endpoint": "https://api.deepseek.com/v1/models",
     },
     {
         "provider_id": "alibaba-cn",
@@ -191,13 +191,6 @@ BUILTIN_PROVIDERS: list[dict[str, Any]] = [
             {"id": "Pro/MiniMaxAI/MiniMax-M2.5", "type": "chat", "display_name": "Pro/MiniMaxAI/MiniMax-M2.5"},
             {"id": "zai-org/GLM-5.2", "type": "chat", "display_name": "zai-org/GLM-5.2"},
             {
-                "id": "Pro/BAAI/bge-m3",
-                "type": "embedding",
-                "display_name": "Pro/BAAI/bge-m3",
-                "dimension": 1024,
-                "batch_size": 40,
-            },
-            {
                 "id": "BAAI/bge-m3",
                 "type": "embedding",
                 "display_name": "BAAI/bge-m3",
@@ -210,11 +203,6 @@ BUILTIN_PROVIDERS: list[dict[str, Any]] = [
                 "display_name": "Qwen/Qwen3-Embedding-0.6B",
                 "dimension": 1024,
                 "batch_size": 40,
-            },
-            {
-                "id": "Pro/BAAI/bge-reranker-v2-m3",
-                "type": "rerank",
-                "display_name": "Pro/BAAI/bge-reranker-v2-m3",
             },
             {
                 "id": "BAAI/bge-reranker-v2-m3",

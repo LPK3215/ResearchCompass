@@ -563,9 +563,27 @@ class AcademicGraphRepository:
                 AcademicGraphPaper,
                 AcademicAuthor,
                 AcademicTopic,
+                AcademicCitation,
+                AcademicGraphPaperAuthor,
+                AcademicGraphPaperTopic,
             ):
                 if hasattr(model, "kb_id"):
                     await session.execute(delete(model).where(model.kb_id == kb_id))
+            # 删除关联表的记录（junction tables）
+            await session.execute(
+                delete(AcademicGraphPaperAuthor).where(
+                    AcademicGraphPaperAuthor.graph_paper_id.in_(
+                        select(AcademicGraphPaper.graph_paper_id).where(AcademicGraphPaper.kb_id == kb_id)
+                    )
+                )
+            )
+            await session.execute(
+                delete(AcademicGraphPaperTopic).where(
+                    AcademicGraphPaperTopic.graph_paper_id.in_(
+                        select(AcademicGraphPaper.graph_paper_id).where(AcademicGraphPaper.kb_id == kb_id)
+                    )
+                )
+            )
 
 
 __all__ = ["AcademicGraphRepository"]

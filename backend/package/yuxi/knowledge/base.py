@@ -1027,7 +1027,19 @@ class KnowledgeBase(ABC):
             ]
             await asyncio.gather(*cleanup_tasks)
 
-            # 3. 删除数据库记录
+            # 3. 清理学术引用图谱数据（PostgreSQL + Neo4j）
+            try:
+                from yuxi.knowledge.graphs.academic_graph_service import AcademicGraphService
+                from yuxi.repositories.academic_graph_repository import AcademicGraphRepository
+
+                # 删除 PostgreSQL 中的图谱数据
+                await AcademicGraphRepository().clear_kb(kb_id)
+                # 删除 Neo4j 投影
+                await AcademicGraphService().delete_kb_projection(kb_id)
+            except Exception as e:
+                logger.error(f"Failed to clean up academic graph for {kb_id}: {e}")
+
+            # 4. 删除数据库记录
             del self.databases_meta[kb_id]
             await file_repo.delete_by_kb_id(kb_id)
             kb_repo = KnowledgeBaseRepository()

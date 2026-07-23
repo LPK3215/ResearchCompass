@@ -112,7 +112,6 @@ const loadAllStats = async () => {
       agents: response.agents
     }
 
-    console.log('Dashboard 数据加载完成:', response)
     message.success('数据加载成功')
   } catch (error) {
     console.error('加载统计数据失败:', error)
@@ -140,7 +139,7 @@ const handleOpenFeedback = () => {
 // 清理函数 - 清理所有子组件的图表实例
 const cleanupCharts = () => {
   if (userStatsRef.value?.cleanup) userStatsRef.value.cleanup()
-  if (toolStatsRef.value?.cleanup) userStatsRef.value.cleanup()
+  if (toolStatsRef.value?.cleanup) toolStatsRef.value.cleanup()
   if (knowledgeStatsRef.value?.cleanup) knowledgeStatsRef.value.cleanup()
   if (agentStatsRef.value?.cleanup) agentStatsRef.value.cleanup()
   if (callStatsRef.value?.cleanup) callStatsRef.value.cleanup()

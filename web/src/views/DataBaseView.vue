@@ -429,7 +429,6 @@ const formatCreatedTime = (createdAt) => {
 
 // 处理知识库类型改变
 const handleKbTypeChange = (type) => {
-  console.log('知识库类型改变:', type)
   resetNewDatabase()
   newDatabase.kb_type = type
   resetCreateParamValues()

@@ -157,7 +157,7 @@ async def _paper_context(kb_id: str, paper_id: str) -> tuple[Any, str]:
     paper = await AcademicPaperRepository().get_by_paper_id(kb_id=kb_id, paper_id=paper_id)
     if paper is None:
         raise AcademicPaperAnalysisError("paper_not_found", "论文不存在")
-    chunks = await KnowledgeChunkRepository().list_academic_by_file_id(
+    chunks, _ = await KnowledgeChunkRepository().list_academic_by_file_id(
         file_id=paper.file_id, offset=0, limit=500
     )
     text = "\n\n".join(
@@ -165,7 +165,7 @@ async def _paper_context(kb_id: str, paper_id: str) -> tuple[Any, str]:
             f"[{chunk.chunk_metadata.get('section_title') or chunk.chunk_metadata.get('section_type') or '内容'}]"
             f"\n{chunk.content}"
         )
-        for chunk in chunks[0]
+        for chunk in chunks
     )
     if not text.strip():
         raise AcademicPaperAnalysisError("paper_content_missing", "论文没有可分析的学术分块")

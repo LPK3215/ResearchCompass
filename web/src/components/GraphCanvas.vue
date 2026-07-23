@@ -383,11 +383,6 @@ function setGraphData() {
   if (!graphInstance || !isMounted) return
   const data = formatData()
 
-  console.log('开始设置图谱数据:', {
-    nodes: data.nodes.length,
-    edges: data.edges.length
-  })
-
   graphInstance.setData(data)
   graphInstance.render()
 
@@ -398,7 +393,6 @@ function setGraphData() {
     try {
       if (graphInstance && graphInstance.layout) {
         graphInstance.layout()
-        console.log('触发布局重新计算')
       }
     } catch (error) {
       console.warn('布局重新计算失败:', error)
@@ -410,7 +404,6 @@ function setGraphData() {
       if (!isMounted || !graphInstance) return
       applyHighlightKeywords()
       emit('data-rendered')
-      console.log('图谱渲染完成，布局已稳定')
     }, 1500)
   }, 10) // 等待 10ms 确保布局完成
 }

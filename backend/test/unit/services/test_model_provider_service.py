@@ -166,11 +166,11 @@ def test_builtin_siliconflow_provider_includes_default_runnable_models():
     assert provider["capabilities"] == ["chat", "embedding", "rerank"]
     assert provider["embedding_base_url"] == "https://api.siliconflow.cn/v1/embeddings"
     assert provider["rerank_base_url"] == "https://api.siliconflow.cn/v1/rerank"
-    assert models["Pro/BAAI/bge-m3"]["type"] == "embedding"
-    assert models["Pro/BAAI/bge-m3"]["dimension"] == 1024
-    assert "base_url_override" not in models["Pro/BAAI/bge-m3"]
-    assert models["Pro/BAAI/bge-reranker-v2-m3"]["type"] == "rerank"
-    assert "base_url_override" not in models["Pro/BAAI/bge-reranker-v2-m3"]
+    assert models["BAAI/bge-m3"]["type"] == "embedding"
+    assert models["BAAI/bge-m3"]["dimension"] == 1024
+    assert "base_url_override" not in models["BAAI/bge-m3"]
+    assert models["BAAI/bge-reranker-v2-m3"]["type"] == "rerank"
+    assert "base_url_override" not in models["BAAI/bge-reranker-v2-m3"]
 
 
 def test_builtin_dashscope_cn_provider_includes_default_embedding_and_rerank_models():

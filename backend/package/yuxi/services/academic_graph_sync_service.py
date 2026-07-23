@@ -322,7 +322,8 @@ async def _run_sync(
         )
         await repo.update_sync_run(run_id, counts)
         await context.set_progress(100, "学术引用图谱同步完成")
-        await context.set_result({"run_id": run_id, **counts})
+        result = {k: v for k, v in counts.items() if k not in ("completed_at",)}
+        await context.set_result({"run_id": run_id, **result})
         return {"run_id": run_id, **counts}
     except (Exception, asyncio.CancelledError) as exc:
         error_type = getattr(exc, "error_type", "academic_graph_sync_failed")

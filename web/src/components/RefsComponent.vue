@@ -24,7 +24,7 @@
         />
       </span>
       <!-- 模型名称 -->
-      <span v-if="showKey('model') && getModelName(msg)" class="item" @click="console.log(msg)">
+      <span v-if="showKey('model') && getModelName(msg)" class="item">
         <Bot size="12" /> {{ getModelName(msg) }}
       </span>
       <!-- 复制 -->

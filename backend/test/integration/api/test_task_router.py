@@ -66,7 +66,7 @@ async def test_enqueue_document_creates_task(
         json={
             "database_name": f"pytest_task_router_{uuid.uuid4().hex[:8]}",
             "description": "Task router integration test",
-            "embedding_model_spec": "siliconflow-cn:Pro/BAAI/bge-m3",
+            "embedding_model_spec": "siliconflow-cn:BAAI/bge-m3",
             "kb_type": "milvus",
             "additional_params": {},
         },

@@ -3,9 +3,10 @@ from __future__ import annotations
 from typing import Any
 
 from sqlalchemy import String, cast, func, or_, select
+from sqlalchemy.dialects.postgresql import insert
 
 from yuxi.storage.postgres.manager import pg_manager
-from yuxi.storage.postgres.models_knowledge import AcademicPaper
+from yuxi.storage.postgres.models_knowledge import AcademicPaper, AcademicPaperTag
 
 
 class AcademicPaperRepository:
@@ -298,6 +299,13 @@ class AcademicPaperRepository:
             paper.external_ids = external_ids
             paper.citation_count = citation_count
 
+    _sort_columns = {
+        "year": AcademicPaper.publication_year,
+        "citation_count": AcademicPaper.citation_count,
+        "title": func.lower(AcademicPaper.title),
+        "created_at": AcademicPaper.created_at,
+    }
+
     async def list_by_kb_id(
         self,
         *,
@@ -307,6 +315,8 @@ class AcademicPaperRepository:
         year_to: int | None = None,
         offset: int = 0,
         limit: int = 50,
+        sort_by: str = "year",
+        sort_order: str = "desc",
     ) -> tuple[list[AcademicPaper], int]:
         filters = [AcademicPaper.kb_id == kb_id]
         normalized_query = (query or "").strip()
@@ -325,6 +335,8 @@ class AcademicPaperRepository:
         if year_to is not None:
             filters.append(AcademicPaper.publication_year <= year_to)
 
+        sort_column = self._sort_columns.get(sort_by, AcademicPaper.publication_year)
+        order_expr = sort_column.asc() if sort_order == "asc" else sort_column.desc()
         normalized_offset = max(int(offset or 0), 0)
         normalized_limit = min(max(int(limit or 50), 1), 200)
         async with pg_manager.get_async_session_context() as session:
@@ -332,7 +344,7 @@ class AcademicPaperRepository:
             result = await session.execute(
                 select(AcademicPaper)
                 .where(*filters)
-                .order_by(AcademicPaper.publication_year.desc().nullslast(), AcademicPaper.id.desc())
+                .order_by(order_expr.nullslast(), AcademicPaper.id.desc())
                 .offset(normalized_offset)
                 .limit(normalized_limit)
             )
@@ -376,3 +388,72 @@ class AcademicPaperRepository:
                 ]
                 rows.append((year, normalized_keywords, citation_count))
             return rows, total
+
+    async def list_tags(self, *, kb_id: str, uid: str) -> list[dict[str, Any]]:
+        async with pg_manager.get_async_session_context() as session:
+            result = await session.execute(
+                select(AcademicPaperTag.tag, func.count().label("count"))
+                .where(AcademicPaperTag.kb_id == kb_id, AcademicPaperTag.uid == uid)
+                .group_by(AcademicPaperTag.tag)
+                .order_by(func.count().desc())
+            )
+            return [{"tag": row.tag, "count": int(row.count)} for row in result.all()]
+
+    async def list_paper_tags(self, *, kb_id: str, paper_id: str, uid: str) -> list[str]:
+        async with pg_manager.get_async_session_context() as session:
+            result = await session.execute(
+                select(AcademicPaperTag.tag).where(
+                    AcademicPaperTag.kb_id == kb_id,
+                    AcademicPaperTag.paper_id == paper_id,
+                    AcademicPaperTag.uid == uid,
+                )
+            )
+            return list(result.scalars().all())
+
+    async def list_paper_tag_map(self, *, kb_id: str, paper_ids: list[str], uid: str) -> dict[str, list[str]]:
+        if not paper_ids:
+            return {}
+        async with pg_manager.get_async_session_context() as session:
+            result = await session.execute(
+                select(AcademicPaperTag.paper_id, AcademicPaperTag.tag).where(
+                    AcademicPaperTag.kb_id == kb_id,
+                    AcademicPaperTag.paper_id.in_(paper_ids),
+                    AcademicPaperTag.uid == uid,
+                )
+            )
+            tag_map: dict[str, list[str]] = {pid: [] for pid in paper_ids}
+            for paper_id, tag in result.all():
+                tag_map.setdefault(str(paper_id), []).append(str(tag))
+            return tag_map
+
+    async def add_tag(self, *, kb_id: str, paper_id: str, uid: str, tag: str) -> None:
+        normalized = tag.strip()
+        if not normalized or len(normalized) > 64:
+            raise ValueError("标签不能为空且长度不能超过 64 个字符")
+        async with pg_manager.get_async_session_context() as session:
+            stmt = insert(AcademicPaperTag).values(
+                kb_id=kb_id, paper_id=paper_id, uid=uid, tag=normalized
+            )
+            await session.execute(stmt.on_conflict_do_nothing(constraint="uq_academic_paper_tags_identity"))
+
+    async def remove_tag(self, *, kb_id: str, paper_id: str, uid: str, tag: str) -> None:
+        async with pg_manager.get_async_session_context() as session:
+            await session.execute(
+                AcademicPaperTag.__table__.delete().where(
+                    AcademicPaperTag.kb_id == kb_id,
+                    AcademicPaperTag.paper_id == paper_id,
+                    AcademicPaperTag.uid == uid,
+                    AcademicPaperTag.tag == tag,
+                )
+            )
+
+    async def list_paper_ids_by_tag(self, *, kb_id: str, uid: str, tag: str) -> list[str]:
+        async with pg_manager.get_async_session_context() as session:
+            result = await session.execute(
+                select(AcademicPaperTag.paper_id).where(
+                    AcademicPaperTag.kb_id == kb_id,
+                    AcademicPaperTag.uid == uid,
+                    AcademicPaperTag.tag == tag,
+                )
+            )
+            return list(result.scalars().all())

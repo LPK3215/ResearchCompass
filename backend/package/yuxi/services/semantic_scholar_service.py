@@ -82,15 +82,24 @@ class SemanticScholarClient:
         self.timeout = httpx.Timeout(45.0, connect=10.0)
 
     async def _get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout, headers=self.headers) as client:
-                response = await client.get(f"{self.base_url}{path}", params=params)
-        except httpx.TimeoutException as exc:
-            raise SemanticScholarError("semantic_scholar_timeout", "Semantic Scholar 请求超时") from exc
-        except httpx.HTTPError as exc:
-            raise SemanticScholarError("semantic_scholar_network", "Semantic Scholar 网络请求失败") from exc
-        if response.status_code == 429:
-            raise SemanticScholarError("semantic_scholar_rate_limited", "Semantic Scholar API 触发限流")
+        max_retries = 3
+        backoff_seconds = [10, 30, 60]
+        for attempt in range(max_retries + 1):
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout, headers=self.headers) as client:
+                    response = await client.get(f"{self.base_url}{path}", params=params)
+            except httpx.TimeoutException as exc:
+                raise SemanticScholarError("semantic_scholar_timeout", "Semantic Scholar 请求超时") from exc
+            except httpx.HTTPError as exc:
+                raise SemanticScholarError("semantic_scholar_network", "Semantic Scholar 网络请求失败") from exc
+            if response.status_code == 429 and attempt < max_retries:
+                retry_after = float(response.headers.get("Retry-After", 0))
+                wait = retry_after if retry_after > 0 else backoff_seconds[attempt]
+                await asyncio.sleep(wait)
+                continue
+            if response.status_code == 429:
+                raise SemanticScholarError("semantic_scholar_rate_limited", "Semantic Scholar API 触发限流，已重试 3 次仍失败")
+            break
         if response.status_code == 404:
             raise SemanticScholarError("paper_not_found", "Semantic Scholar 未找到论文")
         if response.status_code >= 400:
@@ -116,11 +125,19 @@ class SemanticScholarClient:
             f"ARXIV:{external_ids['ArXiv']}" if external_ids.get("ArXiv") else None,
             f"CorpusId:{external_ids['CorpusId']}" if external_ids.get("CorpusId") else None,
         ]
-        identifier = next((str(item).strip() for item in identifiers if item and str(item).strip()), None)
-        if identifier:
-            paper = await self._get(f"/paper/{quote(identifier, safe=':')}", {"fields": SEMANTIC_SCHOLAR_FIELDS})
-            self._validate_match(local_paper, paper)
-            return paper
+        for identifier in identifiers:
+            identifier = str(identifier).strip() if identifier else ""
+            if not identifier:
+                continue
+            try:
+                paper = await self._get(
+                    f"/paper/{quote(identifier, safe=':')}", {"fields": SEMANTIC_SCHOLAR_FIELDS}
+                )
+                self._validate_match(local_paper, paper)
+                return paper
+            except SemanticScholarError as exc:
+                if exc.error_type != "paper_not_found":
+                    raise
 
         payload = await self._get(
             "/paper/search",
@@ -270,7 +287,8 @@ class SemanticScholarClient:
         return await self._list_edges(paper_id, "references", "citedPaper", limit)
 
     async def _list_edges(self, paper_id: str, endpoint: str, paper_field: str, limit: int) -> list[dict[str, Any]]:
-        remaining = min(max(int(limit), 0), 5000)
+        capped_limit = min(max(int(limit), 0), 5000)
+        remaining = capped_limit
         offset = 0
         edges: list[dict[str, Any]] = []
         fields = f"contexts,intents,isInfluential,{SEMANTIC_SCHOLAR_EDGE_PAPER_FIELDS.format(paper_field=paper_field)}"
@@ -285,8 +303,8 @@ class SemanticScholarClient:
             if len(page) < page_size or payload.get("next") is None:
                 break
             offset = int(payload["next"])
-            remaining = limit - len(edges)
-        return edges[:limit]
+            remaining = capped_limit - len(edges)
+        return edges[:capped_limit]
 
     @staticmethod
     def _validate_edges(payload: dict[str, Any]) -> list[dict[str, Any]]:

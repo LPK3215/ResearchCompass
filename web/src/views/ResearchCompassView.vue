@@ -482,9 +482,22 @@
             />
           </div>
         </div>
+        <div class="toolbar-field sort-field">
+          <label>排序</label>
+          <a-select
+            v-model:value="sortValue"
+            :options="sortOptions"
+            style="width: 140px"
+            @change="applyFilters"
+          />
+        </div>
         <div class="toolbar-actions">
           <a-button type="primary" :disabled="!selectedKbId" @click="applyFilters">筛选</a-button>
           <a-button :disabled="!hasFilters" @click="resetFilters">重置</a-button>
+          <a-button :disabled="!selectedKbId || papers.length === 0" :loading="exportLoading" @click="exportAllBibtex">
+            <template #icon><Download :size="15" /></template>
+            导出 BibTeX
+          </a-button>
         </div>
       </section>
 
@@ -766,6 +779,7 @@ import {
   CalendarDays,
   ChevronRight,
   Database,
+  Download,
   FileText,
   Landmark,
   Link,
@@ -813,6 +827,7 @@ const evidencePdfDocument = shallowRef(null)
 const evidencePdfPreviewRef = ref(null)
 const evidencePdfCanvasRef = ref(null)
 const evidencePdfAspectRatio = ref('')
+const exportLoading = ref(false)
 const externalImportOpen = ref(false)
 const externalImportQuery = ref('')
 const externalPapers = ref([])
@@ -864,9 +879,26 @@ const searchFilters = reactive({
 const filters = reactive({
   query: '',
   yearFrom: null,
-  yearTo: null
+  yearTo: null,
+  sortBy: 'year',
+  sortOrder: 'desc'
 })
 
+const sortOptions = [
+  { value: 'year-desc', label: '年份最新' },
+  { value: 'year-asc', label: '年份最早' },
+  { value: 'citation_count-desc', label: '被引最多' },
+  { value: 'title-asc', label: '标题 A-Z' },
+  { value: 'created_at-desc', label: '最近添加' }
+]
+const sortValue = computed({
+  get: () => `${filters.sortBy}-${filters.sortOrder}`,
+  set: (val) => {
+    const [by, order] = val.split('-')
+    filters.sortBy = by
+    filters.sortOrder = order
+  }
+})
 const selectedDatabase = computed(() =>
   databases.value.find((database) => database.kb_id === selectedKbId.value)
 )
@@ -1025,6 +1057,8 @@ const loadPapers = async () => {
       query: filters.query.trim(),
       year_from: filters.yearFrom,
       year_to: filters.yearTo,
+      sort_by: filters.sortBy,
+      sort_order: filters.sortOrder,
       page: page.value,
       page_size: pageSize.value
     })
@@ -1399,6 +1433,24 @@ const loadGraphRelations = async (graphPaperId) => {
   }
 }
 
+const exportAllBibtex = async () => {
+  if (!selectedKbId.value || papers.value.length === 0) return
+  exportLoading.value = true
+  try {
+    const blob = await researchApi.exportPapersBibtex(selectedKbId.value)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `papers_${selectedKbId.value}.bib`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    message.error(error.message || 'BibTeX 导出失败')
+  } finally {
+    exportLoading.value = false
+  }
+}
+
 const handleDatabaseChange = () => {
   page.value = 1
   closePaper()
@@ -1424,7 +1476,7 @@ const applyFilters = () => {
 }
 
 const resetFilters = () => {
-  Object.assign(filters, { query: '', yearFrom: null, yearTo: null })
+  Object.assign(filters, { query: '', yearFrom: null, yearTo: null, sortBy: 'year', sortOrder: 'desc' })
   page.value = 1
   loadPapers()
 }

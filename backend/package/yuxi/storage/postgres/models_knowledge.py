@@ -547,6 +547,23 @@ class AcademicMetadataConflict(Base):
     created_at = Column(DateTime(timezone=True), default=utc_now_naive)
 
 
+class AcademicPaperTag(Base):
+    """用户为论文添加的自定义标签。"""
+
+    __tablename__ = "academic_paper_tags"
+    __table_args__ = (
+        UniqueConstraint("kb_id", "paper_id", "uid", "tag", name="uq_academic_paper_tags_identity"),
+        Index("ix_academic_paper_tags_kb_tag", "kb_id", "tag"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    kb_id = Column(String(80), ForeignKey("knowledge_bases.kb_id", ondelete="CASCADE"), nullable=False, index=True)
+    paper_id = Column(String(64), nullable=False, index=True)
+    uid = Column(String(64), nullable=False, index=True)
+    tag = Column(String(64), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
+
+
 class KnowledgeGraphEntity(Base):
     """知识图谱实体"""
 

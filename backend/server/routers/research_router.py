@@ -9,10 +9,15 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from server.utils.auth_middleware import get_required_user
 from yuxi.services.research_paper_service import (
+    add_paper_tag_view,
+    export_papers_bibtex,
     get_paper_evidence_view,
     get_paper_view,
     list_paper_chunks_view,
+    list_paper_tags_view,
     list_papers_view,
+    list_user_tags_view,
+    remove_paper_tag_view,
     update_paper_view,
 )
 from yuxi.services.research_search_service import ResearchSearchError, get_search_run, search_papers
@@ -47,6 +52,18 @@ from yuxi.services.academic_paper_analysis_evaluation_service import (
 from yuxi.storage.postgres.models_business import User
 
 research = APIRouter(prefix="/research", tags=["research"])
+
+
+class PaperTagRequest(BaseModel):
+    tag: str = Field(..., min_length=1, max_length=64)
+
+    @field_validator("tag")
+    @classmethod
+    def normalize_tag(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("标签不能为空")
+        return normalized
 
 
 class PaperMetadataUpdate(BaseModel):
@@ -276,11 +293,11 @@ async def list_papers(
     year_to: int | None = Query(default=None, ge=1500),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
+    sort_by: str = Query(default="year", pattern=r"^(year|citation_count|title|created_at)$"),
+    sort_order: str = Query(default="desc", pattern=r"^(asc|desc)$"),
     current_user: User = Depends(get_required_user),
 ):
     if year_from is not None and year_to is not None and year_from > year_to:
-        from fastapi import HTTPException
-
         raise HTTPException(status_code=422, detail="year_from 不能大于 year_to")
     return await list_papers_view(
         kb_id=kb_id,
@@ -290,6 +307,8 @@ async def list_papers(
         year_to=year_to,
         page=page,
         page_size=page_size,
+        sort_by=sort_by,
+        sort_order=sort_order,
     )
 
 
@@ -556,6 +575,26 @@ async def academic_graph_relations(
         raise _graph_http_error(exc) from exc
 
 
+@research.get("/databases/{kb_id}/papers/export")
+async def export_papers(
+    kb_id: str,
+    paper_ids: str | None = Query(default=None, max_length=4000),
+    current_user: User = Depends(get_required_user),
+):
+    ids = [pid.strip() for pid in paper_ids.split(",") if pid.strip()] if paper_ids else None
+    content = await export_papers_bibtex(kb_id=kb_id, current_user=current_user, paper_ids=ids)
+    return Response(
+        content=content.encode("utf-8-sig"),
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="papers_{kb_id}.bib"'},
+    )
+
+
+@research.get("/databases/{kb_id}/papers/tags")
+async def list_user_tags(kb_id: str, current_user: User = Depends(get_required_user)):
+    return await list_user_tags_view(kb_id=kb_id, current_user=current_user)
+
+
 @research.get("/databases/{kb_id}/papers/{paper_id}")
 async def get_paper(kb_id: str, paper_id: str, current_user: User = Depends(get_required_user)):
     return await get_paper_view(kb_id=kb_id, paper_id=paper_id, current_user=current_user)
@@ -710,6 +749,35 @@ async def submit_paper_analysis_blind_score(
         )
     except AcademicPaperAnalysisEvaluationError as exc:
         raise _analysis_evaluation_http_error(exc) from exc
+
+
+@research.get("/databases/{kb_id}/papers/{paper_id}/tags")
+async def list_paper_tags(kb_id: str, paper_id: str, current_user: User = Depends(get_required_user)):
+    return await list_paper_tags_view(kb_id=kb_id, paper_id=paper_id, current_user=current_user)
+
+
+@research.post("/databases/{kb_id}/papers/{paper_id}/tags")
+async def add_paper_tag(
+    kb_id: str,
+    paper_id: str,
+    payload: PaperTagRequest,
+    current_user: User = Depends(get_required_user),
+):
+    return await add_paper_tag_view(
+        kb_id=kb_id, paper_id=paper_id, tag=payload.tag, current_user=current_user
+    )
+
+
+@research.delete("/databases/{kb_id}/papers/{paper_id}/tags")
+async def remove_paper_tag(
+    kb_id: str,
+    paper_id: str,
+    tag: str = Query(..., min_length=1, max_length=64),
+    current_user: User = Depends(get_required_user),
+):
+    return await remove_paper_tag_view(
+        kb_id=kb_id, paper_id=paper_id, tag=tag, current_user=current_user
+    )
 
 
 @research.patch("/databases/{kb_id}/papers/{paper_id}")

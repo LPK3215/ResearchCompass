@@ -92,7 +92,7 @@ async def _create_test_database(test_client, admin_headers, share_config=None):
         json={
             "database_name": f"pytest_acl_{uuid.uuid4().hex[:8]}",
             "description": "Knowledge permission test",
-            "embedding_model_spec": "siliconflow-cn:Pro/BAAI/bge-m3",
+            "embedding_model_spec": "siliconflow-cn:BAAI/bge-m3",
             "kb_type": "milvus",
             "additional_params": {},
             "share_config": share_config,
@@ -149,7 +149,7 @@ async def test_create_database_with_chunk_preset(test_client, admin_headers):
     payload = {
         "database_name": db_name,
         "description": "Chunk preset create test",
-        "embedding_model_spec": "siliconflow-cn:Pro/BAAI/bge-m3",
+        "embedding_model_spec": "siliconflow-cn:BAAI/bge-m3",
         "kb_type": "milvus",
         "additional_params": {"chunk_preset_id": "book"},
     }
@@ -217,7 +217,7 @@ async def test_knowledge_routes_enforce_permissions(test_client, standard_user, 
         json={
             "database_name": "unauthorized_db",
             "description": "Should not succeed",
-            "embedding_model_spec": "siliconflow-cn:Pro/BAAI/bge-m3",
+            "embedding_model_spec": "siliconflow-cn:BAAI/bge-m3",
         },
         headers=standard_user["headers"],
     )
@@ -249,7 +249,7 @@ async def test_admin_can_create_vector_db_with_reranker(test_client, admin_heade
     payload = {
         "database_name": db_name,
         "description": "Vector DB with reranker",
-        "embedding_model_spec": "siliconflow-cn:Pro/BAAI/bge-m3",
+        "embedding_model_spec": "siliconflow-cn:BAAI/bge-m3",
         "kb_type": "milvus",
         "additional_params": {},
     }
@@ -690,7 +690,7 @@ async def test_duplicate_database_name(test_client, admin_headers, knowledge_dat
         json={
             "database_name": db_name,
             "description": "Duplicate name test",
-            "embedding_model_spec": "siliconflow-cn:Pro/BAAI/bge-m3",
+            "embedding_model_spec": "siliconflow-cn:BAAI/bge-m3",
             "kb_type": "milvus",
             "additional_params": {},
         },
@@ -707,7 +707,7 @@ async def test_create_lightrag_knowledge_base_is_unsupported(test_client, admin_
         json={
             "database_name": db_name,
             "description": "Unsupported LightRAG knowledge base",
-            "embedding_model_spec": "siliconflow-cn:Pro/BAAI/bge-m3",
+            "embedding_model_spec": "siliconflow-cn:BAAI/bge-m3",
             "kb_type": "lightrag",
             "additional_params": {},
         },
@@ -726,7 +726,7 @@ async def test_create_milvus_knowledge_base(test_client, admin_headers):
     payload = {
         "database_name": db_name,
         "description": "Pytest Milvus knowledge base",
-        "embedding_model_spec": "siliconflow-cn:Pro/BAAI/bge-m3",
+        "embedding_model_spec": "siliconflow-cn:BAAI/bge-m3",
         "kb_type": "milvus",
         "additional_params": {},
     }

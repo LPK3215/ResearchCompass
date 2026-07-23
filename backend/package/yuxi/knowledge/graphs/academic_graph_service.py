@@ -353,12 +353,15 @@ class AcademicGraphService:
 
     async def delete_kb_projection(self, kb_id: str) -> None:
         label = safe_neo4j_label(kb_id)
-        await asyncio.to_thread(
-            neo4j_read,
-            self.driver,
-            f"MATCH (n:AcademicGraph:`{label}` {{kb_id: $kb_id}}) DETACH DELETE n RETURN count(n) AS deleted",
-            kb_id=kb_id,
+        cypher = (
+            f"MATCH (n:AcademicGraph:`{label}` {{kb_id: $kb_id}}) "
+            "DETACH DELETE n RETURN count(n) AS deleted"
         )
+
+        def write(tx):
+            tx.run(cypher, kb_id=kb_id)
+
+        await asyncio.to_thread(neo4j_write, self.driver, write)
 
 
 __all__ = ["AcademicGraphService"]
