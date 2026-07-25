@@ -12,6 +12,7 @@ from typing import Any
 
 from yuxi.repositories.research_user_study_repository import ResearchUserStudyRepository
 from yuxi.services.research_paper_service import _ensure_access
+from yuxi.services.run_queue_service import get_redis_client
 from yuxi.storage.postgres.models_business import User
 
 
@@ -22,13 +23,24 @@ DEFAULT_CONSENT_TEXT = (
     "系统不会收集您的姓名、学号、联系方式、登录信息或设备标识。参与完全自愿，您可随时退出；"
     "提交后仅以匿名汇总形式用于项目用户评测。"
 )
+PUBLIC_STUDY_RESOLVE_LIMIT = 30
+PUBLIC_STUDY_SUBMIT_LIMIT = 10
+PUBLIC_STUDY_RATE_WINDOW_SECONDS = 60
+_RATE_LIMIT_INCREMENT_SCRIPT = """
+local count = redis.call('INCR', KEYS[1])
+if redis.call('TTL', KEYS[1]) < 0 then
+    redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+return count
+"""
 
 
 class ResearchUserStudyError(RuntimeError):
-    def __init__(self, error_type: str, message: str):
+    def __init__(self, error_type: str, message: str, *, retry_after: int | None = None):
         super().__init__(message)
         self.error_type = error_type
         self.message = message
+        self.retry_after = retry_after
 
 
 def _now() -> datetime:
@@ -37,6 +49,25 @@ def _now() -> datetime:
 
 def _token_hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+async def _enforce_public_rate_limit(*, scope: str, client_key: str, limit: int) -> None:
+    key = f"research:user-study:rate:{scope}:{_token_hash(client_key or 'unknown')}"
+    try:
+        redis = await get_redis_client()
+        count = int(await redis.eval(_RATE_LIMIT_INCREMENT_SCRIPT, 1, key, PUBLIC_STUDY_RATE_WINDOW_SECONDS))
+    except Exception as exc:
+        raise ResearchUserStudyError(
+            "rate_limit_unavailable",
+            "匿名评测服务暂时不可用，请稍后重试",
+            retry_after=PUBLIC_STUDY_RATE_WINDOW_SECONDS,
+        ) from exc
+    if count > limit:
+        raise ResearchUserStudyError(
+            "rate_limited",
+            "请求过于频繁，请稍后重试",
+            retry_after=PUBLIC_STUDY_RATE_WINDOW_SECONDS,
+        )
 
 
 def _public_study_payload(study) -> dict[str, Any]:
@@ -73,6 +104,13 @@ def _sus_score(sus_scores: dict[str, int]) -> float:
         value = sus_scores[key]
         adjusted.append(value - 1 if index % 2 else 5 - value)
     return round(sum(adjusted) * 2.5, 1)
+
+
+def _csv_cell(value: Any) -> str:
+    text = "" if value is None else str(value)
+    if text.lstrip().startswith(("=", "+", "-", "@")):
+        return f"'{text}"
+    return text
 
 
 def _summary(responses: list[Any]) -> dict[str, Any]:
@@ -152,32 +190,54 @@ class ResearchUserStudyService:
         studies = await self.repo.list_studies(kb_id)
         result = []
         for study in studies:
-            invites = await self.repo.list_invites(study.study_id)
-            submitted_count = await self.repo.count_responses(study.study_id)
+            invite_status_counts = await self.repo.count_invites_by_status(study.study_id)
             result.append(
                 {
                     **_public_study_payload(study),
-                    "participant_count": len(invites),
-                    "submitted_count": submitted_count,
+                    "participant_count": sum(invite_status_counts.values()),
+                    "submitted_count": invite_status_counts.get("submitted", 0),
                     "created_at": study.created_at.isoformat() if study.created_at else None,
                     "closed_at": study.closed_at.isoformat() if study.closed_at else None,
                 }
             )
         return result
 
-    async def get_study_report(self, *, kb_id: str, study_id: str, current_user: User) -> dict[str, Any]:
+    async def get_study_report(
+        self,
+        *,
+        kb_id: str,
+        study_id: str,
+        current_user: User,
+        page: int = 1,
+        page_size: int = 50,
+    ) -> dict[str, Any]:
         await _ensure_access(current_user, kb_id, write=True)
         study = await self.repo.get_study(study_id)
         if study is None or study.kb_id != kb_id:
             raise ResearchUserStudyError("study_not_found", "用户评测不存在")
-        invites = await self.repo.list_invites(study_id)
-        responses = await self.repo.list_responses(study_id)
+        normalized_page = max(int(page), 1)
+        normalized_page_size = min(max(int(page_size), 1), 500)
+        invite_status_counts = await self.repo.count_invites_by_status(study_id)
+        response_total = await self.repo.count_responses(study_id)
+        summary_responses = []
+        for offset in range(0, response_total, 500):
+            batch, _ = await self.repo.list_responses(study_id, offset=offset, limit=500)
+            summary_responses.extend(batch)
+        responses, _ = await self.repo.list_responses(
+            study_id,
+            offset=(normalized_page - 1) * normalized_page_size,
+            limit=normalized_page_size,
+        )
         return {
             **_public_study_payload(study),
-            "participant_count": len(invites),
-            "invite_status_counts": dict(Counter(invite.status for invite in invites)),
-            "summary": _summary(responses),
+            "participant_count": sum(invite_status_counts.values()),
+            "invite_status_counts": invite_status_counts,
+            "summary": _summary(summary_responses),
             "responses": [_serialize_response(response) for response in responses],
+            "responses_total": response_total,
+            "page": normalized_page,
+            "page_size": normalized_page_size,
+            "has_more": normalized_page * normalized_page_size < response_total,
             "created_at": study.created_at.isoformat() if study.created_at else None,
             "closed_at": study.closed_at.isoformat() if study.closed_at else None,
         }
@@ -191,7 +251,12 @@ class ResearchUserStudyService:
             return
         await self.repo.update_study(study_id, {"status": "closed", "closed_at": _now()})
 
-    async def get_public_study(self, token: str) -> dict[str, Any]:
+    async def get_public_study(self, token: str, *, client_key: str = "unknown") -> dict[str, Any]:
+        await _enforce_public_rate_limit(
+            scope="resolve",
+            client_key=client_key,
+            limit=PUBLIC_STUDY_RESOLVE_LIMIT,
+        )
         invite = await self.repo.get_invite_by_hash(_token_hash(token))
         if invite is None:
             raise ResearchUserStudyError("invite_not_found", "评测链接无效")
@@ -216,7 +281,13 @@ class ResearchUserStudyService:
         overall_rating: int,
         recommend_score: int,
         feedback: str,
+        client_key: str = "unknown",
     ) -> dict[str, Any]:
+        await _enforce_public_rate_limit(
+            scope="submit",
+            client_key=client_key,
+            limit=PUBLIC_STUDY_SUBMIT_LIMIT,
+        )
         if consent is not True:
             raise ResearchUserStudyError("consent_required", "需要同意匿名参与说明后才能提交")
         invite = await self.repo.get_invite_by_hash(_token_hash(token))
@@ -262,7 +333,15 @@ class ResearchUserStudyService:
         return {"response_id": response.response_id, "submitted_at": response.submitted_at.isoformat()}
 
     async def export_study_csv(self, *, kb_id: str, study_id: str, current_user: User) -> tuple[str, str]:
-        report = await self.get_study_report(kb_id=kb_id, study_id=study_id, current_user=current_user)
+        await _ensure_access(current_user, kb_id, write=True)
+        study = await self.repo.get_study(study_id)
+        if study is None or study.kb_id != kb_id:
+            raise ResearchUserStudyError("study_not_found", "用户评测不存在")
+        response_total = await self.repo.count_responses(study_id)
+        responses = []
+        for offset in range(0, response_total, 500):
+            batch, _ = await self.repo.list_responses(study_id, offset=offset, limit=500)
+            responses.extend(_serialize_response(response) for response in batch)
         output = io.StringIO(newline="")
         writer = csv.writer(output)
         writer.writerow(
@@ -279,22 +358,25 @@ class ResearchUserStudyService:
                 "submitted_at",
             ]
         )
-        for response in report["responses"]:
+        for response in responses:
             writer.writerow(
                 [
-                    response["response_id"],
-                    response["research_stage"],
-                    response["research_experience"],
-                    *[response["task_scores"][key] for key in TASK_SCORE_KEYS],
-                    *[response["sus_scores"][key] for key in SUS_SCORE_KEYS],
-                    _sus_score(response["sus_scores"]),
-                    response["overall_rating"],
-                    response["recommend_score"],
-                    response["feedback"],
-                    response["submitted_at"],
+                    _csv_cell(value)
+                    for value in [
+                        response["response_id"],
+                        response["research_stage"],
+                        response["research_experience"],
+                        *[response["task_scores"][key] for key in TASK_SCORE_KEYS],
+                        *[response["sus_scores"][key] for key in SUS_SCORE_KEYS],
+                        _sus_score(response["sus_scores"]),
+                        response["overall_rating"],
+                        response["recommend_score"],
+                        response["feedback"],
+                        response["submitted_at"],
+                    ]
                 ]
             )
-        return f"{report['study_id']}-anonymous-responses.csv", output.getvalue()
+        return f"{study.study_id}-anonymous-responses.csv", output.getvalue()
 
 
 __all__ = [
@@ -303,4 +385,5 @@ __all__ = [
     "ResearchUserStudyService",
     "SUS_SCORE_KEYS",
     "TASK_SCORE_KEYS",
+    "_enforce_public_rate_limit",
 ]

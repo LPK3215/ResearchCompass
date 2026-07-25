@@ -16,6 +16,7 @@ from yuxi.repositories.academic_graph_repository import AcademicGraphRepository
 from yuxi.repositories.academic_paper_repository import AcademicPaperRepository
 from yuxi.repositories.knowledge_base_repository import KnowledgeBaseRepository
 from yuxi.repositories.research_search_run_repository import ResearchSearchRunRepository
+from yuxi.services.research_paper_service import _ensure_access
 from yuxi.storage.postgres.models_business import User
 
 
@@ -24,6 +25,19 @@ class ResearchSearchError(RuntimeError):
         super().__init__(message)
         self.error_type = error_type
         self.message = message
+
+
+LOCAL_HYBRID_MODE = "local_hybrid"
+STRICT_HYBRID_GRAPH_MODE = "strict_hybrid_citation_graph"
+DEFAULT_RESEARCH_SEARCH_MODE = STRICT_HYBRID_GRAPH_MODE
+RESEARCH_SEARCH_MODES = {LOCAL_HYBRID_MODE, STRICT_HYBRID_GRAPH_MODE}
+
+
+def _normalize_search_mode(value: str | None) -> str:
+    mode = str(value or DEFAULT_RESEARCH_SEARCH_MODE).strip()
+    if mode not in RESEARCH_SEARCH_MODES:
+        raise ResearchSearchError("invalid_retrieval_config", f"不支持的科研检索模式: {mode}")
+    return mode
 
 
 def _now() -> datetime:
@@ -317,6 +331,7 @@ async def search_papers(
     year_to: int | None,
     chat_model: str | None,
     reranker_model: str | None,
+    retrieval_mode: str | None = None,
 ) -> dict[str, Any]:
     query = query.strip()
     if not query or len(query) > 4000:
@@ -325,6 +340,8 @@ async def search_papers(
         raise ResearchSearchError("invalid_filter", "year_from 不能大于 year_to")
     if top_k < 1 or top_k > 50 or recall_top_k < top_k or recall_top_k > 200:
         raise ResearchSearchError("invalid_retrieval_config", "top_k 或 recall_top_k 超出允许范围")
+    retrieval_mode = _normalize_search_mode(retrieval_mode)
+    citation_graph_enabled = retrieval_mode == STRICT_HYBRID_GRAPH_MODE
 
     kb = await KnowledgeBaseRepository().get_by_kb_id(kb_id)
     if kb is None:
@@ -333,25 +350,31 @@ async def search_papers(
     if not await knowledge_base.check_accessible(user_info, kb_id):
         raise ResearchSearchError("forbidden", "无权访问该知识库")
     if (kb.kb_type or "milvus").lower() != "milvus":
-        raise ResearchSearchError("unsupported_knowledge_base", "科研严格检索只支持 Milvus 学术知识库")
+        raise ResearchSearchError("unsupported_knowledge_base", "科研检索只支持 Milvus 学术知识库")
 
     chat_model = (chat_model or kb.llm_model_spec or "").strip()
     reranker_model = (reranker_model or config.reranker or "").strip()
     run_id = uuid.uuid4().hex
     run_repo = ResearchSearchRunRepository()
     retrieval_config = {
-        "mode": "strict_hybrid_citation_graph",
+        "mode": retrieval_mode,
         "top_k": top_k,
         "recall_top_k": recall_top_k,
         "year_from": year_from,
         "year_to": year_to,
-        "graph": "academic_citation_ppr_undirected",
-        "graph_depth": 2,
-        "graph_max_nodes": 2000,
-        "ppr_damping": 0.85,
         "bm25": True,
         "reranker": True,
+        "citation_graph": citation_graph_enabled,
     }
+    if citation_graph_enabled:
+        retrieval_config.update(
+            {
+                "graph": "academic_citation_ppr_undirected",
+                "graph_depth": 2,
+                "graph_max_nodes": 2000,
+                "ppr_damping": 0.85,
+            }
+        )
     await run_repo.create(
         run_id=run_id,
         kb_id=kb_id,
@@ -364,6 +387,19 @@ async def search_papers(
     try:
         public_models = _public_model_config(chat_model, reranker_model)
         await run_repo.update(run_id, {"model_config_json": public_models})
+
+        graph_status = None
+        if citation_graph_enabled:
+            started = time.perf_counter()
+            try:
+                graph_status = await AcademicGraphService().get_status(kb_id=kb_id)
+            except Exception as exc:
+                raise ResearchSearchError("graph_not_ready", "无法读取论文引用图谱状态") from exc
+            timings["graph_preflight_ms"] = _elapsed(started)
+            await run_repo.update(run_id, {"stage_timings": timings})
+            if graph_status["papers"] <= 0 or graph_status["citations"] <= 0:
+                raise ResearchSearchError("graph_not_ready", "科研严格检索要求学术引用图谱已同步且包含引用关系")
+
         started = time.perf_counter()
         rewrite = await _rewrite_query(query, chat_model)
         timings["query_rewrite_ms"] = _elapsed(started)
@@ -375,16 +411,6 @@ async def search_papers(
                 "stage_timings": timings,
             },
         )
-
-        started = time.perf_counter()
-        try:
-            graph_status = await AcademicGraphService().get_status(kb_id=kb_id)
-        except Exception as exc:
-            raise ResearchSearchError("graph_not_ready", "无法读取论文引用图谱状态") from exc
-        if graph_status["papers"] <= 0 or graph_status["citations"] <= 0:
-            raise ResearchSearchError("graph_not_ready", "科研严格检索要求学术引用图谱已同步且包含引用关系")
-        timings["graph_preflight_ms"] = _elapsed(started)
-        await run_repo.update(run_id, {"stage_timings": timings})
 
         file_ids = await AcademicPaperRepository().list_file_ids_by_filters(
             kb_id=kb_id, year_from=year_from, year_to=year_to
@@ -414,8 +440,12 @@ async def search_papers(
                     "expanded_count": 0,
                     "node_count": 0,
                     "citation_count": 0,
+                } if citation_graph_enabled else None,
+                "config": {
+                    **retrieval_config,
+                    **public_models,
+                    **({"graph_status": graph_status} if graph_status is not None else {}),
                 },
-                "config": {**retrieval_config, **public_models, "graph_status": graph_status},
                 "stage_timings": timings,
             }
         started = time.perf_counter()
@@ -435,20 +465,24 @@ async def search_papers(
                 similarity_threshold=0.0,
             )
         except Exception as exc:
-            raise ResearchSearchError("retrieval_failure", "混合召回、图谱扩展或重排序阶段失败") from exc
+            raise ResearchSearchError("retrieval_failure", "混合召回或重排序阶段失败") from exc
         timings["retrieval_ms"] = _elapsed(started)
         started = time.perf_counter()
         results = _aggregate_results(kb_id, chunks, recall_top_k)
         await _hydrate_paper_cards(kb_id, results)
         timings["aggregation_ms"] = _elapsed(started)
-        started = time.perf_counter()
-        results, graph_expansion = await _apply_citation_graph(
-            kb_id=kb_id,
-            results=results,
-            top_k=top_k,
-            recall_top_k=recall_top_k,
-        )
-        timings["citation_graph_ms"] = _elapsed(started)
+        graph_expansion = None
+        if citation_graph_enabled:
+            started = time.perf_counter()
+            results, graph_expansion = await _apply_citation_graph(
+                kb_id=kb_id,
+                results=results,
+                top_k=top_k,
+                recall_top_k=recall_top_k,
+            )
+            timings["citation_graph_ms"] = _elapsed(started)
+        else:
+            results = results[:top_k]
         await run_repo.update(
             run_id,
             {
@@ -466,7 +500,11 @@ async def search_papers(
             "items": results,
             "total": len(results),
             "graph_expansion": graph_expansion,
-            "config": {**retrieval_config, **public_models, "graph_status": graph_status},
+            "config": {
+                **retrieval_config,
+                **public_models,
+                **({"graph_status": graph_status} if graph_status is not None else {}),
+            },
             "stage_timings": timings,
         }
     except ResearchSearchError as exc:
@@ -482,23 +520,26 @@ async def search_papers(
         )
         raise
     except Exception as exc:
+        failure_type = "strict_research_failure" if citation_graph_enabled else "local_research_failure"
+        failure_message = "科研严格图谱检索执行失败" if citation_graph_enabled else "科研本地混合检索执行失败"
         await run_repo.update(
             run_id,
             {
                 "status": "failed",
                 "stage_timings": timings,
-                "error_type": "strict_research_failure",
+                "error_type": failure_type,
                 "error_message": str(exc),
                 "completed_at": _now(),
             },
         )
-        raise ResearchSearchError("strict_research_failure", "科研严格检索执行失败") from exc
+        raise ResearchSearchError(failure_type, failure_message) from exc
 
 
 async def get_search_run(*, run_id: str, current_user: User) -> dict[str, Any]:
     record = await ResearchSearchRunRepository().get(run_id, uid=str(current_user.uid))
     if record is None:
         raise ResearchSearchError("run_not_found", "检索运行记录不存在")
+    await _ensure_access(current_user, str(record.kb_id))
     return {
         "run_id": record.run_id,
         "kb_id": record.kb_id,
@@ -520,4 +561,11 @@ async def get_search_run(*, run_id: str, current_user: User) -> dict[str, Any]:
     }
 
 
-__all__ = ["ResearchSearchError", "get_search_run", "search_papers"]
+__all__ = [
+    "DEFAULT_RESEARCH_SEARCH_MODE",
+    "LOCAL_HYBRID_MODE",
+    "STRICT_HYBRID_GRAPH_MODE",
+    "ResearchSearchError",
+    "get_search_run",
+    "search_papers",
+]

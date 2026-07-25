@@ -91,6 +91,42 @@ export const researchApi = {
 
   getSearchRun: (runId) => apiGet(`/api/research/search-runs/${encodeURIComponent(runId)}`),
 
+  createResearchSynthesis: (kbId, payload) =>
+    apiRequest(
+      `/api/research/databases/${encodeURIComponent(kbId)}/syntheses`,
+      { method: 'POST', body: JSON.stringify(payload) }
+    ),
+
+  listResearchSyntheses: (kbId, params = {}) => {
+    const query = buildQuery(params)
+    return apiGet(
+      `/api/research/databases/${encodeURIComponent(kbId)}/syntheses${query ? `?${query}` : ''}`
+    )
+  },
+
+  getResearchSynthesisRun: (runId) =>
+    apiGet(`/api/research/synthesis-runs/${encodeURIComponent(runId)}`),
+
+  cancelResearchSynthesis: (runId) =>
+    apiRequest(
+      `/api/research/synthesis-runs/${encodeURIComponent(runId)}/cancel`,
+      { method: 'POST', body: JSON.stringify({}) }
+    ),
+
+  regenerateResearchSynthesis: (runId) =>
+    apiRequest(
+      `/api/research/synthesis-runs/${encodeURIComponent(runId)}/regenerate`,
+      { method: 'POST', body: JSON.stringify({}) }
+    ),
+
+  exportResearchSynthesis: (runId, format = 'markdown') => {
+    const query = buildQuery({ format })
+    return apiRequest(
+      `/api/research/synthesis-runs/${encodeURIComponent(runId)}/export?${query}`,
+      { method: 'GET' }, true, 'blob'
+    )
+  },
+
   syncAcademicGraph: (kbId, payload) =>
     apiRequest(
       `/api/research/databases/${encodeURIComponent(kbId)}/academic-graph/sync`,
@@ -141,6 +177,13 @@ export const researchApi = {
     )
   },
 
+  getAcademicOpportunities: (kbId, params = {}) => {
+    const query = buildQuery(params)
+    return apiGet(
+      `/api/research/databases/${encodeURIComponent(kbId)}/opportunities${query ? `?${query}` : ''}`
+    )
+  },
+
   createUserStudy: (kbId, payload) =>
     apiRequest(`/api/research/databases/${encodeURIComponent(kbId)}/user-studies`, {
       method: 'POST', body: JSON.stringify(payload)
@@ -149,8 +192,12 @@ export const researchApi = {
   listUserStudies: (kbId) =>
     apiGet(`/api/research/databases/${encodeURIComponent(kbId)}/user-studies`),
 
-  getUserStudy: (kbId, studyId) =>
-    apiGet(`/api/research/databases/${encodeURIComponent(kbId)}/user-studies/${encodeURIComponent(studyId)}`),
+  getUserStudy: (kbId, studyId, params = {}) => {
+    const query = buildQuery(params)
+    return apiGet(
+      `/api/research/databases/${encodeURIComponent(kbId)}/user-studies/${encodeURIComponent(studyId)}${query ? `?${query}` : ''}`
+    )
+  },
 
   closeUserStudy: (kbId, studyId) =>
     apiRequest(`/api/research/databases/${encodeURIComponent(kbId)}/user-studies/${encodeURIComponent(studyId)}/close`, {
@@ -168,7 +215,7 @@ export const researchApi = {
     return apiRequest(
       `/api/research/databases/${encodeURIComponent(kbId)}/papers/export${query ? `?${query}` : ''}`,
       { method: 'GET' }, true, 'blob'
-    )
+    ).then((response) => response.blob())
   },
 
   listUserTags: (kbId) =>

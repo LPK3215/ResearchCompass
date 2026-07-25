@@ -101,6 +101,38 @@ class TestPaperMetadata:
             _paper_metadata(paper)
         assert exc_info.value.error_type == "paper_metadata_invalid"
 
+    def test_too_long_paper_id_raises_error_before_import(self):
+        paper = {"paperId": "a" * 62, "title": "Test"}
+        with pytest.raises(AcademicPaperImportError) as exc_info:
+            _paper_metadata(paper)
+        assert exc_info.value.error_type == "paper_metadata_invalid"
+
+    @pytest.mark.parametrize("year", [1499, "not-a-year", 2024.5])
+    def test_invalid_publication_year_raises_error(self, year):
+        paper = {"paperId": "abc", "title": "Test", "year": year}
+        with pytest.raises(AcademicPaperImportError) as exc_info:
+            _paper_metadata(paper)
+        assert exc_info.value.error_type == "paper_metadata_invalid"
+
+    @pytest.mark.parametrize("citation_count", [-1, "not-a-count", 1.5])
+    def test_invalid_citation_count_raises_error(self, citation_count):
+        paper = {"paperId": "abc", "title": "Test", "citationCount": citation_count}
+        with pytest.raises(AcademicPaperImportError) as exc_info:
+            _paper_metadata(paper)
+        assert exc_info.value.error_type == "paper_metadata_invalid"
+
+    def test_too_long_venue_raises_error(self):
+        paper = {"paperId": "abc", "title": "Test", "venue": "v" * 513}
+        with pytest.raises(AcademicPaperImportError) as exc_info:
+            _paper_metadata(paper)
+        assert exc_info.value.error_type == "paper_metadata_invalid"
+
+    def test_invalid_external_identifier_value_raises_error(self):
+        paper = {"paperId": "abc", "title": "Test", "externalIds": {"DOI": ["10.1/test"]}}
+        with pytest.raises(AcademicPaperImportError) as exc_info:
+            _paper_metadata(paper)
+        assert exc_info.value.error_type == "paper_metadata_invalid"
+
     def test_missing_abstract_returns_none(self):
         paper = {"paperId": "abc", "title": "Test"}
         result = _paper_metadata(paper)

@@ -62,6 +62,7 @@ class AcademicGraphRepository:
     async def update_sync_run(self, run_id: str, data: dict[str, Any]) -> AcademicGraphSyncRun | None:
         allowed = {
             "status",
+            "processed_paper_ids",
             "processed_papers",
             "graph_papers",
             "citations",
@@ -230,7 +231,19 @@ class AcademicGraphRepository:
 
     async def add_conflict(self, data: dict[str, Any]) -> None:
         async with pg_manager.get_async_session_context() as session:
-            session.add(AcademicMetadataConflict(**data))
+            stmt = insert(AcademicMetadataConflict).values(data)
+            await session.execute(
+                stmt.on_conflict_do_update(
+                    constraint="uq_academic_metadata_conflicts_id",
+                    set_={
+                        "conflict_type": stmt.excluded.conflict_type,
+                        "field_name": stmt.excluded.field_name,
+                        "local_value": stmt.excluded.local_value,
+                        "remote_value": stmt.excluded.remote_value,
+                        "message": stmt.excluded.message,
+                    },
+                )
+            )
 
     async def list_conflicts(
         self,
@@ -500,6 +513,45 @@ class AcademicGraphRepository:
                 .order_by(AcademicGraphPaper.publication_year.asc())
             )
             return [{"year": int(year), "citations": int(count)} for year, count in result.all()]
+
+    async def list_library_paper_citation_degrees(self, *, kb_id: str) -> dict[int, dict[str, int]]:
+        async with pg_manager.get_async_session_context() as session:
+            graph_papers = await session.execute(
+                select(AcademicGraphPaper.academic_paper_id, AcademicGraphPaper.graph_paper_id).where(
+                    AcademicGraphPaper.kb_id == kb_id,
+                    AcademicGraphPaper.academic_paper_id.is_not(None),
+                )
+            )
+            mapping = {int(academic_id): str(graph_id) for academic_id, graph_id in graph_papers.all()}
+            if not mapping:
+                return {}
+
+            graph_ids = list(mapping.values())
+            outgoing_result = await session.execute(
+                select(AcademicCitation.citing_paper_id, func.count(AcademicCitation.id))
+                .where(
+                    AcademicCitation.kb_id == kb_id,
+                    AcademicCitation.citing_paper_id.in_(graph_ids),
+                )
+                .group_by(AcademicCitation.citing_paper_id)
+            )
+            incoming_result = await session.execute(
+                select(AcademicCitation.cited_paper_id, func.count(AcademicCitation.id))
+                .where(
+                    AcademicCitation.kb_id == kb_id,
+                    AcademicCitation.cited_paper_id.in_(graph_ids),
+                )
+                .group_by(AcademicCitation.cited_paper_id)
+            )
+            outgoing = {str(graph_id): int(count or 0) for graph_id, count in outgoing_result.all()}
+            incoming = {str(graph_id): int(count or 0) for graph_id, count in incoming_result.all()}
+            return {
+                academic_id: {
+                    "incoming": incoming.get(graph_id, 0),
+                    "outgoing": outgoing.get(graph_id, 0),
+                }
+                for academic_id, graph_id in mapping.items()
+            }
 
     async def get_graph_paper_by_library_paper(
         self, *, kb_id: str, academic_paper_id: int

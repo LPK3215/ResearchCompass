@@ -170,6 +170,44 @@ class ResearchSearchRun(Base):
     completed_at = Column(DateTime(timezone=True))
 
 
+class ResearchSynthesisRun(Base):
+    """跨论文证据约束综述运行，只持久化可追溯检索快照和验证后结果。"""
+
+    __tablename__ = "research_synthesis_runs"
+    __table_args__ = (
+        UniqueConstraint("run_id", name="uq_research_synthesis_runs_id"),
+        UniqueConstraint("kb_id", "uid", "active_key", name="uq_research_synthesis_runs_active"),
+        Index("ix_research_synthesis_runs_kb_created", "kb_id", "created_at"),
+        Index("ix_research_synthesis_runs_uid_created", "uid", "created_at"),
+        Index("ix_research_synthesis_runs_parent", "parent_run_id"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    run_id = Column(String(64), nullable=False, unique=True, index=True)
+    parent_run_id = Column(
+        String(64),
+        ForeignKey("research_synthesis_runs.run_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    kb_id = Column(String(80), ForeignKey("knowledge_bases.kb_id", ondelete="CASCADE"), nullable=False, index=True)
+    uid = Column(String(64), nullable=False, index=True)
+    task_id = Column(String(64))
+    raw_query = Column(Text, nullable=False)
+    model_config_json = Column("model_config", JSON_VALUE, nullable=False)
+    retrieval_config = Column(JSON_VALUE, nullable=False)
+    active_key = Column(String(16), nullable=True, default="active")
+    status = Column(String(32), nullable=False, default="pending", index=True)
+    stage = Column(String(64), nullable=False, default="pending")
+    retrieval_snapshot = Column(JSON_VALUE)
+    result = Column(JSON_VALUE)
+    stage_timings = Column(JSON_VALUE, nullable=False, default=dict)
+    error_type = Column(String(128))
+    error_message = Column(Text)
+    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
+    started_at = Column(DateTime(timezone=True))
+    completed_at = Column(DateTime(timezone=True))
+
+
 class AcademicPaperAnalysisRun(Base):
     """论文分析流水线运行记录，只保存结构化阶段结果，不保存模型原始响应。"""
 
@@ -510,6 +548,7 @@ class AcademicGraphSyncRun(Base):
     status = Column(String(32), nullable=False, default="pending", index=True)
     requested_paper_ids = Column(JSON_VALUE)
     sync_config = Column(JSON_VALUE)
+    processed_paper_ids = Column(JSON_VALUE, nullable=False, default=list)
     processed_papers = Column(Integer, nullable=False, default=0)
     graph_papers = Column(Integer, nullable=False, default=0)
     citations = Column(Integer, nullable=False, default=0)

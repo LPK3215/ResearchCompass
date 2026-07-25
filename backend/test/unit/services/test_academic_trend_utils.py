@@ -1,6 +1,5 @@
 """Unit tests for academic_trend_service pure utility functions."""
 
-import pytest
 
 from yuxi.services.academic_trend_service import _emerging_keywords, _trend_keywords
 
@@ -59,7 +58,7 @@ class TestTrendKeywords:
         rows = [(2024, ["GNN", "GNN", "gnn"], 0)]
         result = _trend_keywords(rows)
         assert len(result) == 1
-        assert result[0]["total"] == 2
+        assert result[0]["total"] == 1
 
 
 class TestEmergingKeywords:

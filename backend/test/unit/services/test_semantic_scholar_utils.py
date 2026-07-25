@@ -4,7 +4,6 @@
 """
 from __future__ import annotations
 
-import pytest
 
 from yuxi.services.semantic_scholar_service import (
     is_paper_identifier,

@@ -13,6 +13,7 @@ from yuxi.knowledge.implementations.milvus import (
     VECTOR_METRIC_TYPE,
     MilvusKB,
 )
+from yuxi.knowledge.graphs.milvus_graph_vector_store import MilvusGraphVectorStore
 
 
 class FakeHit:
@@ -61,6 +62,97 @@ def make_kb(collection: FakeCollection) -> MilvusKB:
     kb._get_milvus_collection = get_collection
     kb._hydrate_chunk_sources = hydrate_chunk_sources
     return kb
+
+
+def test_init_connection_uses_instance_alias_for_database_operations(monkeypatch):
+    kb = MilvusKB.__new__(MilvusKB)
+    kb.connection_alias = "research-alias"
+    kb.milvus_uri = "http://milvus:19530"
+    kb.milvus_token = ""
+    kb.milvus_db = "research"
+    calls = []
+
+    monkeypatch.setattr(
+        "yuxi.knowledge.implementations.milvus.connections.connect",
+        lambda **kwargs: calls.append(("connect", kwargs)),
+    )
+    monkeypatch.setattr(
+        "yuxi.knowledge.implementations.milvus.db.list_database",
+        lambda **kwargs: calls.append(("list", kwargs)) or ["default"],
+    )
+    monkeypatch.setattr(
+        "yuxi.knowledge.implementations.milvus.db.create_database",
+        lambda database, **kwargs: calls.append(("create", database, kwargs)),
+    )
+    monkeypatch.setattr(
+        "yuxi.knowledge.implementations.milvus.db.using_database",
+        lambda database, **kwargs: calls.append(("using", database, kwargs)),
+    )
+
+    kb._init_connection()
+
+    assert calls == [
+        ("connect", {"alias": "research-alias", "uri": "http://milvus:19530", "token": ""}),
+        ("list", {"using": "research-alias"}),
+        ("create", "research", {"using": "research-alias"}),
+        ("using", "research", {"using": "research-alias"}),
+    ]
+
+
+def test_init_connection_fails_instead_of_using_the_default_database(monkeypatch):
+    kb = MilvusKB.__new__(MilvusKB)
+    kb.connection_alias = "research-alias"
+    kb.milvus_uri = "http://milvus:19530"
+    kb.milvus_token = ""
+    kb.milvus_db = "research"
+
+    monkeypatch.setattr("yuxi.knowledge.implementations.milvus.connections.connect", lambda **kwargs: None)
+    monkeypatch.setattr(
+        "yuxi.knowledge.implementations.milvus.db.list_database",
+        lambda **kwargs: (_ for _ in ()).throw(ConnectionError("unavailable")),
+    )
+
+    with pytest.raises(RuntimeError, match="Milvus database initialization failed: research"):
+        kb._init_connection()
+
+
+def test_graph_vector_store_uses_its_instance_alias_for_database_operations(monkeypatch):
+    store = MilvusGraphVectorStore.__new__(MilvusGraphVectorStore)
+    store.connection_alias = "graph-alias"
+    store.milvus_uri = "http://milvus:19530"
+    store.milvus_token = ""
+    store.milvus_db = "research"
+    calls = []
+
+    monkeypatch.setattr(
+        "yuxi.knowledge.graphs.milvus_graph_vector_store.connections.has_connection",
+        lambda alias: False,
+    )
+    monkeypatch.setattr(
+        "yuxi.knowledge.graphs.milvus_graph_vector_store.connections.connect",
+        lambda **kwargs: calls.append(("connect", kwargs)),
+    )
+    monkeypatch.setattr(
+        "yuxi.knowledge.graphs.milvus_graph_vector_store.db.list_database",
+        lambda **kwargs: calls.append(("list", kwargs)) or ["default"],
+    )
+    monkeypatch.setattr(
+        "yuxi.knowledge.graphs.milvus_graph_vector_store.db.create_database",
+        lambda database, **kwargs: calls.append(("create", database, kwargs)),
+    )
+    monkeypatch.setattr(
+        "yuxi.knowledge.graphs.milvus_graph_vector_store.db.using_database",
+        lambda database, **kwargs: calls.append(("using", database, kwargs)),
+    )
+
+    store._init_connection()
+
+    assert calls == [
+        ("connect", {"alias": "graph-alias", "uri": "http://milvus:19530", "token": ""}),
+        ("list", {"using": "graph-alias"}),
+        ("create", "research", {"using": "graph-alias"}),
+        ("using", "research", {"using": "graph-alias"}),
+    ]
 
 
 def make_file_record(**overrides):

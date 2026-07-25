@@ -73,7 +73,11 @@ def select_model(model_spec: str, **kwargs) -> LangChainChatAdapter:
         model,
         model_name=info.model_id,
         base_url=info.base_url,
-        info={"provider_type": info.provider_type, "provider_id": info.provider_id},
+        info={
+            "provider_type": info.provider_type,
+            "provider_id": info.provider_id,
+            "context_length": info.context_length,
+        },
     )
 
 

@@ -33,6 +33,7 @@ class ModelInfo:
     api_key: str
     base_url: str
     provider_type: str  # openai / anthropic / gemini / openrouter
+    context_length: int | None = None
 
     # 可选配置
     headers: dict[str, str] = field(default_factory=dict)
@@ -55,6 +56,7 @@ class ModelInfo:
             "api_key": self.api_key,
             "base_url": self.base_url,
             "provider_type": self.provider_type,
+            "context_length": self.context_length,
             "headers": self.headers,
             "extra": self.extra,
             "dimension": self.dimension,
@@ -71,6 +73,7 @@ class ModelInfo:
             api_key=data["api_key"],
             base_url=data["base_url"],
             provider_type=data["provider_type"],
+            context_length=data.get("context_length"),
             headers=data.get("headers", {}),
             extra=data.get("extra", {}),
             dimension=data.get("dimension"),
@@ -154,6 +157,7 @@ class ModelCache:
                     api_key=api_key or "",
                     base_url=base_url,
                     provider_type=provider.provider_type,
+                    context_length=model.get("context_length"),
                     headers=dict(provider.headers_json or {}),
                     extra=dict(provider.extra_json or {}),
                     dimension=model.get("dimension"),

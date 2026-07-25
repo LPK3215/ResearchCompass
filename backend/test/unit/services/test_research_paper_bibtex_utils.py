@@ -6,8 +6,6 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pytest
-
 from yuxi.services.research_paper_service import (
     _bibtex_key,
     _escape_bibtex,
@@ -35,6 +33,11 @@ class TestEscapeBibtex:
 
     def test_all_special_chars_escaped(self):
         assert _escape_bibtex("a&b_c%d") == r"a\&b\_c\%d"
+
+    def test_all_bibtex_reserved_chars_escaped(self):
+        assert _escape_bibtex(r"a#b$c{d}e~f^g\h") == (
+            r"a\#b\$c\{d\}e\textasciitilde{}f\textasciicircum{}g\textbackslash{}h"
+        )
 
     def test_none_returns_empty_string(self):
         assert _escape_bibtex(None) == ""
@@ -83,6 +86,14 @@ class TestBibtexKey:
     def test_index_appended(self):
         paper = _make_paper()
         assert _bibtex_key(paper, 5) == "Doe20235"
+
+    def test_special_characters_in_surname_do_not_break_key_syntax(self):
+        paper = _make_paper(authors=["Ada O'Connor"])
+        assert _bibtex_key(paper, 1) == "OConnor20231"
+
+    def test_non_ascii_only_surname_uses_safe_fallback(self):
+        paper = _make_paper(authors=["张 伟"])
+        assert _bibtex_key(paper, 1) == "anon20231"
 
 
 # ---------------------------------------------------------------------------

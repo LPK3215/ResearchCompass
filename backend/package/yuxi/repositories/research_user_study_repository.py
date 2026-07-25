@@ -75,14 +75,34 @@ class ResearchUserStudyRepository:
             )
             return list(result.scalars().all())
 
-    async def list_responses(self, study_id: str) -> list[ResearchUserStudyResponse]:
+    async def count_invites_by_status(self, study_id: str) -> dict[str, int]:
         async with pg_manager.get_async_session_context() as session:
+            result = await session.execute(
+                select(ResearchUserStudyInvite.status, func.count())
+                .where(ResearchUserStudyInvite.study_id == study_id)
+                .group_by(ResearchUserStudyInvite.status)
+            )
+            return {str(status): int(count or 0) for status, count in result.all()}
+
+    async def list_responses(
+        self, study_id: str, *, offset: int = 0, limit: int = 100
+    ) -> tuple[list[ResearchUserStudyResponse], int]:
+        normalized_offset = max(int(offset), 0)
+        normalized_limit = min(max(int(limit), 1), 500)
+        async with pg_manager.get_async_session_context() as session:
+            total = await session.scalar(
+                select(func.count())
+                .select_from(ResearchUserStudyResponse)
+                .where(ResearchUserStudyResponse.study_id == study_id)
+            )
             result = await session.execute(
                 select(ResearchUserStudyResponse)
                 .where(ResearchUserStudyResponse.study_id == study_id)
                 .order_by(ResearchUserStudyResponse.submitted_at.asc())
+                .offset(normalized_offset)
+                .limit(normalized_limit)
             )
-            return list(result.scalars().all())
+            return list(result.scalars().all()), int(total or 0)
 
     async def count_responses(self, study_id: str) -> int:
         async with pg_manager.get_async_session_context() as session:

@@ -5,9 +5,11 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from fastapi import HTTPException
 from yuxi.knowledge.graphs.academic_graph_service import AcademicGraphService
 from yuxi.repositories.academic_graph_repository import AcademicGraphRepository
 from yuxi.repositories.academic_paper_repository import AcademicPaperRepository
+from yuxi.repositories.user_repository import UserRepository
 from yuxi.services.research_paper_service import _ensure_access
 from yuxi.services.semantic_scholar_service import (
     SemanticScholarClient,
@@ -178,7 +180,7 @@ async def _record_conflict(
 ) -> None:
     await repo.add_conflict(
         {
-            "conflict_id": uuid.uuid4().hex,
+            "conflict_id": _conflict_id(run_id, paper.id, "identity", exc.error_type),
             "run_id": run_id,
             "kb_id": kb_id,
             "academic_paper_id": paper.id,
@@ -189,6 +191,22 @@ async def _record_conflict(
             "message": exc.message,
             "resolution_status": "unresolved",
         }
+    )
+
+
+def _conflict_id(run_id: str, academic_paper_id: int, field_name: str, conflict_type: str) -> str:
+    return hashstr(f"{run_id}:{academic_paper_id}:{field_name}:{conflict_type}", length=32)
+
+
+async def _persist_sync_checkpoint(
+    repo: AcademicGraphRepository,
+    run_id: str,
+    counts: dict[str, int],
+    processed_paper_ids: set[str],
+) -> None:
+    await repo.update_sync_run(
+        run_id,
+        {**counts, "processed_paper_ids": sorted(processed_paper_ids)},
     )
 
 
@@ -205,8 +223,30 @@ async def _run_sync(
     paper_repo = AcademicPaperRepository()
     client = SemanticScholarClient()
     neo4j = AcademicGraphService()
-    await repo.update_sync_run(run_id, {"status": "running", "started_at": _now()})
-    counts = {"processed_papers": 0, "graph_papers": 0, "citations": 0, "authors": 0, "topics": 0, "conflict_count": 0}
+    run = await repo.get_sync_run(run_id)
+    if run is None:
+        raise AcademicGraphSyncError("graph_sync_run_missing", "学术图谱同步运行不存在")
+    processed_paper_ids = {
+        str(item).strip() for item in (run.processed_paper_ids or []) if str(item).strip()
+    }
+    await repo.update_sync_run(
+        run_id,
+        {
+            "status": "running",
+            "started_at": _now(),
+            "completed_at": None,
+            "error_type": None,
+            "error_message": None,
+        },
+    )
+    counts = {
+        "processed_papers": len(processed_paper_ids),
+        "graph_papers": int(run.graph_papers or 0),
+        "citations": int(run.citations or 0),
+        "authors": int(run.authors or 0),
+        "topics": int(run.topics or 0),
+        "conflict_count": int(run.conflict_count or 0),
+    }
     try:
         papers = await paper_repo.list_for_graph_sync(kb_id=kb_id, paper_ids=paper_ids or None)
         if paper_ids and len(papers) != len(set(paper_ids)):
@@ -214,6 +254,8 @@ async def _run_sync(
         if not papers:
             raise AcademicGraphSyncError("paper_not_found", "当前知识库没有可同步论文")
         for index, local_paper in enumerate(papers, start=1):
+            if local_paper.paper_id in processed_paper_ids:
+                continue
             await context.raise_if_cancelled()
             await context.set_progress((index - 1) / len(papers) * 90, f"正在同步 {local_paper.title}")
             try:
@@ -222,8 +264,9 @@ async def _run_sync(
                 if exc.error_type.startswith("paper_"):
                     await _record_conflict(repo=repo, run_id=run_id, kb_id=kb_id, paper=local_paper, exc=exc)
                     counts["conflict_count"] += 1
-                    counts["processed_papers"] += 1
-                    await repo.update_sync_run(run_id, counts)
+                    processed_paper_ids.add(local_paper.paper_id)
+                    counts["processed_papers"] = len(processed_paper_ids)
+                    await _persist_sync_checkpoint(repo, run_id, counts, processed_paper_ids)
                     continue
                 raise
 
@@ -241,7 +284,7 @@ async def _run_sync(
                     raise
                 await repo.add_conflict(
                     {
-                        "conflict_id": uuid.uuid4().hex,
+                        "conflict_id": _conflict_id(run_id, local_paper.id, "identity_key", exc.error_type),
                         "run_id": run_id,
                         "kb_id": kb_id,
                         "academic_paper_id": local_paper.id,
@@ -254,8 +297,9 @@ async def _run_sync(
                     }
                 )
                 counts["conflict_count"] += 1
-                counts["processed_papers"] += 1
-                await repo.update_sync_run(run_id, counts)
+                processed_paper_ids.add(local_paper.paper_id)
+                counts["processed_papers"] = len(processed_paper_ids)
+                await _persist_sync_checkpoint(repo, run_id, counts, processed_paper_ids)
                 continue
             counts["graph_papers"] += 1
             counts["authors"] += author_count
@@ -306,9 +350,11 @@ async def _run_sync(
                 await repo.upsert_citation(citation)
                 await neo4j.project_citation(kb_id=kb_id, citation=citation)
                 counts["citations"] += 1
-            counts["processed_papers"] += 1
-            await repo.update_sync_run(run_id, counts)
+            processed_paper_ids.add(local_paper.paper_id)
+            counts["processed_papers"] = len(processed_paper_ids)
+            await _persist_sync_checkpoint(repo, run_id, counts, processed_paper_ids)
 
+        await context.raise_if_cancelled()
         graph_counts = await repo.counts(kb_id)
         counts.update(
             {
@@ -320,12 +366,37 @@ async def _run_sync(
                 "completed_at": _now(),
             }
         )
-        await repo.update_sync_run(run_id, counts)
+        await _persist_sync_checkpoint(repo, run_id, counts, processed_paper_ids)
         await context.set_progress(100, "学术引用图谱同步完成")
         result = {k: v for k, v in counts.items() if k not in ("completed_at",)}
         await context.set_result({"run_id": run_id, **result})
         return {"run_id": run_id, **counts}
-    except (Exception, asyncio.CancelledError) as exc:
+    except asyncio.CancelledError:
+        if context.cancellation_reason == "shutdown":
+            await repo.update_sync_run(
+                run_id,
+                {
+                    **counts,
+                    "status": "pending",
+                    "error_type": "graph_sync_recovery_pending",
+                    "error_message": "服务重启，学术图谱同步等待自动恢复",
+                    "completed_at": None,
+                },
+            )
+        else:
+            timed_out = context.cancellation_reason == "timeout"
+            await repo.update_sync_run(
+                run_id,
+                {
+                    **counts,
+                    "status": "failed" if timed_out else "cancelled",
+                    "error_type": "graph_sync_timeout" if timed_out else "graph_sync_cancelled",
+                    "error_message": "学术图谱同步任务执行超时" if timed_out else "学术图谱同步任务已取消",
+                    "completed_at": _now(),
+                },
+            )
+        raise
+    except Exception as exc:
         error_type = getattr(exc, "error_type", "academic_graph_sync_failed")
         error_message = getattr(exc, "message", str(exc))
         await repo.update_sync_run(
@@ -408,11 +479,98 @@ async def enqueue_academic_graph_sync(
     return {"run_id": run_id, "task_id": task.id, "status": task.status}
 
 
+async def _resume_academic_graph_sync_task(context: TaskContext) -> dict[str, Any]:
+    run_id = str(context.payload.get("run_id") or "").strip()
+    if not run_id:
+        raise ValueError("学术图谱同步恢复缺少运行标识")
+
+    repo = AcademicGraphRepository()
+    run = await repo.get_sync_run(run_id)
+    if run is None:
+        raise RuntimeError("学术图谱同步运行不存在，无法恢复")
+    if run.status in {"success", "completed_with_conflicts"}:
+        return {
+            "run_id": run_id,
+            "status": run.status,
+            "processed_papers": run.processed_papers,
+            "graph_papers": run.graph_papers,
+            "citations": run.citations,
+            "authors": run.authors,
+            "topics": run.topics,
+            "conflict_count": run.conflict_count,
+        }
+    if run.status in {"failed", "cancelled"}:
+        raise RuntimeError(f"学术图谱同步已处于 {run.status} 状态，不能恢复")
+
+    user = await UserRepository().get_by_uid(str(run.uid))
+    if user is None or bool(user.is_deleted):
+        error = "图谱同步任务所有者不存在或已删除"
+        await repo.update_sync_run(
+            run_id,
+            {
+                "status": "failed",
+                "error_type": "graph_sync_recovery_invalid",
+                "error_message": error,
+                "completed_at": _now(),
+            },
+        )
+        raise RuntimeError(error)
+    try:
+        await _ensure_access(user, str(run.kb_id), write=True)
+    except HTTPException as exc:
+        error = "图谱同步任务所有者已失去知识库写入权限"
+        await repo.update_sync_run(
+            run_id,
+            {
+                "status": "failed",
+                "error_type": "graph_sync_recovery_invalid",
+                "error_message": error,
+                "completed_at": _now(),
+            },
+        )
+        raise RuntimeError(error) from exc
+
+    config = run.sync_config or {}
+    return await _run_sync(
+        context,
+        run_id=run_id,
+        kb_id=str(run.kb_id),
+        paper_ids=list(run.requested_paper_ids or []),
+        citation_limit=int(config.get("citation_limit") or 0),
+        reference_limit=int(config.get("reference_limit") or 0),
+    )
+
+
 async def recover_academic_graph_sync_runs() -> int:
     recovered = 0
     repo = AcademicGraphRepository()
     for run in await repo.list_recoverable_sync_runs():
         config = run.sync_config or {}
+        user = await UserRepository().get_by_uid(str(run.uid))
+        if user is None or bool(user.is_deleted):
+            await repo.update_sync_run(
+                str(run.run_id),
+                {
+                    "status": "failed",
+                    "error_type": "graph_sync_recovery_invalid",
+                    "error_message": "图谱同步任务所有者不存在或已删除",
+                    "completed_at": _now(),
+                },
+            )
+            continue
+        try:
+            await _ensure_access(user, str(run.kb_id), write=True)
+        except HTTPException:
+            await repo.update_sync_run(
+                str(run.run_id),
+                {
+                    "status": "failed",
+                    "error_type": "graph_sync_recovery_invalid",
+                    "error_message": "图谱同步任务所有者已失去知识库写入权限",
+                    "completed_at": _now(),
+                },
+            )
+            continue
 
         async def sync(context: TaskContext, record=run, sync_config=config) -> dict[str, Any]:
             return await _run_sync(
@@ -424,22 +582,38 @@ async def recover_academic_graph_sync_runs() -> int:
                 reference_limit=int(sync_config.get("reference_limit") or 0),
             )
 
-        _, created = await tasker.enqueue_unique_by_payload(
-            name="恢复学术引用图谱同步",
-            task_type="academic_graph_sync",
-            payload={"run_id": run.run_id, "kb_id": run.kb_id, **config},
-            payload_match={"run_id": run.run_id},
-            statuses={"pending", "running"},
-            coroutine=sync,
-        )
+        try:
+            _, created = await tasker.enqueue_unique_by_payload(
+                name="恢复学术引用图谱同步",
+                task_type="academic_graph_sync",
+                payload={"run_id": run.run_id, "kb_id": run.kb_id, **config},
+                payload_match={"run_id": run.run_id},
+                statuses={"pending", "running"},
+                coroutine=sync,
+            )
+        except Exception as exc:
+            await repo.update_sync_run(
+                str(run.run_id),
+                {
+                    "status": "failed",
+                    "error_type": "graph_sync_recovery_failed",
+                    "error_message": str(exc),
+                    "completed_at": _now(),
+                },
+            )
+            continue
         recovered += int(created)
     return recovered
+
+
+tasker.register_resumable_handler("academic_graph_sync", _resume_academic_graph_sync_task)
 
 
 async def get_academic_graph_sync_run(*, run_id: str, current_user: User) -> dict[str, Any]:
     record = await AcademicGraphRepository().get_sync_run(run_id)
     if record is None:
         raise AcademicGraphSyncError("sync_run_not_found", "学术图谱同步运行不存在")
+    await _ensure_access(current_user, str(record.kb_id))
     if str(record.uid) != str(current_user.uid) and current_user.role not in {"admin", "superadmin"}:
         raise AcademicGraphSyncError("forbidden", "无权查看该同步运行")
     return {
@@ -472,6 +646,7 @@ async def list_academic_graph_conflicts(
     run = await repo.get_sync_run(run_id)
     if run is None:
         raise AcademicGraphSyncError("sync_run_not_found", "学术图谱同步运行不存在")
+    await _ensure_access(current_user, str(run.kb_id))
     if str(run.uid) != str(current_user.uid) and current_user.role not in {"admin", "superadmin"}:
         raise AcademicGraphSyncError("forbidden", "无权查看该同步运行的冲突")
     conflicts, total = await repo.list_conflicts(

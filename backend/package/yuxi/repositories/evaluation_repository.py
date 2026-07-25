@@ -47,6 +47,12 @@ class EvaluationRepository:
         async with pg_manager.get_async_session_context() as session:
             session.add_all(items)
 
+    async def replace_dataset_items(self, dataset_id: str, items_data: list[dict[str, Any]]) -> None:
+        items = [EvaluationDatasetItem(**item) for item in items_data]
+        async with pg_manager.get_async_session_context() as session:
+            await session.execute(delete(EvaluationDatasetItem).where(EvaluationDatasetItem.dataset_id == dataset_id))
+            session.add_all(items)
+
     async def get_dataset(self, dataset_id: str) -> EvaluationDataset | None:
         async with pg_manager.get_async_session_context() as session:
             result = await session.execute(select(EvaluationDataset).where(EvaluationDataset.dataset_id == dataset_id))
@@ -252,6 +258,15 @@ class EvaluationRepository:
                 .order_by(EvaluationRunItem.item_index.asc())
                 .offset(offset)
                 .limit(limit)
+            )
+            return list(result.scalars().all())
+
+    async def list_all_run_items(self, run_id: str) -> list[EvaluationRunItem]:
+        async with pg_manager.get_async_session_context() as session:
+            result = await session.execute(
+                select(EvaluationRunItem)
+                .where(EvaluationRunItem.run_id == run_id)
+                .order_by(EvaluationRunItem.item_index.asc())
             )
             return list(result.scalars().all())
 

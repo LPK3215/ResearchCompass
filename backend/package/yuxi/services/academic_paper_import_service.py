@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import re
 from typing import Any
+
+from fastapi import HTTPException
 
 from yuxi.knowledge.runtime import knowledge_base
 from yuxi.repositories.academic_paper_repository import AcademicPaperRepository
 from yuxi.repositories.knowledge_base_repository import KnowledgeBaseRepository
 from yuxi.repositories.knowledge_file_repository import KnowledgeFileRepository
+from yuxi.repositories.user_repository import UserRepository
 from yuxi.services.research_paper_service import _ensure_access
 from yuxi.services.semantic_scholar_service import (
     SemanticScholarClient,
@@ -34,31 +38,82 @@ def _safe_filename(title: str, paper_id: str) -> str:
 
 
 def _paper_metadata(paper: dict[str, Any]) -> dict[str, Any]:
-    external_ids = paper.get("externalIds") if isinstance(paper.get("externalIds"), dict) else {}
+    raw_external_ids = paper.get("externalIds")
+    external_ids = raw_external_ids if isinstance(raw_external_ids, dict) else {}
     paper_id = str(paper.get("paperId") or "").strip()
-    if not paper_id or not str(paper.get("title") or "").strip():
+    title = str(paper.get("title") or "").strip()
+    if not paper_id or not title:
         raise AcademicPaperImportError("paper_metadata_invalid", "Semantic Scholar 论文缺少 paperId 或标题")
+    if len(paper_id) > 61:
+        raise AcademicPaperImportError("paper_metadata_invalid", "Semantic Scholar paperId 超出系统长度限制")
+
+    publication_year = paper.get("year")
+    if publication_year is not None:
+        if isinstance(publication_year, bool) or (
+            isinstance(publication_year, float) and not publication_year.is_integer()
+        ):
+            raise AcademicPaperImportError("paper_metadata_invalid", "Semantic Scholar 论文年份无效")
+        try:
+            publication_year = int(publication_year)
+        except (TypeError, ValueError) as exc:
+            raise AcademicPaperImportError("paper_metadata_invalid", "Semantic Scholar 论文年份无效") from exc
+        if not 1500 <= publication_year <= datetime.now(UTC).year + 1:
+            raise AcademicPaperImportError("paper_metadata_invalid", "Semantic Scholar 论文年份超出有效范围")
+
+    citation_count = paper.get("citationCount")
+    if citation_count is not None:
+        if isinstance(citation_count, bool) or (
+            isinstance(citation_count, float) and not citation_count.is_integer()
+        ):
+            raise AcademicPaperImportError("paper_metadata_invalid", "Semantic Scholar 引用数无效")
+        try:
+            citation_count = int(citation_count)
+        except (TypeError, ValueError) as exc:
+            raise AcademicPaperImportError("paper_metadata_invalid", "Semantic Scholar 引用数无效") from exc
+        if citation_count < 0:
+            raise AcademicPaperImportError("paper_metadata_invalid", "Semantic Scholar 引用数不能为负数")
+
+    venue = str(paper.get("venue") or "").strip() or None
+    if venue and len(venue) > 512:
+        raise AcademicPaperImportError("paper_metadata_invalid", "Semantic Scholar 期刊或会议名称超出长度限制")
+    doi = str(external_ids.get("DOI") or "").strip().lower() or None
+    if doi and len(doi) > 512:
+        raise AcademicPaperImportError("paper_metadata_invalid", "Semantic Scholar DOI 超出长度限制")
+    normalized_external_ids: dict[str, str] = {}
+    for key, value in external_ids.items():
+        if not isinstance(key, str) or not isinstance(value, str):
+            raise AcademicPaperImportError("paper_metadata_invalid", "Semantic Scholar 外部标识格式无效")
+        normalized_key = key.strip()
+        normalized_value = value.strip()
+        if not normalized_key or not normalized_value:
+            continue
+        if len(normalized_key) > 64 or len(normalized_value) > 512:
+            raise AcademicPaperImportError("paper_metadata_invalid", "Semantic Scholar 外部标识超出长度限制")
+        normalized_external_ids[normalized_key] = normalized_value
+    if len(normalized_external_ids) > 32:
+        raise AcademicPaperImportError("paper_metadata_invalid", "Semantic Scholar 外部标识数量超出限制")
+
     return {
         "paper_id": f"s2_{paper_id}",
-        "title": str(paper["title"]).strip(),
+        "title": title,
         "abstract": str(paper.get("abstract") or "").strip() or None,
         "authors": [
             str(author.get("name")).strip()
             for author in paper.get("authors") or []
             if isinstance(author, dict) and str(author.get("name") or "").strip()
         ],
-        "publication_year": paper.get("year"),
-        "venue": str(paper.get("venue") or "").strip() or None,
-        "doi": str(external_ids.get("DOI") or "").strip().lower() or None,
+        "publication_year": publication_year,
+        "venue": venue,
+        "doi": doi,
         "keywords": [str(value).strip() for value in paper.get("fieldsOfStudy") or [] if str(value).strip()],
         "language": "en",
         "metadata_source": "semantic_scholar",
         "metadata_status": "extracted",
         "external_ids": {
-            **external_ids,
+            **normalized_external_ids,
             "SemanticScholar": paper_id,
         },
-        "citation_count": paper.get("citationCount"),
+        "citation_count": citation_count,
     }
 
 
@@ -112,6 +167,7 @@ async def _run_import_task(
     operator_id: str,
 ) -> dict[str, Any]:
     try:
+        await context.raise_if_cancelled()
         file_info = await knowledge_base.get_file_basic_info(kb_id, file_id)
         file_meta = file_info.get("meta") if isinstance(file_info, dict) else None
         if not isinstance(file_meta, dict):
@@ -130,6 +186,7 @@ async def _run_import_task(
         if file_status in {"uploaded", "error_parsing", "failed"}:
             await context.set_progress(5, "准备解析外部论文")
             parsed = await knowledge_base.parse_file(kb_id, file_id, operator_id=operator_id)
+            await context.raise_if_cancelled()
         elif file_status == "indexing":
             await KnowledgeFileRepository().update_fields(
                 file_id=file_id,
@@ -145,6 +202,7 @@ async def _run_import_task(
         }:
             raise ValueError(f"外部论文文件处于不可索引状态: {file_status}")
         await context.set_progress(55, "正在建立学术分块和检索索引")
+        await context.raise_if_cancelled()
         indexed = await knowledge_base.index_file(
             kb_id,
             file_id,
@@ -154,6 +212,7 @@ async def _run_import_task(
                 "chunk_parser_config": {"paper_metadata": paper_metadata},
             },
         )
+        await context.raise_if_cancelled()
         result = {
             "kb_id": kb_id,
             "file_id": file_id,
@@ -229,7 +288,7 @@ async def import_external_paper(*, identifier: str, kb_id: str, current_user: Us
             operator_id=str(current_user.uid),
         )
         task = await tasker.enqueue(
-            name=f"导入学术论文 ({paper_metadata['title']})",
+            name=f"导入学术论文 ({paper_metadata['title'][:220]})",
             task_type="academic_paper_import",
             payload={
                 "kb_id": kb_id,
@@ -270,6 +329,57 @@ async def import_external_paper(*, identifier: str, kb_id: str, current_user: Us
         "title": paper_metadata["title"],
         "filename": filename,
     }
+
+
+async def _resume_external_paper_import_task(context: TaskContext) -> dict[str, Any]:
+    payload = context.payload
+    try:
+        kb_id = str(payload["kb_id"])
+        file_id = str(payload["file_id"])
+        paper_metadata = payload["paper_metadata"]
+        operator_id = str(payload["operator_id"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("外部论文导入恢复参数无效") from exc
+    if not kb_id or not file_id or not operator_id or not isinstance(paper_metadata, dict):
+        raise ValueError("外部论文导入恢复参数无效")
+
+    file_repo = KnowledgeFileRepository()
+    user = await UserRepository().get_by_uid(operator_id)
+    if user is None or bool(user.is_deleted):
+        error = "外部论文导入任务所有者不存在或已删除"
+        await file_repo.update_fields(
+            file_id=file_id,
+            kb_id=kb_id,
+            data={"status": "failed", "error_message": error},
+        )
+        raise RuntimeError(error)
+    try:
+        await _ensure_access(user, kb_id, write=True)
+    except HTTPException as exc:
+        error = "外部论文导入任务所有者已失去知识库权限"
+        await file_repo.update_fields(
+            file_id=file_id,
+            kb_id=kb_id,
+            data={"status": "failed", "error_message": error},
+        )
+        raise RuntimeError(error) from exc
+
+    file_info = await knowledge_base.get_file_basic_info(kb_id, file_id)
+    file_meta = file_info.get("meta") if isinstance(file_info, dict) else None
+    if isinstance(file_meta, dict) and file_meta.get("status") == "parsing":
+        await file_repo.update_fields(
+            file_id=file_id,
+            kb_id=kb_id,
+            data={"status": "uploaded", "error_message": "服务重启后恢复外部论文解析"},
+        )
+
+    return await _run_import_task(
+        context,
+        kb_id=kb_id,
+        file_id=file_id,
+        paper_metadata=paper_metadata,
+        operator_id=operator_id,
+    )
 
 
 async def recover_external_paper_imports() -> int:
@@ -314,7 +424,24 @@ async def recover_external_paper_imports() -> int:
                     kb_id=record.kb_id,
                     data={"status": "error_indexing", "error_message": "服务重启后恢复外部论文索引"},
                 )
-            operator_id = str(record.created_by or "system")
+            user = await UserRepository().get_by_uid(str(record.created_by or ""))
+            if user is None or bool(user.is_deleted):
+                await file_repo.update_fields(
+                    file_id=record.file_id,
+                    kb_id=record.kb_id,
+                    data={"status": "failed", "error_message": "外部论文导入任务所有者不存在或已删除"},
+                )
+                continue
+            try:
+                await _ensure_access(user, str(record.kb_id), write=True)
+            except HTTPException:
+                await file_repo.update_fields(
+                    file_id=record.file_id,
+                    kb_id=record.kb_id,
+                    data={"status": "failed", "error_message": "外部论文导入任务所有者已失去知识库权限"},
+                )
+                continue
+            operator_id = str(user.uid)
 
             async def run(context: TaskContext, item=record, metadata=paper_metadata, operator=operator_id):
                 return await _run_import_task(
@@ -325,22 +452,38 @@ async def recover_external_paper_imports() -> int:
                     operator_id=operator,
                 )
 
-            task, created = await tasker.enqueue_unique_by_payload(
-                name=f"恢复外部论文导入 ({record.filename})",
-                task_type="academic_paper_import",
-                payload={
-                    "kb_id": record.kb_id,
-                    "file_id": record.file_id,
-                    "paper_id": paper_metadata["paper_id"],
-                    "paper_metadata": paper_metadata,
-                    "operator_id": operator_id,
-                },
-                payload_match={"kb_id": record.kb_id, "file_id": record.file_id},
-                statuses={"pending", "running"},
-                coroutine=run,
-            )
+            try:
+                _, created = await tasker.enqueue_unique_by_payload(
+                    name=f"恢复外部论文导入 ({record.filename})",
+                    task_type="academic_paper_import",
+                    payload={
+                        "kb_id": record.kb_id,
+                        "file_id": record.file_id,
+                        "paper_id": paper_metadata["paper_id"],
+                        "paper_metadata": paper_metadata,
+                        "operator_id": operator_id,
+                    },
+                    payload_match={"kb_id": record.kb_id, "file_id": record.file_id},
+                    statuses={"pending", "running"},
+                    coroutine=run,
+                )
+            except Exception as exc:
+                logger.exception(
+                    "恢复外部论文导入任务入队失败: kb_id=%s file_id=%s",
+                    record.kb_id,
+                    record.file_id,
+                )
+                await file_repo.update_fields(
+                    file_id=record.file_id,
+                    kb_id=record.kb_id,
+                    data={"status": "failed", "error_message": f"恢复任务入队失败: {exc}"},
+                )
+                continue
             recovered += int(created)
     return recovered
+
+
+tasker.register_resumable_handler("academic_paper_import", _resume_external_paper_import_task)
 
 
 __all__ = [

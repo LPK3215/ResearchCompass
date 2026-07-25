@@ -98,7 +98,10 @@ class SemanticScholarClient:
                 await asyncio.sleep(wait)
                 continue
             if response.status_code == 429:
-                raise SemanticScholarError("semantic_scholar_rate_limited", "Semantic Scholar API 触发限流，已重试 3 次仍失败")
+                raise SemanticScholarError(
+                    "semantic_scholar_rate_limited",
+                    "Semantic Scholar API 触发限流，已重试 3 次仍失败",
+                )
             break
         if response.status_code == 404:
             raise SemanticScholarError("paper_not_found", "Semantic Scholar 未找到论文")

@@ -553,6 +553,24 @@ async def index_graph_build(
         raise HTTPException(status_code=500, detail=f"提交图谱构建任务失败: {e}")
 
 
+async def _resume_graph_build_task(context: TaskContext) -> dict:
+    payload = context.payload
+    kb_id = str(payload.get("kb_id") or "").strip()
+    if not kb_id:
+        raise ValueError("图谱构建恢复任务缺少 kb_id")
+    try:
+        batch_size = max(1, min(int(payload.get("batch_size") or 20), 200))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("图谱构建恢复任务 batch_size 无效") from exc
+
+    await context.set_message("服务重启后恢复图谱构建")
+    await context.set_progress(5.0, "准备构建图谱")
+    result = await MilvusGraphService().build_pending_chunks(kb_id, batch_size=batch_size, context=context)
+    await context.set_result(result)
+    await context.set_progress(100.0, f"图谱构建完成，成功 {result['success']} 个，失败 {result['failed']} 个")
+    return result
+
+
 @knowledge.post("/databases/{kb_id}/graph-build/reset")
 async def reset_graph_build(
     kb_id: str,
@@ -993,6 +1011,8 @@ async def _run_parse_file_ids(
     result_payload = {"items": processed_items, "processed": len(processed_items), "failed": failed_count}
     await context.set_result(result_payload)
     await context.set_progress(100.0, message)
+    if failed_count:
+        raise RuntimeError(message)
     return result_payload
 
 
@@ -1042,6 +1062,8 @@ async def _run_index_file_ids(
     result_payload = {"items": processed_items, "processed": len(processed_items), "failed": failed_count}
     await context.set_result(result_payload)
     await context.set_progress(100.0, message)
+    if failed_count:
+        raise RuntimeError(message)
     return result_payload
 
 
@@ -1099,6 +1121,8 @@ async def _run_parse_pending_statuses(
     }
     await context.set_result(result_payload)
     await context.set_progress(100.0, message)
+    if failed_count:
+        raise RuntimeError(message)
     return result_payload
 
 
@@ -1159,6 +1183,8 @@ async def _run_index_pending_statuses(
     }
     await context.set_result(result_payload)
     await context.set_progress(100.0, message)
+    if failed_count:
+        raise RuntimeError(message)
     return result_payload
 
 
@@ -1181,7 +1207,7 @@ async def _enqueue_parse_task(kb_id: str, file_ids: list[str], operator_id: str,
         task = await tasker.enqueue(
             name=f"文档解析 ({db_info['name']})",
             task_type="knowledge_parse",
-            payload={"kb_id": kb_id, "file_ids": file_ids},
+            payload={"kb_id": kb_id, "file_ids": file_ids, "operator_id": operator_id},
             coroutine=run_parse,
         )
         return {"message": "解析任务已提交", "status": "queued", "task_id": task.id}
@@ -1218,6 +1244,7 @@ async def _enqueue_parse_pending_task(kb_id: str, operator_id: str, db_info: dic
                 "action": "parse",
                 "statuses": PENDING_PARSE_STATUSES,
                 "count": pending_count,
+                "operator_id": operator_id,
             },
             payload_match={"kb_id": kb_id, "scope": "pending", "action": "parse"},
             statuses=ACTIVE_DOCUMENT_ACTION_TASK_STATUSES,
@@ -1253,7 +1280,7 @@ async def _enqueue_index_task(kb_id: str, file_ids: list[str], params: dict, ope
         task = await tasker.enqueue(
             name=f"文档入库 ({db_info['name']})",
             task_type="knowledge_index",
-            payload={"kb_id": kb_id, "file_ids": file_ids, "params": params},
+            payload={"kb_id": kb_id, "file_ids": file_ids, "params": params, "operator_id": operator_id},
             coroutine=run_index,
         )
         return {"message": "入库任务已提交", "status": "queued", "task_id": task.id}
@@ -1292,6 +1319,7 @@ async def _enqueue_index_pending_task(kb_id: str, params: dict, operator_id: str
                 "statuses": PENDING_INDEX_STATUSES,
                 "count": pending_count,
                 "params": params,
+                "operator_id": operator_id,
             },
             payload_match={"kb_id": kb_id, "scope": "pending", "action": "index"},
             statuses=ACTIVE_DOCUMENT_ACTION_TASK_STATUSES,
@@ -1305,6 +1333,73 @@ async def _enqueue_index_pending_task(kb_id: str, params: dict, operator_id: str
         }
     except Exception as e:
         return {"message": f"提交失败: {e}", "status": "failed"}
+
+
+def _resume_document_task_identity(payload: dict, task_name: str) -> tuple[str, str]:
+    kb_id = str(payload.get("kb_id") or "").strip()
+    operator_id = str(payload.get("operator_id") or "").strip()
+    if not kb_id or not operator_id:
+        raise ValueError(f"{task_name}恢复任务缺少知识库或操作人")
+    return kb_id, operator_id
+
+
+async def _resume_parse_task(context: TaskContext) -> dict:
+    payload = context.payload
+    kb_id, operator_id = _resume_document_task_identity(payload, "文档解析")
+    if payload.get("scope") == "pending":
+        initial_total = int(payload.get("count") or 0)
+        return await _run_parse_pending_statuses(
+            context=context,
+            kb_id=kb_id,
+            statuses=PENDING_PARSE_STATUSES,
+            initial_total=max(initial_total, 1),
+            operator_id=operator_id,
+        )
+
+    file_ids = payload.get("file_ids")
+    has_valid_file_ids = isinstance(file_ids, list) and bool(file_ids) and all(
+        isinstance(file_id, str) and file_id for file_id in file_ids
+    )
+    if not has_valid_file_ids:
+        raise ValueError("文档解析恢复任务缺少有效 file_ids")
+    return await _run_parse_file_ids(context=context, kb_id=kb_id, file_ids=file_ids, operator_id=operator_id)
+
+
+async def _resume_index_task(context: TaskContext) -> dict:
+    payload = context.payload
+    kb_id, operator_id = _resume_document_task_identity(payload, "文档入库")
+    params = payload.get("params") or {}
+    if not isinstance(params, dict):
+        raise ValueError("文档入库恢复任务 params 无效")
+    if payload.get("scope") == "pending":
+        initial_total = int(payload.get("count") or 0)
+        return await _run_index_pending_statuses(
+            context=context,
+            kb_id=kb_id,
+            statuses=PENDING_INDEX_STATUSES,
+            initial_total=max(initial_total, 1),
+            operator_id=operator_id,
+            params=params,
+        )
+
+    file_ids = payload.get("file_ids")
+    has_valid_file_ids = isinstance(file_ids, list) and bool(file_ids) and all(
+        isinstance(file_id, str) and file_id for file_id in file_ids
+    )
+    if not has_valid_file_ids:
+        raise ValueError("文档入库恢复任务缺少有效 file_ids")
+    return await _run_index_file_ids(
+        context=context,
+        kb_id=kb_id,
+        file_ids=file_ids,
+        operator_id=operator_id,
+        params=params,
+    )
+
+
+tasker.register_resumable_handler(GRAPH_TASK_TYPE, _resume_graph_build_task)
+tasker.register_resumable_handler("knowledge_parse", _resume_parse_task)
+tasker.register_resumable_handler("knowledge_index", _resume_index_task)
 
 
 @knowledge.post("/databases/{kb_id}/documents/parse")

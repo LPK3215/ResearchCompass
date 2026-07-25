@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from typing import Any
 
 from sqlalchemy import String, cast, func, or_, select
@@ -281,6 +282,26 @@ class AcademicPaperRepository:
             result = await session.execute(select(AcademicPaper).where(*filters).order_by(AcademicPaper.id.asc()))
             return list(result.scalars().all())
 
+    async def list_for_opportunity_radar(
+        self, *, kb_id: str, year_from: int | None = None, year_to: int | None = None
+    ) -> list[AcademicPaper]:
+        filters = [
+            AcademicPaper.kb_id == kb_id,
+            AcademicPaper.indexed_revision >= AcademicPaper.metadata_revision,
+            AcademicPaper.metadata_status.in_(["extracted", "verified"]),
+        ]
+        if year_from is not None:
+            filters.append(AcademicPaper.publication_year >= year_from)
+        if year_to is not None:
+            filters.append(AcademicPaper.publication_year <= year_to)
+        async with pg_manager.get_async_session_context() as session:
+            result = await session.execute(
+                select(AcademicPaper)
+                .where(*filters)
+                .order_by(AcademicPaper.publication_year.asc().nullslast(), AcademicPaper.id.asc())
+            )
+            return list(result.scalars().all())
+
     async def update_external_metadata(
         self,
         *,
@@ -388,6 +409,54 @@ class AcademicPaperRepository:
                 ]
                 rows.append((year, normalized_keywords, citation_count))
             return rows, total
+
+    async def iter_trend_record_batches(
+        self,
+        *,
+        kb_id: str,
+        year_from: int | None,
+        year_to: int | None,
+        batch_size: int = 2_000,
+    ) -> AsyncIterator[list[tuple[int | None, list[str], int | None]]]:
+        filters = [
+            AcademicPaper.kb_id == kb_id,
+            AcademicPaper.indexed_revision >= AcademicPaper.metadata_revision,
+            AcademicPaper.metadata_status.in_(["extracted", "verified"]),
+        ]
+        if year_from is not None:
+            filters.append(AcademicPaper.publication_year >= year_from)
+        if year_to is not None:
+            filters.append(AcademicPaper.publication_year <= year_to)
+
+        normalized_batch_size = min(max(int(batch_size), 100), 5_000)
+        after_id = 0
+        async with pg_manager.get_async_session_context() as session:
+            while True:
+                result = await session.execute(
+                    select(
+                        AcademicPaper.id,
+                        AcademicPaper.publication_year,
+                        AcademicPaper.keywords,
+                        AcademicPaper.citation_count,
+                    )
+                    .where(*filters, AcademicPaper.id > after_id)
+                    .order_by(AcademicPaper.id.asc())
+                    .limit(normalized_batch_size)
+                )
+                records = result.all()
+                if not records:
+                    return
+
+                rows = []
+                for paper_id, year, keywords, citation_count in records:
+                    normalized_keywords = [
+                        str(keyword).strip()
+                        for keyword in (keywords if isinstance(keywords, list) else [])
+                        if str(keyword).strip()
+                    ]
+                    rows.append((year, normalized_keywords, citation_count))
+                    after_id = int(paper_id)
+                yield rows
 
     async def list_tags(self, *, kb_id: str, uid: str) -> list[dict[str, Any]]:
         async with pg_manager.get_async_session_context() as session:

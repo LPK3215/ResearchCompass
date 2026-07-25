@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from collections import Counter
 from contextlib import asynccontextmanager
+import re
 from typing import Any
+import unicodedata
 
 from fastapi import HTTPException
 from sqlalchemy import text
@@ -12,9 +14,11 @@ from yuxi.repositories.academic_paper_repository import AcademicPaperRepository
 from yuxi.repositories.knowledge_base_repository import KnowledgeBaseRepository
 from yuxi.repositories.knowledge_chunk_repository import KnowledgeChunkRepository
 from yuxi.repositories.knowledge_file_repository import KnowledgeFileRepository
+from yuxi.repositories.user_repository import UserRepository
 from yuxi.services.task_service import TaskContext, tasker
 from yuxi.storage.postgres.manager import pg_manager
 from yuxi.storage.postgres.models_business import User
+from yuxi.utils import logger
 
 
 def _serialize_paper(paper) -> dict[str, Any]:
@@ -98,20 +102,15 @@ async def get_paper_view(*, kb_id: str, paper_id: str, current_user: User) -> di
         raise HTTPException(status_code=404, detail="论文不存在")
 
     file_record = await KnowledgeFileRepository().get_by_file_id(paper.file_id)
-    chunks = await KnowledgeChunkRepository().list_by_file_id(paper.file_id)
-    academic_chunks = [
-        chunk
-        for chunk in chunks
-        if isinstance(chunk.chunk_metadata, dict)
-        and chunk.chunk_metadata.get("document_type") == "academic_paper"
-    ]
+    academic_chunks = await KnowledgeChunkRepository().list_academic_chunk_metadata_by_file_id(paper.file_id)
     section_counts = Counter(
-        str(chunk.chunk_metadata.get("section_type") or "other") for chunk in academic_chunks
+        str(metadata.get("section_type") or "other") for _, metadata in academic_chunks if isinstance(metadata, dict)
     )
     sections = []
     seen: set[tuple[str, str | None]] = set()
-    for chunk in academic_chunks:
-        metadata = chunk.chunk_metadata
+    for chunk_index, metadata in academic_chunks:
+        if not isinstance(metadata, dict):
+            continue
         identity = (str(metadata.get("section_type") or "other"), metadata.get("section_title"))
         if identity in seen:
             continue
@@ -121,7 +120,7 @@ async def get_paper_view(*, kb_id: str, paper_id: str, current_user: User) -> di
                 "section_type": identity[0],
                 "section_title": identity[1],
                 "section_path": metadata.get("section_path") or [],
-                "first_chunk_index": chunk.chunk_index,
+                "first_chunk_index": chunk_index,
             }
         )
 
@@ -296,6 +295,7 @@ async def _run_paper_reindex(
     paper_repo = AcademicPaperRepository()
     async with _paper_reindex_lock(kb_id, paper_id):
         while True:
+            await context.raise_if_cancelled()
             paper = await paper_repo.get_by_paper_id(kb_id=kb_id, paper_id=paper_id)
             if paper is None:
                 raise ValueError("论文不存在，无法同步检索索引")
@@ -320,6 +320,7 @@ async def _run_paper_reindex(
                         "chunk_parser_config": {"paper_metadata": _serialize_paper(paper)},
                     },
                 )
+                await context.raise_if_cancelled()
                 completed = await paper_repo.complete_reindex(
                     kb_id=kb_id,
                     paper_id=paper_id,
@@ -365,7 +366,13 @@ async def _enqueue_paper_reindex(
             target_revision=revision,
         )
 
-    payload = {"kb_id": kb_id, "paper_id": paper_id, "file_id": file_id, "revision": revision}
+    payload = {
+        "kb_id": kb_id,
+        "paper_id": paper_id,
+        "file_id": file_id,
+        "operator_id": operator_id,
+        "revision": revision,
+    }
     return await tasker.enqueue_unique_by_payload(
         name=f"论文元数据同步 ({paper_title})",
         task_type="research_paper_reindex",
@@ -376,29 +383,107 @@ async def _enqueue_paper_reindex(
     )
 
 
+async def _resume_paper_reindex_task(context: TaskContext) -> dict[str, Any]:
+    """Resume a persisted reindex with the original writer still authorized."""
+    payload = context.payload
+    try:
+        kb_id = str(payload["kb_id"])
+        paper_id = str(payload["paper_id"])
+        file_id = str(payload["file_id"])
+        revision = int(payload["revision"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("论文元数据同步恢复参数无效") from exc
+
+    operator_id = str(payload.get("operator_id") or "").strip() or None
+    if operator_id is not None:
+        user = await UserRepository().get_by_uid(operator_id)
+        if user is None or bool(user.is_deleted):
+            error = "论文元数据同步任务所有者不存在或已删除"
+            await AcademicPaperRepository().fail_reindex(
+                kb_id=kb_id,
+                paper_id=paper_id,
+                revision=revision,
+                error=error,
+            )
+            raise RuntimeError(error)
+        try:
+            await _ensure_access(user, kb_id, write=True)
+        except HTTPException as exc:
+            error = "论文元数据同步任务所有者已失去知识库写入权限"
+            await AcademicPaperRepository().fail_reindex(
+                kb_id=kb_id,
+                paper_id=paper_id,
+                revision=revision,
+                error=error,
+            )
+            raise RuntimeError(error) from exc
+
+    return await _run_paper_reindex(
+        context,
+        kb_id=kb_id,
+        paper_id=paper_id,
+        file_id=file_id,
+        operator_id=operator_id,
+        target_revision=revision,
+    )
+
+
 async def recover_pending_paper_reindexes() -> int:
     recovered = 0
-    for paper in await AcademicPaperRepository().list_pending_reindex():
-        _, created = await _enqueue_paper_reindex(
-            kb_id=str(paper.kb_id),
-            paper_id=str(paper.paper_id),
-            file_id=str(paper.file_id),
-            paper_title=str(paper.title),
-            operator_id=None,
-            revision=int(paper.metadata_revision or 1),
-        )
+    paper_repo = AcademicPaperRepository()
+    for paper in await paper_repo.list_pending_reindex():
+        revision = int(paper.metadata_revision or 1)
+        try:
+            _, created = await _enqueue_paper_reindex(
+                kb_id=str(paper.kb_id),
+                paper_id=str(paper.paper_id),
+                file_id=str(paper.file_id),
+                paper_title=str(paper.title),
+                operator_id=None,
+                revision=revision,
+            )
+        except Exception as exc:
+            logger.exception(
+                "恢复论文元数据同步任务入队失败: kb_id=%s paper_id=%s",
+                paper.kb_id,
+                paper.paper_id,
+            )
+            await paper_repo.fail_reindex(
+                kb_id=str(paper.kb_id),
+                paper_id=str(paper.paper_id),
+                revision=revision,
+                error=f"恢复任务入队失败: {exc}",
+            )
+            continue
         recovered += int(created)
     return recovered
 
 
+tasker.register_resumable_handler("research_paper_reindex", _resume_paper_reindex_task)
+
+
 def _escape_bibtex(value: str) -> str:
-    return str(value or "").replace("&", r"\&").replace("_", r"\_").replace("%", r"\%")
+    replacements = {
+        "\\": r"\textbackslash{}",
+        "&": r"\&",
+        "%": r"\%",
+        "$": r"\$",
+        "#": r"\#",
+        "_": r"\_",
+        "{": r"\{",
+        "}": r"\}",
+        "~": r"\textasciitilde{}",
+        "^": r"\textasciicircum{}",
+    }
+    return "".join(replacements.get(character, character) for character in str(value or ""))
 
 
 def _bibtex_key(paper: Any, index: int) -> str:
     first_author = (paper.authors or ["anon"])[0] if paper.authors else "anon"
     surname = first_author.split()[-1] if first_author else "anon"
-    return f"{surname}{paper.publication_year or 'nd'}{index}"
+    normalized_surname = unicodedata.normalize("NFKD", surname).encode("ascii", "ignore").decode("ascii")
+    safe_surname = re.sub(r"[^A-Za-z0-9_-]+", "", normalized_surname)
+    return f"{safe_surname or 'anon'}{paper.publication_year or 'nd'}{index}"
 
 
 def _format_bibtex_authors(authors: list[str]) -> str:
@@ -488,7 +573,10 @@ async def remove_paper_tag_view(
     *, kb_id: str, paper_id: str, tag: str, current_user: User
 ) -> dict[str, Any]:
     await _ensure_access(current_user, kb_id)
+    normalized = tag.strip()
+    if not normalized:
+        raise HTTPException(status_code=422, detail="标签不能为空")
     await AcademicPaperRepository().remove_tag(
-        kb_id=kb_id, paper_id=paper_id, uid=str(current_user.uid), tag=tag
+        kb_id=kb_id, paper_id=paper_id, uid=str(current_user.uid), tag=normalized
     )
-    return {"paper_id": paper_id, "tag": tag, "removed": True}
+    return {"paper_id": paper_id, "tag": normalized, "removed": True}

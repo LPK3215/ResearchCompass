@@ -6,6 +6,7 @@ from collections.abc import Callable
 
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
+from server.utils.client_ip import extract_client_ip
 
 # 创建专用的访问日志记录器
 access_logger = logging.getLogger("access_logger")
@@ -21,16 +22,6 @@ if not access_logger.handlers:
     access_logger.propagate = False
 
 
-def _extract_client_ip(request: Request) -> str:
-    """提取客户端IP地址"""
-    forwarded_for = request.headers.get("x-forwarded-for")
-    if forwarded_for:
-        return forwarded_for.split(",")[0].strip()
-    if request.client:
-        return request.client.host
-    return "unknown"
-
-
 class AccessLogMiddleware(BaseHTTPMiddleware):
     """访问日志中间件 - 记录请求处理时间"""
 
@@ -44,7 +35,7 @@ class AccessLogMiddleware(BaseHTTPMiddleware):
         start_time = time.perf_counter()
 
         # 获取客户端IP
-        client_ip = _extract_client_ip(request)
+        client_ip = extract_client_ip(request)
 
         # 处理请求
         response = await call_next(request)

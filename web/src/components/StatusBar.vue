@@ -43,7 +43,7 @@
               <Moon v-else class="icon" />
             </button>
           </a-tooltip>
-          <a-tooltip title="任务中心">
+          <a-tooltip v-if="userStore.isSuperAdmin" title="任务中心">
             <button
               type="button"
               class="header-action-button task-center-button"

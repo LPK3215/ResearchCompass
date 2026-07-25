@@ -46,12 +46,18 @@ class AcademicPaperAnalysisRepository:
             )
 
     async def get_latest(
-        self, *, kb_id: str, academic_paper_id: int, strategy: str | None = "multi_agent"
+        self,
+        *,
+        kb_id: str,
+        academic_paper_id: int,
+        uid: str,
+        strategy: str | None = "multi_agent",
     ) -> AcademicPaperAnalysisRun | None:
         async with pg_manager.get_async_session_context() as session:
             filters = [
                 AcademicPaperAnalysisRun.kb_id == kb_id,
                 AcademicPaperAnalysisRun.academic_paper_id == academic_paper_id,
+                AcademicPaperAnalysisRun.uid == uid,
             ]
             if strategy:
                 filters.append(AcademicPaperAnalysisRun.strategy == strategy)

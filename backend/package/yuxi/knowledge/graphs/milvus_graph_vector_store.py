@@ -41,11 +41,11 @@ class MilvusGraphVectorStore:
         if not connections.has_connection(self.connection_alias):
             connections.connect(alias=self.connection_alias, uri=self.milvus_uri, token=self.milvus_token)
         try:
-            if self.milvus_db not in db.list_database():
-                db.create_database(self.milvus_db)
-            db.using_database(self.milvus_db)
+            if self.milvus_db not in db.list_database(using=self.connection_alias):
+                db.create_database(self.milvus_db, using=self.connection_alias)
+            db.using_database(self.milvus_db, using=self.connection_alias)
         except Exception as exc:
-            logger.warning(f"Milvus graph database operation failed, using default: {exc}")
+            raise RuntimeError(f"Milvus graph database initialization failed: {self.milvus_db}") from exc
 
     async def insert_missing_graph_records(
         self,
@@ -143,12 +143,9 @@ class MilvusGraphVectorStore:
 
     def drop_graph_collections(self, kb_id: str) -> None:
         for collection_name in [graph_entity_collection_name(kb_id), graph_triple_collection_name(kb_id)]:
-            try:
-                if utility.has_collection(collection_name, using=self.connection_alias):
-                    utility.drop_collection(collection_name, using=self.connection_alias)
-                    logger.info(f"Dropped Milvus graph collection {collection_name}")
-            except Exception as exc:
-                logger.error(f"Failed to drop Milvus graph collection {collection_name}: {exc}")
+            if utility.has_collection(collection_name, using=self.connection_alias):
+                utility.drop_collection(collection_name, using=self.connection_alias)
+                logger.info(f"Dropped Milvus graph collection {collection_name}")
 
     async def _empty_embeddings(self) -> list:
         return []

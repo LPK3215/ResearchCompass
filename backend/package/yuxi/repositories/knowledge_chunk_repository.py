@@ -48,6 +48,20 @@ class KnowledgeChunkRepository:
             )
             return list(result.scalars().all())
 
+    async def list_academic_chunk_metadata_by_file_id(
+        self, file_id: str
+    ) -> list[tuple[int, dict[str, Any] | None]]:
+        async with pg_manager.get_async_session_context() as session:
+            result = await session.execute(
+                select(KnowledgeChunk.chunk_index, KnowledgeChunk.chunk_metadata)
+                .where(
+                    KnowledgeChunk.file_id == file_id,
+                    KnowledgeChunk.chunk_metadata["document_type"].as_string() == "academic_paper",
+                )
+                .order_by(KnowledgeChunk.chunk_index.asc())
+            )
+            return [(int(chunk_index), metadata) for chunk_index, metadata in result.all()]
+
     async def list_academic_by_file_id(
         self,
         *,

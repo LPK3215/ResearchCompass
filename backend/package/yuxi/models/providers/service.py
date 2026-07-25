@@ -67,6 +67,13 @@ def _normalize_model_item(model: dict[str, Any]) -> dict[str, Any]:
         if batch_size not in (None, ""):
             normalized["batch_size"] = int(batch_size)
 
+    context_length = model.get("context_length")
+    if context_length not in (None, ""):
+        normalized_context_length = int(context_length)
+        if normalized_context_length < 1_024:
+            raise ValueError(f"启用模型 {model_id} 的 context_length 必须不小于 1024")
+        normalized["context_length"] = normalized_context_length
+
     return normalized
 
 

@@ -458,6 +458,9 @@ async def test_worker_startup_ensures_builtin_mcp_servers(monkeypatch: pytest.Mo
     def fake_initialize():
         calls.append("initialize")
 
+    async def fake_open_langgraph_pool():
+        calls.append("open_langgraph_pool")
+
     async def fake_create_business_tables():
         calls.append("create_business_tables")
 
@@ -482,6 +485,7 @@ async def test_worker_startup_ensures_builtin_mcp_servers(monkeypatch: pytest.Mo
         calls.append("recover_pending_dispatches")
 
     monkeypatch.setattr(run_worker.pg_manager, "initialize", fake_initialize)
+    monkeypatch.setattr(run_worker.pg_manager, "open_langgraph_pool", fake_open_langgraph_pool)
     monkeypatch.setattr(run_worker.pg_manager, "create_business_tables", fake_create_business_tables)
     monkeypatch.setattr(run_worker.pg_manager, "ensure_business_schema", fake_ensure_business_schema)
     monkeypatch.setattr(run_worker.pg_manager, "get_async_session_context", fake_session_ctx)
@@ -494,6 +498,7 @@ async def test_worker_startup_ensures_builtin_mcp_servers(monkeypatch: pytest.Mo
 
     assert calls == [
         "initialize",
+        "open_langgraph_pool",
         "create_business_tables",
         "ensure_business_schema",
         "ensure_builtin_mcp_servers_in_db",

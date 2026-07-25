@@ -583,24 +583,29 @@ class EvaluationService:
                 "created_by": created_by,
             }
         )
-        task = await tasker.enqueue(
-            name="生成评估数据集",
-            task_type="dataset_generation",
-            payload={
-                "dataset_id": dataset_id,
-                "kb_id": kb_id,
-                "created_by": created_by,
-                "name": name,
-                "description": description,
-                "count": count,
-                "neighbors_count": neighbors_count,
-                "concurrency_count": concurrency_count,
-                "llm_model_spec": llm_model_spec,
-                "generation_mode": generation_mode,
-                "graph_expand_top_k": graph_expand_top_k,
-            },
-            coroutine=self._generate_dataset_task,
-        )
+        try:
+            task = await tasker.enqueue(
+                name="生成评估数据集",
+                task_type="dataset_generation",
+                payload={
+                    "dataset_id": dataset_id,
+                    "kb_id": kb_id,
+                    "created_by": created_by,
+                    "name": name,
+                    "description": description,
+                    "count": count,
+                    "neighbors_count": neighbors_count,
+                    "concurrency_count": concurrency_count,
+                    "llm_model_spec": llm_model_spec,
+                    "generation_mode": generation_mode,
+                    "graph_expand_top_k": graph_expand_top_k,
+                },
+                coroutine=self._generate_dataset_task,
+            )
+        except Exception as exc:
+            build_metadata.update(status="failed", progress=100, message=f"任务提交失败: {exc}")
+            await self.eval_repo.update_dataset(dataset_id, {"build_metadata": build_metadata})
+            raise
         build_metadata["task_id"] = task.id
         await self.eval_repo.update_dataset(dataset_id, {"build_metadata": build_metadata})
         return {"dataset_id": dataset_id, "task_id": task.id, "message": "评估数据集生成任务已提交"}
@@ -639,6 +644,19 @@ class EvaluationService:
             },
         }
         await self._update_dataset_build_metadata(dataset_id, build_metadata)
+
+        existing_item_count = await self.eval_repo.count_dataset_items(dataset_id)
+        if existing_item_count == count:
+            await self.eval_repo.update_dataset(dataset_id, {"item_count": existing_item_count})
+            await self._update_dataset_build_metadata(
+                dataset_id,
+                build_metadata,
+                status="completed",
+                progress=100,
+                message="恢复已完成的数据集生成",
+            )
+            await context.set_progress(100, "恢复已完成的数据集生成")
+            return
 
         async def report_progress(progress: float, message: str | None = None) -> None:
             await context.set_progress(progress, message)
@@ -681,7 +699,8 @@ class EvaluationService:
             if not questions:
                 raise ValueError("未生成有效评估题目")
 
-            await self.eval_repo.add_dataset_items(self._build_dataset_items(dataset_id, kb_id, questions))
+            dataset_items = self._build_dataset_items(dataset_id, kb_id, questions)
+            await self.eval_repo.replace_dataset_items(dataset_id, dataset_items)
             await self.eval_repo.update_dataset(dataset_id, {"item_count": len(questions)})
             await self._update_dataset_build_metadata(
                 dataset_id,
@@ -696,6 +715,14 @@ class EvaluationService:
                 current_task = asyncio.current_task()
                 if current_task is not None and current_task.cancelling():
                     current_task.uncancel()
+                if context.cancellation_reason == "shutdown" and not context.is_cancel_requested():
+                    await self._update_dataset_build_metadata(
+                        dataset_id,
+                        build_metadata,
+                        status="pending",
+                        message="服务重启，任务将继续",
+                    )
+                    raise
             error = str(e)
             if isinstance(e, asyncio.CancelledError):
                 if context.is_cancel_requested():
@@ -769,21 +796,32 @@ class EvaluationService:
                 }
             )
 
-            await tasker.enqueue(
-                name=f"RAG评估({run_name})",
-                task_type="rag_evaluation",
-                payload={
-                    "run_id": run_id,
-                    "name": run_name,
-                    "kb_id": kb_id,
-                    "dataset_id": dataset_id,
-                    "retrieval_config": retrieval_config,
-                    "created_by": created_by,
-                    "experiment_id": experiment_id,
-                    "variant_id": variant_id,
-                },
-                coroutine=self._run_evaluation_task,
-            )
+            try:
+                await tasker.enqueue(
+                    name=f"RAG评估({run_name})",
+                    task_type="rag_evaluation",
+                    payload={
+                        "run_id": run_id,
+                        "name": run_name,
+                        "kb_id": kb_id,
+                        "dataset_id": dataset_id,
+                        "retrieval_config": retrieval_config,
+                        "created_by": created_by,
+                        "experiment_id": experiment_id,
+                        "variant_id": variant_id,
+                    },
+                    coroutine=self._run_evaluation_task,
+                )
+            except Exception as exc:
+                await self.eval_repo.update_run(
+                    run_id,
+                    {
+                        "status": "failed",
+                        "metrics": {"error": f"任务提交失败: {exc}"},
+                        "completed_at": utc_now_naive(),
+                    },
+                )
+                raise
             return run_id
         except Exception as e:
             logger.error(f"启动评估失败: {e}")
@@ -1363,6 +1401,11 @@ class EvaluationService:
             if not dataset_items:
                 raise ValueError("Dataset has no items")
 
+            existing_items_by_index = {
+                int(item.item_index): item for item in await self.eval_repo.list_all_run_items(run_id)
+            }
+            await self.eval_repo.update_run(run_id, {"status": "running", "completed_at": None})
+
             document_gold_by_item_id = {}
             if is_document_identity and dataset_row.has_gold_chunks:
                 document_gold_by_item_id = await self._build_dataset_document_gold(dataset_items)
@@ -1411,6 +1454,36 @@ class EvaluationService:
                     "gold_document_hashes": document_gold_by_item_id.get(str(item.item_id), []),
                     "gold_answer": item.gold_answer,
                 }
+                retrieval_gold_ids = (
+                    question_data["gold_document_hashes"] if is_document_identity else question_data["gold_chunk_ids"]
+                )
+                existing_item = existing_items_by_index.get(index)
+                if existing_item is not None and str(existing_item.dataset_item_id) == str(item.item_id):
+                    existing_metrics = existing_item.metrics or {}
+                    if dataset_row.has_gold_chunks and retrieval_gold_ids:
+                        all_retrieval_metrics.append(
+                            {
+                                key: value
+                                for key, value in existing_metrics.items()
+                                if key.startswith(("recall@", "f1@"))
+                            }
+                        )
+                    if dataset_row.has_gold_answers and question_data.get("gold_answer") and judge_llm:
+                        if "score" in existing_metrics:
+                            all_answer_metrics.append(
+                                {key: value for key, value in existing_metrics.items() if key in {"score", "reasoning"}}
+                            )
+                    if (index + 1) % 5 == 0 or (index + 1) == total_items:
+                        current_metrics, _ = aggregate_metrics(all_retrieval_metrics, all_answer_metrics)
+                        await context.set_result(
+                            {
+                                "current_metrics": current_metrics,
+                                "completed_items": index + 1,
+                                "total_items": total_items,
+                            }
+                        )
+                        await update_run_db(completed=index + 1)
+                    continue
                 question_result = await evaluate_question(
                     kb_instance=kb_instance,
                     kb_id=kb_id,
@@ -1422,10 +1495,6 @@ class EvaluationService:
                     select_model_fn=select_model,
                     retrieval_identity_field="content_hash" if is_document_identity else "chunk_id",
                     gold_retrieval_ids=question_data["gold_document_hashes"] if is_document_identity else None,
-                )
-
-                retrieval_gold_ids = (
-                    question_data["gold_document_hashes"] if is_document_identity else question_data["gold_chunk_ids"]
                 )
                 if dataset_row.has_gold_chunks and retrieval_gold_ids:
                     all_retrieval_metrics.append(question_result["retrieval_scores"])
@@ -1461,6 +1530,10 @@ class EvaluationService:
                 current_task = asyncio.current_task()
                 if current_task is not None and current_task.cancelling():
                     current_task.uncancel()
+                if context.cancellation_reason == "shutdown" and not context.is_cancel_requested():
+                    if "payload" in locals():
+                        await self.eval_repo.update_run(payload["run_id"], {"status": "running", "completed_at": None})
+                    raise
             error = str(e)
             if isinstance(e, asyncio.CancelledError):
                 if context.is_cancel_requested():
@@ -1582,3 +1655,15 @@ class EvaluationService:
             raise ValueError("Run not found")
         await self.eval_repo.delete_run(run_id)
         logger.info(f"成功删除评估运行: {run_id}")
+
+
+async def _resume_dataset_generation_task(context: TaskContext):
+    return await EvaluationService()._generate_dataset_task(context)
+
+
+async def _resume_rag_evaluation_task(context: TaskContext):
+    return await EvaluationService()._run_evaluation_task(context)
+
+
+tasker.register_resumable_handler("dataset_generation", _resume_dataset_generation_task)
+tasker.register_resumable_handler("rag_evaluation", _resume_rag_evaluation_task)

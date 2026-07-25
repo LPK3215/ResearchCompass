@@ -43,8 +43,10 @@
       <a-tabs v-model:active-key="activeMode" class="research-tabs">
         <a-tab-pane key="library" tab="论文库" />
         <a-tab-pane key="search" tab="智能检索" />
+        <a-tab-pane key="synthesis" tab="证据综述" />
         <a-tab-pane key="graph" tab="引用图谱" />
         <a-tab-pane key="trends" tab="研究趋势" />
+        <a-tab-pane key="opportunities" tab="研究机会" />
         <a-tab-pane key="analysis-evaluations" tab="分析对比" />
         <a-tab-pane v-if="userStore.isAdmin" key="user-studies" tab="用户评测" />
       </a-tabs>
@@ -85,6 +87,22 @@
 
       <section v-if="activeMode === 'search'" class="search-workspace">
         <div class="search-form">
+          <div class="search-mode-toolbar">
+            <div class="toolbar-field search-mode-field">
+              <label>检索模式</label>
+              <a-radio-group
+                v-model:value="searchFilters.retrievalMode"
+                option-type="button"
+                button-style="solid"
+                @change="handleSearchModeChange"
+              >
+                <a-radio-button v-for="mode in searchModeOptions" :key="mode.value" :value="mode.value">
+                  {{ mode.label }}
+                </a-radio-button>
+              </a-radio-group>
+            </div>
+            <span class="search-mode-help">{{ selectedSearchMode.description }}</span>
+          </div>
           <div class="search-options">
             <div class="toolbar-field">
               <label for="search-database">论文知识库</label>
@@ -126,7 +144,14 @@
             @keydown.ctrl.enter="runResearchSearch"
           />
           <div class="search-form-footer">
-            <span>严格模式：查询改写、向量 + BM25、Cross-Encoder、PPR 图谱均必须成功</span>
+            <div class="search-pipeline-tags" aria-label="检索处理阶段">
+              <a-tag v-if="searchFilters.retrievalMode === strictHybridGraphMode" color="blue">图谱预检</a-tag>
+              <a-tag>查询改写</a-tag>
+              <a-tag>向量 + BM25</a-tag>
+              <a-tag>Cross-Encoder</a-tag>
+              <a-tag v-if="searchFilters.retrievalMode === strictHybridGraphMode" color="blue">引用图谱 PPR</a-tag>
+              <a-tag v-else color="green">本地证据聚合</a-tag>
+            </div>
             <a-button type="primary" :loading="searchLoading" :disabled="!selectedKbId || !searchQuery.trim()" @click="runResearchSearch">
               <template #icon><Search :size="15" /></template>
               开始检索
@@ -139,7 +164,12 @@
         <div v-else-if="searchResult" class="search-result-shell">
           <div class="search-result-summary">
             <div>
-              <h2>{{ searchResult.total }} 篇相关论文</h2>
+              <div class="search-result-title-row">
+                <h2>{{ searchResult.total }} 篇相关论文</h2>
+                <a-tag :color="searchResult.config?.mode === strictHybridGraphMode ? 'blue' : 'green'">
+                  {{ getSearchModeLabel(searchResult.config?.mode) }}
+                </a-tag>
+              </div>
               <p>改写查询：{{ searchResult.rewritten_query }}</p>
               <div class="query-keywords">
                 <a-tag v-for="keyword in searchResult.keywords" :key="keyword">{{ keyword }}</a-tag>
@@ -212,7 +242,361 @@
             </article>
           </div>
         </div>
-        <a-empty v-else description="输入研究问题后开始严格混合检索" class="page-empty" />
+        <a-empty v-else description="输入研究问题后开始检索" class="page-empty" />
+      </section>
+
+      <section v-else-if="activeMode === 'synthesis'" class="synthesis-workspace">
+        <div class="synthesis-grid">
+          <section class="synthesis-builder">
+            <div class="synthesis-builder-header">
+              <div>
+                <h2>证据约束研究综述</h2>
+                <p>从自然语言问题生成跨论文结构化综述，并强制每个结论绑定真实 chunk 证据。</p>
+              </div>
+              <a-tag color="green">本地混合检索</a-tag>
+            </div>
+            <div class="synthesis-options">
+              <div class="toolbar-field database-field">
+                <label for="synthesis-database">论文知识库</label>
+                <a-select
+                  id="synthesis-database"
+                  v-model:value="selectedKbId"
+                  :options="databaseOptions"
+                  :loading="databasesLoading"
+                  show-search
+                  option-filter-prop="label"
+                  @change="handleDatabaseChange"
+                />
+              </div>
+              <div class="toolbar-field">
+                <label>发表年份</label>
+                <div class="year-range">
+                  <a-input-number
+                    v-model:value="synthesisFilters.yearFrom"
+                    :min="1500"
+                    :max="maxPublicationYear"
+                    placeholder="起始"
+                  />
+                  <span>至</span>
+                  <a-input-number
+                    v-model:value="synthesisFilters.yearTo"
+                    :min="1500"
+                    :max="maxPublicationYear"
+                    placeholder="结束"
+                  />
+                </div>
+              </div>
+              <div class="toolbar-field compact-option">
+                <label for="synthesis-top-k">论文数</label>
+                <a-input-number id="synthesis-top-k" v-model:value="synthesisFilters.topK" :min="2" :max="20" />
+              </div>
+              <div class="toolbar-field compact-option">
+                <label for="synthesis-recall-k">候选证据</label>
+                <a-input-number
+                  id="synthesis-recall-k"
+                  v-model:value="synthesisFilters.recallTopK"
+                  :min="2"
+                  :max="200"
+                />
+              </div>
+            </div>
+            <label for="synthesis-query" class="query-label">研究问题</label>
+            <a-textarea
+              id="synthesis-query"
+              v-model:value="synthesisQuery"
+              :rows="4"
+              :maxlength="4000"
+              show-count
+              placeholder="例如：当前论文库中大模型辅助科研选题方法的共同证据、矛盾和研究空白是什么？"
+              @keydown.ctrl.enter="createSynthesis"
+            />
+            <div class="synthesis-form-footer">
+              <div class="search-pipeline-tags" aria-label="综述生成阶段">
+                <a-tag>查询改写</a-tag>
+                <a-tag>本地混合检索</a-tag>
+                <a-tag>结构化综述</a-tag>
+                <a-tag color="green">证据校验</a-tag>
+              </div>
+              <a-button
+                type="primary"
+                :loading="synthesisSubmitting"
+                :disabled="!selectedKbId || !synthesisQuery.trim()"
+                @click="createSynthesis"
+              >
+                <template #icon><Sparkles :size="15" /></template>
+                生成综述
+              </a-button>
+            </div>
+          </section>
+
+          <aside class="synthesis-history">
+            <header>
+              <div>
+                <h3>历史运行</h3>
+                <span>{{ synthesisTotal }} 条</span>
+              </div>
+              <a-button size="small" :loading="synthesisLoading" :disabled="!selectedKbId" @click="loadSyntheses">
+                <template #icon><RefreshCw :size="14" /></template>
+                刷新
+              </a-button>
+            </header>
+            <a-skeleton v-if="synthesisLoading && !synthesisRuns.length" active :paragraph="{ rows: 4 }" />
+            <a-empty v-else-if="!synthesisRuns.length" description="暂无综述运行" />
+            <div v-else class="synthesis-history-list">
+              <button
+                v-for="run in synthesisRuns"
+                :key="run.run_id"
+                type="button"
+                class="synthesis-history-item"
+                :class="{ active: selectedSynthesisRunId === run.run_id }"
+                @click="selectSynthesisRun(run)"
+              >
+                <span class="synthesis-history-title">{{ run.query || '未命名研究问题' }}</span>
+                <span class="synthesis-history-meta">
+                  <span class="synthesis-status" :class="synthesisStatusClass(run.status)">
+                    {{ synthesisStatusLabel(run.status) }}
+                  </span>
+                  {{ formatDateTime(run.created_at) }}
+                </span>
+              </button>
+            </div>
+          </aside>
+        </div>
+
+        <a-result v-if="synthesisError" status="error" title="研究综述失败" :sub-title="synthesisError">
+          <template #extra><a-button @click="loadSyntheses">重新加载</a-button></template>
+        </a-result>
+
+        <section v-else-if="selectedSynthesisRun" class="synthesis-result-shell">
+          <header class="synthesis-result-header">
+            <div>
+              <div class="synthesis-title-row">
+                <h2>{{ selectedSynthesisRun.query }}</h2>
+                <span class="synthesis-status" :class="synthesisStatusClass(selectedSynthesisRun.status)">
+                  {{ synthesisStatusLabel(selectedSynthesisRun.status) }}
+                </span>
+              </div>
+              <p>
+                {{ synthesisStageLabel(selectedSynthesisRun.stage) }}
+                <template v-if="selectedSynthesisRun.task_id"> · 任务 {{ selectedSynthesisRun.task_id }}</template>
+              </p>
+            </div>
+            <div class="synthesis-actions">
+              <a-button
+                :disabled="!selectedSynthesisRun.run_id"
+                :loading="synthesisDetailLoading"
+                @click="refreshSelectedSynthesis"
+              >
+                <template #icon><RefreshCw :size="14" /></template>
+                更新
+              </a-button>
+              <a-popconfirm
+                title="取消后将停止本次综述，未验证内容不会保留。"
+                ok-text="取消综述"
+                cancel-text="继续执行"
+                @confirm="cancelSelectedSynthesis"
+              >
+                <a-button danger :disabled="!canCancelSynthesis" :loading="synthesisCancelling">
+                  <template #icon><CircleStop :size="14" /></template>
+                  取消
+                </a-button>
+              </a-popconfirm>
+              <a-button
+                :disabled="!canRegenerateSynthesis"
+                :loading="synthesisRegenerating"
+                @click="regenerateSelectedSynthesis"
+              >
+                <template #icon><RotateCcw :size="14" /></template>
+                重新生成
+              </a-button>
+              <a-button
+                :disabled="!canExportSynthesis"
+                :loading="synthesisExporting === 'markdown'"
+                @click="exportSelectedSynthesis('markdown')"
+              >
+                <template #icon><FileDown :size="14" /></template>
+                Markdown
+              </a-button>
+              <a-button
+                :disabled="!canExportSynthesis"
+                :loading="synthesisExporting === 'docx'"
+                @click="exportSelectedSynthesis('docx')"
+              >
+                <template #icon><FileDown :size="14" /></template>
+                DOCX
+              </a-button>
+            </div>
+          </header>
+
+          <a-progress
+            v-if="isSelectedSynthesisActive"
+            :percent="synthesisStagePercent(selectedSynthesisRun.stage)"
+            :show-info="false"
+            stroke-color="var(--main-color)"
+          />
+          <a-alert
+            v-if="selectedSynthesisRun.status === 'failed'"
+            type="error"
+            show-icon
+            :message="selectedSynthesisRun.error_message || '综述运行失败'"
+            :description="selectedSynthesisRun.error_type"
+          />
+          <a-alert
+            v-else-if="selectedSynthesisRun.status === 'cancelled'"
+            type="warning"
+            show-icon
+            :message="selectedSynthesisRun.error_message || '研究综述已取消'"
+          />
+
+          <template v-if="selectedSynthesisResult">
+            <div class="synthesis-coverage-cards">
+              <article>
+                <span>引用覆盖率</span>
+                <strong>{{ formatPercent(selectedSynthesisCoverage.citation_coverage_ratio) }}</strong>
+              </article>
+              <article>
+                <span>已验证结论</span>
+                <strong>{{ selectedSynthesisCoverage.supported_conclusions || 0 }} / {{ selectedSynthesisCoverage.total_conclusions || 0 }}</strong>
+              </article>
+              <article>
+                <span>引用论文</span>
+                <strong>{{ selectedSynthesisCoverage.distinct_papers || 0 }} / {{ selectedSynthesisCoverage.retrieved_papers || 0 }}</strong>
+              </article>
+              <article>
+                <span>检索证据</span>
+                <strong>{{ selectedSynthesisCoverage.retrieved_chunks || 0 }} chunks</strong>
+              </article>
+            </div>
+
+            <section class="synthesis-summary-panel">
+              <div class="synthesis-section-title">
+                <ShieldCheck :size="17" />
+                <h3>执行摘要</h3>
+              </div>
+              <p>{{ selectedSynthesisResult.executive_summary?.text }}</p>
+              <div class="search-pipeline-tags">
+                <a-tag v-for="claimId in selectedSynthesisResult.executive_summary?.claim_ids || []" :key="claimId">
+                  {{ claimId }}
+                </a-tag>
+              </div>
+            </section>
+            <a-alert
+              v-if="selectedSynthesisResult.validation?.confidence_adjustments?.length"
+              type="warning"
+              show-icon
+              message="置信度已按证据规则校正"
+              :description="selectedSynthesisResult.validation.confidence_adjustments.map((item) => `${item.claim_id}：${item.reason}`).join('；')"
+            />
+            <section v-if="selectedSynthesisResult.methodological_constraints?.length" class="synthesis-section">
+              <div class="synthesis-section-title">
+                <FileText :size="17" />
+                <h3>方法边界</h3>
+              </div>
+              <ul class="synthesis-constraints">
+                <li v-for="constraint in selectedSynthesisResult.methodological_constraints" :key="constraint">
+                  {{ constraint }}
+                </li>
+              </ul>
+            </section>
+
+            <section v-if="selectedSynthesisResult.themes?.length" class="synthesis-section">
+              <div class="synthesis-section-title">
+                <ListChecks :size="17" />
+                <h3>主题综述</h3>
+              </div>
+              <article v-for="theme in selectedSynthesisResult.themes" :key="theme.title" class="synthesis-theme">
+                <h4>{{ theme.title }}</h4>
+                <p>{{ theme.summary }}</p>
+                <div class="search-pipeline-tags">
+                  <a-tag v-for="claimId in theme.claim_ids" :key="claimId">{{ claimId }}</a-tag>
+                </div>
+              </article>
+            </section>
+
+            <section class="synthesis-section">
+              <div class="synthesis-section-title">
+                <Quote :size="17" />
+                <h3>核心结论</h3>
+              </div>
+              <article v-for="claim in selectedSynthesisResult.claims || []" :key="claim.claim_id" class="synthesis-claim">
+                <header>
+                  <span>{{ claim.claim_id }}</span>
+                  <a-tag :color="confidenceColor(claim.confidence)">{{ confidenceLabel(claim.confidence) }}</a-tag>
+                </header>
+                <p>{{ claim.statement }}</p>
+                <div class="synthesis-evidence-chips">
+                  <button
+                    v-for="citation in claim.evidence"
+                    :key="citation.chunk_id"
+                    type="button"
+                    @click="openSynthesisEvidence(citation)"
+                  >
+                    {{ getSynthesisEvidenceLabel(citation) }}
+                  </button>
+                </div>
+              </article>
+            </section>
+
+            <section
+              v-for="section in synthesisInsightSections"
+              :key="section.key"
+              class="synthesis-section"
+            >
+              <div class="synthesis-section-title">
+                <component :is="section.icon" :size="17" />
+                <h3>{{ section.title }}</h3>
+              </div>
+              <a-empty
+                v-if="!(selectedSynthesisResult[section.key] || []).length"
+                :description="section.empty"
+              />
+              <article
+                v-for="(item, index) in selectedSynthesisResult[section.key] || []"
+                :key="`${section.key}-${index}`"
+                class="synthesis-claim"
+              >
+                <header v-if="item.confidence || item.paper_ids?.length">
+                  <span>{{ item.paper_ids?.length || 0 }} 篇论文</span>
+                  <a-tag v-if="item.confidence" :color="confidenceColor(item.confidence)">
+                    {{ confidenceLabel(item.confidence) }}
+                  </a-tag>
+                </header>
+                <p>{{ item.statement }}</p>
+                <p v-if="item.basis" class="synthesis-basis">依据：{{ item.basis }}</p>
+                <div class="synthesis-evidence-chips">
+                  <button
+                    v-for="citation in item.evidence"
+                    :key="citation.chunk_id"
+                    type="button"
+                    @click="openSynthesisEvidence(citation)"
+                  >
+                    {{ getSynthesisEvidenceLabel(citation) }}
+                  </button>
+                </div>
+              </article>
+            </section>
+
+            <section v-if="selectedSynthesisResult.unsupported_claims?.length" class="synthesis-section">
+              <div class="synthesis-section-title">
+                <History :size="17" />
+                <h3>未支持结论</h3>
+              </div>
+              <article
+                v-for="(item, index) in selectedSynthesisResult.unsupported_claims"
+                :key="`unsupported-${index}`"
+                class="synthesis-unsupported"
+              >
+                <strong>{{ item.statement }}</strong>
+                <span>{{ item.reason }}</span>
+              </article>
+            </section>
+          </template>
+
+          <a-empty v-else-if="isSelectedSynthesisActive" description="综述正在生成，完成后会显示验证结果" />
+          <a-empty v-else description="该运行暂无可展示结果" />
+        </section>
+
+        <a-empty v-else description="选择历史运行或创建新的证据综述" class="page-empty" />
       </section>
 
       <section v-else-if="activeMode === 'graph'" class="graph-workspace">
@@ -437,6 +821,113 @@
             </div>
             <a-empty v-else description="暂未识别出新兴方向" />
           </section>
+        </div>
+      </section>
+      <section v-else-if="activeMode === 'opportunities'" class="opportunities-workspace">
+        <div class="opportunities-toolbar">
+          <div class="toolbar-field database-field">
+            <label for="opportunities-database">论文知识库</label>
+            <a-select
+              id="opportunities-database"
+              v-model:value="selectedKbId"
+              :options="databaseOptions"
+              :loading="databasesLoading"
+              show-search
+              option-filter-prop="label"
+              @change="handleDatabaseChange"
+            />
+          </div>
+          <div class="toolbar-field">
+            <label>发表年份</label>
+            <div class="year-range">
+              <a-input-number v-model:value="opportunityFilters.yearFrom" :min="1500" :max="maxPublicationYear" placeholder="起始" />
+              <span>至</span>
+              <a-input-number v-model:value="opportunityFilters.yearTo" :min="1500" :max="maxPublicationYear" placeholder="结束" />
+            </div>
+          </div>
+          <a-button type="primary" :loading="opportunityLoading" :disabled="!selectedKbId" @click="loadOpportunities">
+            <template #icon><Search :size="15" /></template>
+            识别研究机会
+          </a-button>
+        </div>
+        <a-result v-if="opportunityError" status="error" title="研究机会加载失败" :sub-title="opportunityError">
+          <template #extra><a-button @click="loadOpportunities">重新加载</a-button></template>
+        </a-result>
+        <div v-else-if="opportunityLoading" class="papers-loading"><a-skeleton active :paragraph="{ rows: 10 }" /></div>
+        <a-empty v-else-if="!opportunityData || opportunityData.scope.total_papers === 0" class="page-empty" description="当前筛选范围没有论文机会数据" />
+        <div v-else class="opportunities-content">
+          <div class="opportunity-summary-cards">
+            <article><span>样本论文</span><strong>{{ opportunityData.scope.total_papers }}</strong></article>
+            <article><span>最新年份</span><strong>{{ opportunityData.scope.latest_year || '未知' }}</strong></article>
+            <article><span>候选方向</span><strong>{{ opportunityData.opportunities.length }}</strong></article>
+            <article><span>证据方法</span><strong>可追溯</strong></article>
+          </div>
+          <section class="opportunity-methodology">
+            <div>
+              <strong>证据驱动的机会排序</strong>
+              <span>{{ opportunityData.methodology.description }}</span>
+              <span v-if="opportunityData.scope.total_papers < 3" class="opportunity-sample-warning">
+                当前仅有 {{ opportunityData.scope.total_papers }} 篇论文，候选方向仅作探索排序，建议补充样本后再判断。
+              </span>
+            </div>
+            <a-tag :color="opportunityData.methodology.graph_available ? 'green' : 'orange'">
+              {{ opportunityData.methodology.graph_available ? '已纳入引用图谱' : '图谱未接入' }}
+            </a-tag>
+          </section>
+          <a-empty v-if="!opportunityData.opportunities.length" description="当前筛选范围暂未识别出增长方向" />
+          <div v-else class="opportunity-list">
+            <article v-for="(opportunity, index) in opportunityData.opportunities" :key="opportunity.keyword" class="opportunity-card">
+              <header class="opportunity-card-header">
+                <div>
+                  <span class="opportunity-rank">#{{ index + 1 }}</span>
+                  <h3>{{ opportunity.keyword }}</h3>
+                </div>
+                <div class="opportunity-score">
+                  <strong>{{ opportunity.score.toFixed(1) }}</strong>
+                  <span>机会分</span>
+                </div>
+              </header>
+              <div class="opportunity-signal-row">
+                <a-tag :color="opportunity.confidence === 'high' ? 'green' : opportunity.confidence === 'medium' ? 'blue' : 'orange'">
+                  {{ opportunity.confidence === 'high' ? '高置信度' : opportunity.confidence === 'medium' ? '中置信度' : '低置信度' }}
+                </a-tag>
+                <span>论文 {{ opportunity.signals.paper_count }} 篇</span>
+                <span>近两年 {{ opportunity.signals.recent_count }} 篇</span>
+                <span>增长 {{ opportunity.signals.growth > 0 ? '+' : '' }}{{ opportunity.signals.growth }}</span>
+                <span>平均被引 {{ opportunity.signals.average_citations }}</span>
+              </div>
+              <a-progress :percent="opportunity.score" :show-info="false" size="small" stroke-color="var(--main-color)" />
+              <div class="opportunity-detail-grid">
+                <div>
+                  <h4>判断依据</h4>
+                  <ul>
+                    <li v-for="reason in opportunity.reasons" :key="reason">{{ reason }}</li>
+                  </ul>
+                </div>
+                <div class="opportunity-coverage">
+                  <h4>证据覆盖</h4>
+                  <span>图谱覆盖 {{ Math.round(opportunity.coverage.graph_coverage_ratio * 100) }}%</span>
+                  <span>平均连接度 {{ opportunity.coverage.average_citation_degree }}</span>
+                  <span>时间范围 {{ opportunity.signals.first_year }}–{{ opportunity.signals.last_year }}</span>
+                </div>
+              </div>
+              <div class="opportunity-evidence">
+                <h4>证据论文</h4>
+                <div v-for="paper in opportunity.evidence_papers" :key="paper.paper_id" class="opportunity-evidence-item">
+                  <div>
+                    <strong>{{ paper.title }}</strong>
+                    <span>{{ paper.publication_year || '年份未知' }} · 被引 {{ paper.citation_count }}</span>
+                  </div>
+                  <a-button type="link" size="small" @click="openPaper(paper)">查看论文</a-button>
+                </div>
+              </div>
+              <div class="opportunity-next-actions">
+                <span>下一步</span>
+                <p v-for="action in opportunity.next_actions" :key="action">{{ action }}</p>
+              </div>
+            </article>
+          </div>
+          <p class="opportunity-limitation">{{ opportunityData.methodology.limitation }}</p>
         </div>
       </section>
       <template v-else>
@@ -768,25 +1259,31 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
-import * as echarts from 'echarts'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist'
-import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { useRouter } from 'vue-router'
 import {
+  AlertTriangle,
   BookOpenText,
   CalendarDays,
   ChevronRight,
+  CircleStop,
   Database,
   Download,
+  FileDown,
   FileText,
+  History,
   Landmark,
   Link,
+  ListChecks,
   Network,
   Quote,
   RefreshCw,
-  Search
+  RotateCcw,
+  Search,
+  ShieldCheck,
+  Sparkles,
+  Target
 } from 'lucide-vue-next'
 import { databaseApi } from '@/apis/knowledge_api'
 import { researchApi } from '@/apis/research_api'
@@ -794,11 +1291,31 @@ import { downloadWorkspaceKnowledgeFile } from '@/apis/workspace_api'
 import PaperDetailDrawer from '@/components/research/PaperDetailDrawer.vue'
 import UserStudyManager from '@/components/research/UserStudyManager.vue'
 import PaperAnalysisEvaluationManager from '@/components/research/PaperAnalysisEvaluationManager.vue'
-import GraphCanvas from '@/components/GraphCanvas.vue'
 import PageHeader from '@/components/shared/PageHeader.vue'
 import { useUserStore } from '@/stores/user'
 
-GlobalWorkerOptions.workerSrc = pdfWorkerUrl
+const GraphCanvas = defineAsyncComponent(() => import('@/components/GraphCanvas.vue'))
+
+let echartsPromise
+let pdfJsPromise
+
+const loadEcharts = () => {
+  if (!echartsPromise) echartsPromise = import('echarts')
+  return echartsPromise
+}
+
+const loadPdfJs = () => {
+  if (!pdfJsPromise) {
+    pdfJsPromise = Promise.all([
+      import('pdfjs-dist'),
+      import('pdfjs-dist/build/pdf.worker.min.mjs?url')
+    ]).then(([pdfJs, worker]) => {
+      pdfJs.GlobalWorkerOptions.workerSrc = worker.default
+      return pdfJs
+    })
+  }
+  return pdfJsPromise
+}
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -841,6 +1358,18 @@ const searchQuery = ref('')
 const searchLoading = ref(false)
 const searchError = ref('')
 const searchResult = ref(null)
+const synthesisQuery = ref('')
+const synthesisRuns = ref([])
+const synthesisTotal = ref(0)
+const synthesisLoading = ref(false)
+const synthesisDetailLoading = ref(false)
+const synthesisSubmitting = ref(false)
+const synthesisRegenerating = ref(false)
+const synthesisCancelling = ref(false)
+const synthesisExporting = ref('')
+const synthesisError = ref('')
+const selectedSynthesisRunId = ref('')
+const selectedSynthesisRun = ref(null)
 const graphLoading = ref(false)
 const graphError = ref('')
 const graphData = ref(null)
@@ -861,11 +1390,57 @@ const trendLoading = ref(false)
 const trendError = ref('')
 const trendFilters = reactive({ yearFrom: null, yearTo: null })
 const selectedTrendKeyword = ref('')
+const opportunityData = ref(null)
+const opportunityLoading = ref(false)
+const opportunityError = ref('')
+const opportunityFilters = reactive({ yearFrom: null, yearTo: null })
+const localHybridMode = 'local_hybrid'
+const strictHybridGraphMode = 'strict_hybrid_citation_graph'
+const searchModeOptions = [
+  {
+    value: localHybridMode,
+    label: '本地混合',
+    description: '不依赖引用图谱，返回可追溯的文本证据'
+  },
+  {
+    value: strictHybridGraphMode,
+    label: '严格图谱',
+    description: '要求引用图谱可用，并执行 PPR 扩展'
+  }
+]
+const selectedSearchMode = computed(() => (
+  searchModeOptions.find((mode) => mode.value === searchFilters.retrievalMode) || searchModeOptions[0]
+))
+const synthesisActiveStatuses = new Set(['pending', 'retrieving', 'synthesizing', 'validating'])
+const selectedSynthesisResult = computed(() => selectedSynthesisRun.value?.result || null)
+const selectedSynthesisCoverage = computed(() => selectedSynthesisResult.value?.coverage || {})
+const isSelectedSynthesisActive = computed(() => (
+  synthesisActiveStatuses.has(selectedSynthesisRun.value?.status)
+))
+const canExportSynthesis = computed(() => (
+  selectedSynthesisRun.value?.status === 'success'
+  && selectedSynthesisResult.value?.validation?.status === 'verified'
+))
+const canRegenerateSynthesis = computed(() => (
+  selectedSynthesisRun.value?.run_id
+  && ['success', 'failed', 'cancelled'].includes(selectedSynthesisRun.value.status)
+))
+const canCancelSynthesis = computed(() => (
+  selectedSynthesisRun.value?.run_id
+  && synthesisActiveStatuses.has(selectedSynthesisRun.value.status)
+))
+const synthesisInsightSections = [
+  { key: 'contradictions', title: '证据矛盾', empty: '未发现通过验证的跨论文矛盾', icon: AlertTriangle },
+  { key: 'limitations', title: '研究局限', empty: '未提取到可验证局限', icon: FileText },
+  { key: 'research_gaps', title: '研究空白', empty: '未提取到可验证研究空白', icon: Target }
+]
 const publicationTrendChartRef = ref(null)
 const keywordTrendChartRef = ref(null)
 let publicationTrendChart = null
 let keywordTrendChart = null
 let graphSyncTimer = null
+let synthesisPollTimer = null
+let synthesisRequestGeneration = 0
 let evidencePdfLoadingTask = null
 let evidencePdfRenderTask = null
 let evidencePdfRequestId = 0
@@ -873,6 +1448,13 @@ const searchFilters = reactive({
   yearFrom: null,
   yearTo: null,
   topK: 10,
+  recallTopK: 50,
+  retrievalMode: localHybridMode
+})
+const synthesisFilters = reactive({
+  yearFrom: null,
+  yearTo: null,
+  topK: 8,
   recallTopK: 50
 })
 
@@ -939,11 +1521,15 @@ const graphSyncStatusMessage = computed(() => {
     running: '正在同步 Semantic Scholar 学术图谱',
     success: '学术引用图谱同步完成',
     completed_with_conflicts: '学术引用图谱同步完成，但存在待处理冲突',
-    failed: '学术引用图谱同步失败'
+    failed: '学术引用图谱同步失败',
+    cancelled: '学术引用图谱同步已取消'
   }[graphSyncRun.value.status] || graphSyncRun.value.status
 })
 const selectedTrendKeywordData = computed(() =>
   (trendData.value?.keyword_trends || []).find((item) => item.keyword === selectedTrendKeyword.value)
+)
+const getSearchModeLabel = (mode) => (
+  searchModeOptions.find((item) => item.value === mode)?.label || '未知模式'
 )
 const evidencePdfPage = computed(() => Number(selectedEvidence.value?.source_page_start || 0))
 const hasPdfPageLocator = computed(() => (
@@ -1008,6 +1594,53 @@ const relationTypeLabel = (type) => ({
   reverse_citation_chain: '反向引用链'
 })[type] || type
 const formatConflictValue = (value) => value === null ? '无' : JSON.stringify(value, null, 2)
+const synthesisStatusLabel = (status) => ({
+  pending: '等待执行',
+  retrieving: '正在检索',
+  synthesizing: '正在综述',
+  validating: '正在校验',
+  success: '验证完成',
+  failed: '运行失败',
+  cancelled: '已取消'
+})[status] || status || '未知状态'
+const synthesisStageLabel = (stage) => ({
+  pending: '等待执行',
+  retrieving: '本地混合检索',
+  synthesizing: '结构化跨论文综述',
+  validating: '证据身份与引用覆盖校验',
+  completed: '证据验证完成',
+  failed: '运行失败',
+  cancelled: '任务已取消'
+})[stage] || stage || '状态未知'
+const synthesisStatusClass = (status) => `synthesis-status-${status || 'unknown'}`
+const synthesisStagePercent = (stage) => ({
+  pending: 5,
+  retrieving: 25,
+  synthesizing: 60,
+  validating: 85,
+  completed: 100,
+  failed: 100,
+  cancelled: 100
+})[stage] || 0
+const confidenceColor = (confidence) => ({
+  high: 'green',
+  medium: 'blue',
+  low: 'orange'
+})[confidence] || 'default'
+const confidenceLabel = (confidence) => ({
+  high: '高置信度',
+  medium: '中置信度',
+  low: '低置信度'
+})[confidence] || '未知置信度'
+const formatPercent = (value) => `${(Number(value || 0) * 100).toFixed(1)}%`
+const formatDateTime = (value) => {
+  if (!value) return '时间未知'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '时间未知' : date.toLocaleString()
+}
+const getSynthesisEvidenceLabel = (citation) => (
+  `${citation.paper_title || citation.paper_id} · ${citation.section_title || citation.section_type || '论文内容'}`
+)
 
 const statusLabels = {
   extracted: '已提取',
@@ -1078,6 +1711,7 @@ const loadPapers = async () => {
 const renderTrendCharts = async () => {
   await nextTick()
   if (!trendData.value) return
+  const echarts = await loadEcharts()
   if (publicationTrendChart) publicationTrendChart.dispose()
   if (keywordTrendChart) keywordTrendChart.dispose()
   if (publicationTrendChartRef.value) {
@@ -1132,8 +1766,38 @@ const loadTrends = async () => {
   }
 }
 
+const loadOpportunities = async () => {
+  if (!selectedKbId.value) return
+  if (
+    opportunityFilters.yearFrom
+    && opportunityFilters.yearTo
+    && opportunityFilters.yearFrom > opportunityFilters.yearTo
+  ) {
+    opportunityError.value = '起始年份不能大于结束年份'
+    return
+  }
+  opportunityLoading.value = true
+  opportunityError.value = ''
+  try {
+    opportunityData.value = await researchApi.getAcademicOpportunities(selectedKbId.value, {
+      year_from: opportunityFilters.yearFrom,
+      year_to: opportunityFilters.yearTo,
+      limit: 12
+    })
+  } catch (error) {
+    opportunityError.value = error.message || '研究机会加载失败'
+  } finally {
+    opportunityLoading.value = false
+  }
+}
+
 const selectTrendKeyword = (keyword) => {
   selectedTrendKeyword.value = keyword
+}
+
+const handleSearchModeChange = () => {
+  searchResult.value = null
+  searchError.value = ''
 }
 
 const runResearchSearch = async () => {
@@ -1151,6 +1815,7 @@ const runResearchSearch = async () => {
   try {
     searchResult.value = await researchApi.searchPapers(selectedKbId.value, {
       query: searchQuery.value.trim(),
+      retrieval_mode: searchFilters.retrievalMode,
       top_k: searchFilters.topK,
       recall_top_k: searchFilters.recallTopK,
       year_from: searchFilters.yearFrom,
@@ -1161,6 +1826,235 @@ const runResearchSearch = async () => {
   } finally {
     searchLoading.value = false
   }
+}
+
+const clearSynthesisPolling = () => {
+  clearTimeout(synthesisPollTimer)
+  synthesisPollTimer = null
+}
+
+const upsertSynthesisRun = (run) => {
+  if (!run?.run_id) return
+  const index = synthesisRuns.value.findIndex((item) => item.run_id === run.run_id)
+  if (index >= 0) {
+    synthesisRuns.value[index] = { ...synthesisRuns.value[index], ...run }
+    return
+  }
+  synthesisRuns.value.unshift(run)
+  synthesisTotal.value += 1
+}
+
+const scheduleSynthesisPoll = (runId) => {
+  clearSynthesisPolling()
+  synthesisPollTimer = setTimeout(() => pollSynthesisRun(runId), 2500)
+}
+
+const applySynthesisRun = (run) => {
+  upsertSynthesisRun(run)
+  if (selectedSynthesisRunId.value === run.run_id) selectedSynthesisRun.value = run
+}
+
+const loadSynthesisRun = async (runId, { poll = true } = {}) => {
+  if (!runId) return null
+  const requestGeneration = synthesisRequestGeneration
+  synthesisDetailLoading.value = true
+  try {
+    const run = await researchApi.getResearchSynthesisRun(runId)
+    if (requestGeneration !== synthesisRequestGeneration) return null
+    applySynthesisRun(run)
+    if (poll && synthesisActiveStatuses.has(run.status)) {
+      scheduleSynthesisPoll(run.run_id)
+    } else if (!synthesisActiveStatuses.has(run.status)) {
+      clearSynthesisPolling()
+    }
+    return run
+  } catch (error) {
+    if (requestGeneration !== synthesisRequestGeneration) return null
+    synthesisError.value = error.message || '研究综述详情加载失败'
+    return null
+  } finally {
+    if (requestGeneration === synthesisRequestGeneration) synthesisDetailLoading.value = false
+  }
+}
+
+const pollSynthesisRun = async (runId) => {
+  const run = await loadSynthesisRun(runId, { poll: false })
+  if (!run) return
+  if (synthesisActiveStatuses.has(run.status)) {
+    scheduleSynthesisPoll(run.run_id)
+    return
+  }
+  await loadSyntheses({ preserveSelection: true })
+  if (run.status === 'success') message.success('证据约束研究综述已完成验证')
+}
+
+const loadSyntheses = async ({ preserveSelection = true } = {}) => {
+  if (!selectedKbId.value) {
+    synthesisRuns.value = []
+    synthesisTotal.value = 0
+    selectedSynthesisRun.value = null
+    selectedSynthesisRunId.value = ''
+    return
+  }
+  const requestGeneration = synthesisRequestGeneration
+  synthesisLoading.value = true
+  synthesisError.value = ''
+  try {
+    const result = await researchApi.listResearchSyntheses(selectedKbId.value, { offset: 0, limit: 20 })
+    if (requestGeneration !== synthesisRequestGeneration) return
+    synthesisRuns.value = result.items || []
+    synthesisTotal.value = result.total || 0
+    const selected = preserveSelection
+      ? synthesisRuns.value.find((item) => item.run_id === selectedSynthesisRunId.value)
+      : null
+    const nextRun = selected || synthesisRuns.value[0] || null
+    selectedSynthesisRun.value = nextRun
+    selectedSynthesisRunId.value = nextRun?.run_id || ''
+    if (nextRun && synthesisActiveStatuses.has(nextRun.status)) scheduleSynthesisPoll(nextRun.run_id)
+  } catch (error) {
+    if (requestGeneration !== synthesisRequestGeneration) return
+    synthesisError.value = error.message || '研究综述历史加载失败'
+  } finally {
+    if (requestGeneration === synthesisRequestGeneration) synthesisLoading.value = false
+  }
+}
+
+const selectSynthesisRun = async (run) => {
+  if (!run?.run_id) return
+  selectedSynthesisRunId.value = run.run_id
+  selectedSynthesisRun.value = run
+  synthesisError.value = ''
+  await loadSynthesisRun(run.run_id)
+}
+
+const createSynthesis = async () => {
+  if (!selectedKbId.value || !synthesisQuery.value.trim()) return
+  if (synthesisFilters.yearFrom && synthesisFilters.yearTo && synthesisFilters.yearFrom > synthesisFilters.yearTo) {
+    synthesisError.value = '起始年份不能大于结束年份'
+    return
+  }
+  if (synthesisFilters.recallTopK < synthesisFilters.topK) {
+    synthesisError.value = '候选证据数不能小于论文数'
+    return
+  }
+  const kbId = selectedKbId.value
+  const requestGeneration = synthesisRequestGeneration
+  const query = synthesisQuery.value.trim()
+  synthesisSubmitting.value = true
+  synthesisError.value = ''
+  try {
+    const created = await researchApi.createResearchSynthesis(kbId, {
+      query,
+      top_k: synthesisFilters.topK,
+      recall_top_k: synthesisFilters.recallTopK,
+      year_from: synthesisFilters.yearFrom,
+      year_to: synthesisFilters.yearTo
+    })
+    if (requestGeneration !== synthesisRequestGeneration || kbId !== selectedKbId.value) return
+    const run = {
+      run_id: created.run_id,
+      task_id: created.task_id,
+      query,
+      status: created.status || 'pending',
+      stage: 'pending'
+    }
+    selectedSynthesisRunId.value = run.run_id
+    selectedSynthesisRun.value = run
+    upsertSynthesisRun(run)
+    message.success('已提交证据约束研究综述任务')
+    scheduleSynthesisPoll(run.run_id)
+  } catch (error) {
+    if (requestGeneration !== synthesisRequestGeneration) return
+    synthesisError.value = error.message || '研究综述任务提交失败'
+  } finally {
+    if (requestGeneration === synthesisRequestGeneration) synthesisSubmitting.value = false
+  }
+}
+
+const refreshSelectedSynthesis = async () => {
+  if (!selectedSynthesisRunId.value) return
+  synthesisError.value = ''
+  await loadSynthesisRun(selectedSynthesisRunId.value)
+}
+
+const cancelSelectedSynthesis = async () => {
+  const runId = selectedSynthesisRun.value?.run_id
+  if (!runId || !canCancelSynthesis.value || synthesisCancelling.value) return
+  const requestGeneration = synthesisRequestGeneration
+  synthesisCancelling.value = true
+  synthesisError.value = ''
+  try {
+    const cancelled = await researchApi.cancelResearchSynthesis(runId)
+    if (requestGeneration !== synthesisRequestGeneration) return
+    selectedSynthesisRun.value = cancelled
+    upsertSynthesisRun(cancelled)
+    message.success('研究综述已取消')
+  } catch (error) {
+    if (requestGeneration !== synthesisRequestGeneration) return
+    synthesisError.value = error.message || '研究综述取消失败'
+  } finally {
+    if (requestGeneration === synthesisRequestGeneration) synthesisCancelling.value = false
+  }
+}
+
+const regenerateSelectedSynthesis = async () => {
+  if (!selectedSynthesisRun.value?.run_id || synthesisRegenerating.value) return
+  const kbId = selectedKbId.value
+  const requestGeneration = synthesisRequestGeneration
+  const selectedRun = selectedSynthesisRun.value
+  synthesisRegenerating.value = true
+  synthesisError.value = ''
+  try {
+    const created = await researchApi.regenerateResearchSynthesis(selectedRun.run_id)
+    if (requestGeneration !== synthesisRequestGeneration || kbId !== selectedKbId.value) return
+    const run = {
+      run_id: created.run_id,
+      task_id: created.task_id,
+      query: selectedRun.query,
+      status: created.status || 'pending',
+      stage: 'pending'
+    }
+    selectedSynthesisRunId.value = run.run_id
+    selectedSynthesisRun.value = run
+    upsertSynthesisRun(run)
+    message.success('已提交重新生成任务')
+    scheduleSynthesisPoll(run.run_id)
+  } catch (error) {
+    if (requestGeneration !== synthesisRequestGeneration) return
+    synthesisError.value = error.message || '重新生成研究综述失败'
+  } finally {
+    if (requestGeneration === synthesisRequestGeneration) synthesisRegenerating.value = false
+  }
+}
+
+const exportSelectedSynthesis = async (format) => {
+  const runId = selectedSynthesisRun.value?.run_id
+  if (!runId || !canExportSynthesis.value || synthesisExporting.value) return
+  synthesisExporting.value = format
+  try {
+    const response = await researchApi.exportResearchSynthesis(runId, format)
+    const blob = await response.blob()
+    const header = response.headers.get('content-disposition') || ''
+    const filename = header.match(/filename="?([^";]+)"?/i)?.[1] || `research_synthesis_${runId}.${format === 'docx' ? 'docx' : 'md'}`
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = filename
+    anchor.click()
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    synthesisError.value = error.message || '研究综述导出失败'
+  } finally {
+    synthesisExporting.value = ''
+  }
+}
+
+const openSynthesisEvidence = (citation) => {
+  if (!citation?.paper_id || !citation?.chunk_id) {
+    synthesisError.value = '该引用缺少论文或证据 chunk 标识'
+    return
+  }
+  openEvidence({ paper_id: citation.paper_id }, { chunk_id: citation.chunk_id })
 }
 
 const openEvidence = async (paper, evidence) => {
@@ -1244,6 +2138,7 @@ const openEvidencePdf = async () => {
     if (!contentType.includes('application/pdf')) {
       throw new Error('原始文件不是 PDF，无法按页码预览')
     }
+    const { getDocument } = await loadPdfJs()
     evidencePdfLoadingTask = getDocument({ data: new Uint8Array(await response.arrayBuffer()) })
     const pdfDocument = await evidencePdfLoadingTask.promise
     if (requestId !== evidencePdfRequestId || !evidenceOpen.value) {
@@ -1453,8 +2348,12 @@ const exportAllBibtex = async () => {
 
 const handleDatabaseChange = () => {
   page.value = 1
+  synthesisRequestGeneration += 1
+  clearSynthesisPolling()
   closePaper()
   loadPapers()
+  searchResult.value = null
+  searchError.value = ''
   graphData.value = null
   selectedGraphNode.value = null
   graphRelations.value = []
@@ -1466,8 +2365,21 @@ const handleDatabaseChange = () => {
   graphConflictsError.value = ''
   trendData.value = null
   selectedTrendKeyword.value = ''
+  opportunityData.value = null
+  opportunityError.value = ''
+  synthesisRuns.value = []
+  synthesisTotal.value = 0
+  synthesisLoading.value = false
+  synthesisDetailLoading.value = false
+  synthesisSubmitting.value = false
+  synthesisRegenerating.value = false
+  synthesisError.value = ''
+  selectedSynthesisRunId.value = ''
+  selectedSynthesisRun.value = null
   if (activeMode.value === 'graph') loadAcademicGraph()
   if (activeMode.value === 'trends') loadTrends()
+  if (activeMode.value === 'opportunities') loadOpportunities()
+  if (activeMode.value === 'synthesis') loadSyntheses({ preserveSelection: false })
 }
 
 const applyFilters = () => {
@@ -1515,11 +2427,15 @@ onMounted(async () => {
 watch(activeMode, (mode) => {
   if (mode === 'graph' && !graphData.value) loadAcademicGraph()
   if (mode === 'trends' && !trendData.value) loadTrends()
+  if (mode === 'opportunities' && !opportunityData.value) loadOpportunities()
+  if (mode === 'synthesis' && !synthesisRuns.value.length) loadSyntheses()
 })
 
 onBeforeUnmount(() => {
   evidencePdfRequestId += 1
+  synthesisRequestGeneration += 1
   clearTimeout(graphSyncTimer)
+  clearSynthesisPolling()
   publicationTrendChart?.dispose()
   keywordTrendChart?.dispose()
   disposeEvidencePdf()
@@ -1555,7 +2471,8 @@ onBeforeUnmount(() => {
   gap: 16px;
 }
 
-.trends-workspace {
+.trends-workspace,
+.opportunities-workspace {
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -1565,6 +2482,361 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 18px;
+}
+
+.synthesis-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.synthesis-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.6fr);
+  gap: 14px;
+}
+
+.synthesis-builder,
+.synthesis-history,
+.synthesis-result-shell {
+  border: 1px solid var(--gray-150);
+  border-radius: 8px;
+  background: var(--gray-0);
+}
+
+.synthesis-builder {
+  padding: 18px;
+}
+
+.synthesis-builder-header,
+.synthesis-form-footer,
+.synthesis-result-header,
+.synthesis-title-row,
+.synthesis-actions,
+.synthesis-section-title {
+  display: flex;
+  align-items: center;
+}
+
+.synthesis-builder-header {
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.synthesis-builder-header h2,
+.synthesis-builder-header p,
+.synthesis-history h3,
+.synthesis-result-header h2,
+.synthesis-result-header p,
+.synthesis-section-title h3,
+.synthesis-theme h4,
+.synthesis-theme p,
+.synthesis-claim p {
+  margin: 0;
+}
+
+.synthesis-builder-header h2,
+.synthesis-result-header h2 {
+  color: var(--color-text);
+  font-size: 17px;
+}
+
+.synthesis-builder-header p,
+.synthesis-result-header p {
+  margin-top: 5px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.synthesis-options {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.2fr) minmax(250px, 1fr) 110px 110px;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 16px;
+}
+
+.synthesis-builder label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.synthesis-form-footer {
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.synthesis-history {
+  min-height: 260px;
+  padding: 14px;
+}
+
+.synthesis-history header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.synthesis-history header span {
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+
+.synthesis-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.synthesis-history-item {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--gray-150);
+  border-radius: 7px;
+  color: inherit;
+  background: var(--gray-10);
+  cursor: pointer;
+  text-align: left;
+}
+
+.synthesis-history-item:hover,
+.synthesis-history-item.active {
+  border-color: var(--main-300);
+  background: var(--main-30);
+}
+
+.synthesis-history-title {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--color-text);
+  font-size: 12px;
+  line-height: 1.45;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.synthesis-history-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 7px;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+}
+
+.synthesis-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: var(--gray-600);
+  background: var(--gray-100);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.synthesis-status-success {
+  color: var(--color-success-700);
+  background: var(--color-success-50);
+}
+
+.synthesis-status-failed {
+  color: var(--color-error-700);
+  background: var(--color-error-50);
+}
+
+.synthesis-status-cancelled {
+  color: var(--color-warning-700);
+  background: var(--color-warning-50);
+}
+
+.synthesis-status-retrieving,
+.synthesis-status-synthesizing,
+.synthesis-status-validating,
+.synthesis-status-pending {
+  color: var(--color-info-700);
+  background: var(--color-info-50);
+}
+
+.synthesis-result-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+}
+
+.synthesis-result-header {
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.synthesis-title-row {
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.synthesis-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.synthesis-coverage-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.synthesis-coverage-cards article {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 14px;
+  border: 1px solid var(--gray-150);
+  border-radius: 8px;
+  background: var(--gray-10);
+}
+
+.synthesis-coverage-cards span {
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+
+.synthesis-coverage-cards strong {
+  color: var(--color-text);
+  font-size: 20px;
+}
+
+.synthesis-summary-panel,
+.synthesis-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--gray-150);
+  border-radius: 8px;
+  background: var(--gray-10);
+}
+
+.synthesis-summary-panel p {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.synthesis-constraints {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.synthesis-section-title {
+  gap: 7px;
+  color: var(--main-color);
+}
+
+.synthesis-section-title h3 {
+  color: var(--color-text);
+  font-size: 15px;
+}
+
+.synthesis-theme,
+.synthesis-claim,
+.synthesis-unsupported {
+  padding: 12px;
+  border: 1px solid var(--gray-150);
+  border-radius: 7px;
+  background: var(--gray-0);
+}
+
+.synthesis-theme h4 {
+  color: var(--color-text);
+  font-size: 14px;
+}
+
+.synthesis-theme p,
+.synthesis-claim p {
+  margin-top: 6px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.synthesis-claim header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.synthesis-claim header span {
+  color: var(--main-color);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.synthesis-basis {
+  color: var(--color-text-tertiary) !important;
+  font-size: 12px !important;
+}
+
+.synthesis-evidence-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.synthesis-evidence-chips button {
+  max-width: 100%;
+  padding: 4px 8px;
+  overflow: hidden;
+  border: 1px solid var(--main-200);
+  border-radius: 999px;
+  color: var(--main-color);
+  background: var(--main-30);
+  cursor: pointer;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.synthesis-evidence-chips button:hover {
+  border-color: var(--main-500);
+  background: var(--main-50);
+}
+
+.synthesis-unsupported {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.synthesis-unsupported strong {
+  color: var(--color-text);
+  font-size: 13px;
+}
+
+.synthesis-unsupported span {
+  color: var(--color-text-tertiary);
+  font-size: 12px;
 }
 
 .trends-toolbar {
@@ -1749,6 +3021,280 @@ onBeforeUnmount(() => {
   font-size: 11px;
 }
 
+.opportunities-toolbar {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--gray-150);
+  border-radius: 8px;
+  background: var(--gray-10);
+}
+
+.opportunities-toolbar .database-field {
+  min-width: 260px;
+  margin-right: auto;
+}
+
+.opportunities-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.opportunity-summary-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.opportunity-summary-cards article {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 14px;
+  border: 1px solid var(--gray-150);
+  border-radius: 8px;
+  background: var(--gray-10);
+}
+
+.opportunity-summary-cards span,
+.opportunity-score span {
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+
+.opportunity-summary-cards strong {
+  color: var(--color-text);
+  font-size: 22px;
+}
+
+.opportunity-summary-cards article:last-child strong {
+  color: var(--color-success-700);
+  font-size: 17px;
+}
+
+.opportunity-methodology {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border-left: 3px solid var(--main-500);
+  background: var(--main-30);
+}
+
+.opportunity-methodology div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.opportunity-methodology strong {
+  color: var(--color-text);
+  font-size: 13px;
+}
+
+.opportunity-methodology span {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.opportunity-methodology .opportunity-sample-warning {
+  color: var(--color-warning-700);
+}
+
+.opportunity-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(430px, 1fr));
+  gap: 14px;
+}
+
+.opportunity-card {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--gray-150);
+  border-radius: 8px;
+  background: var(--gray-0);
+}
+
+.opportunity-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+
+.opportunity-card-header > div:first-child {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  gap: 8px;
+}
+
+.opportunity-card h3 {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--color-text);
+  font-size: 17px;
+}
+
+.opportunity-rank {
+  flex: none;
+  color: var(--main-color);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.opportunity-score {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.opportunity-score strong {
+  color: var(--main-color);
+  font-size: 24px;
+  line-height: 1;
+}
+
+.opportunity-signal-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px 12px;
+  margin-bottom: 6px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.opportunity-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(150px, 0.7fr);
+  gap: 18px;
+  margin-top: 12px;
+}
+
+.opportunity-card h4 {
+  margin: 0 0 7px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.opportunity-card ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.opportunity-coverage {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.opportunity-evidence {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--gray-150);
+}
+
+.opportunity-evidence-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0;
+}
+
+.opportunity-evidence-item > div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+.opportunity-evidence-item strong {
+  overflow: hidden;
+  color: var(--color-text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.opportunity-evidence-item span {
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+}
+
+.opportunity-next-actions {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: var(--gray-25);
+}
+
+.opportunity-next-actions span {
+  color: var(--main-color);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.opportunity-next-actions p {
+  margin: 4px 0 0;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.opportunity-limitation {
+  margin: 0;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  text-align: right;
+}
+
+.search-mode-toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--gray-150);
+  border-radius: 8px;
+  background: var(--gray-10);
+}
+
+.toolbar-field.search-mode-field {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.search-mode-field :deep(.ant-radio-group) {
+  display: inline-flex;
+}
+
+.search-form .search-mode-field label {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.search-mode-help {
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  line-height: 32px;
+  text-align: right;
+}
+
 .search-form,
 .search-result-shell {
   padding: 18px;
@@ -1811,6 +3357,12 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
+.search-pipeline-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
 .search-result-summary {
   justify-content: space-between;
   gap: 16px;
@@ -1826,6 +3378,12 @@ onBeforeUnmount(() => {
 .search-result-summary h2 {
   color: var(--color-text);
   font-size: 17px;
+}
+
+.search-result-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .search-result-summary p {
@@ -2593,11 +4151,27 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 1100px) {
+  .synthesis-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .synthesis-options {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .synthesis-coverage-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .trend-chart-grid {
     grid-template-columns: 1fr;
   }
 
   .trend-summary-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .opportunity-summary-cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -2615,6 +4189,29 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 700px) {
+  .synthesis-options,
+  .synthesis-coverage-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .synthesis-builder-header,
+  .synthesis-form-footer,
+  .synthesis-result-header,
+  .synthesis-title-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .synthesis-actions {
+    justify-content: stretch;
+    width: 100%;
+  }
+
+  .synthesis-actions :deep(.ant-btn) {
+    flex: 1;
+    min-width: 120px;
+  }
+
   .trends-toolbar {
     align-items: stretch;
     flex-direction: column;
@@ -2624,8 +4221,50 @@ onBeforeUnmount(() => {
     min-width: 0;
   }
 
+  .opportunities-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .opportunities-toolbar .database-field {
+    min-width: 0;
+  }
+
+  .opportunity-list,
+  .opportunity-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .opportunity-methodology {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .search-options {
     grid-template-columns: 1fr;
+  }
+
+  .search-mode-toolbar,
+  .toolbar-field.search-mode-field {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .search-mode-field :deep(.ant-radio-group) {
+    width: 100%;
+  }
+
+  .search-mode-field :deep(.ant-radio-button-wrapper) {
+    flex: 1;
+    min-width: 0;
+    padding: 0 2px;
+    font-size: 12px;
+    text-align: center;
+  }
+
+  .search-mode-help {
+    line-height: 1.5;
+    text-align: left;
   }
 
   .graph-toolbar {

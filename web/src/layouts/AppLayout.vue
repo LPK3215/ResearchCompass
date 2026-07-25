@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed, provide, watch } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, provide, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { GithubOutlined } from '@ant-design/icons-vue'
 import {
@@ -100,14 +100,24 @@ const fetchGithubStars = async () => {
 }
 
 onMounted(async () => {
+  initResponsiveSidebar()
   // 加载信息配置与知识库数据无依赖，可并行
   await Promise.all([infoStore.loadInfoConfig(), getRemoteDatabase()])
   await initAgentNavigation()
   await getRemoteConfig()
-  // 仅管理员加载任务中心数据
-  if (userStore.isAdmin) {
+  // 任务中心包含全局运维任务，仅超级管理员加载。
+  if (userStore.isSuperAdmin) {
     taskerStore.loadTasks()
     fetchGithubStars() // Fetch GitHub stars on mount
+  }
+})
+
+onBeforeUnmount(() => {
+  if (!mobileSidebarMediaQuery) return
+  if (mobileSidebarMediaQuery.removeEventListener) {
+    mobileSidebarMediaQuery.removeEventListener('change', handleMobileSidebarChange)
+  } else {
+    mobileSidebarMediaQuery.removeListener(handleMobileSidebarChange)
   }
 })
 
@@ -189,6 +199,27 @@ const isNavItemActive = (item) => {
 
 const setSidebarCollapsed = (collapsed) => {
   sidebarCollapsed.value = collapsed
+}
+
+let mobileSidebarMediaQuery = null
+
+const handleMobileSidebarChange = (event) => {
+  if (event.matches) {
+    setSidebarCollapsed(true)
+  }
+}
+
+const initResponsiveSidebar = () => {
+  if (typeof window === 'undefined' || !window.matchMedia) return
+
+  mobileSidebarMediaQuery = window.matchMedia('(max-width: 700px)')
+  handleMobileSidebarChange(mobileSidebarMediaQuery)
+
+  if (mobileSidebarMediaQuery.addEventListener) {
+    mobileSidebarMediaQuery.addEventListener('change', handleMobileSidebarChange)
+  } else {
+    mobileSidebarMediaQuery.addListener(handleMobileSidebarChange)
+  }
 }
 
 const toggleSidebar = () => {
@@ -396,7 +427,7 @@ provide('settingsModal', {
         <!-- 用户信息组件 -->
         <div class="nav-item user-info" @click.stop>
           <UserInfoComponent :show-role="!sidebarCollapsed">
-            <template v-if="userStore.isAdmin" #actions>
+            <template v-if="userStore.isSuperAdmin" #actions>
               <a-tooltip placement="top" title="任务中心">
                 <button
                   class="user-task-center"
@@ -448,7 +479,7 @@ provide('settingsModal', {
     >
       <DebugComponent />
     </a-modal>
-    <TaskCenterDrawer v-if="userStore.isAdmin" />
+    <TaskCenterDrawer v-if="userStore.isSuperAdmin" />
     <SettingsModal
       v-model:visible="showSettingsModal"
       :initial-tab="settingsInitialTab"
@@ -487,7 +518,7 @@ provide('settingsModal', {
   flex-direction: row;
   width: 100%;
   height: 100vh;
-  min-width: var(--min-width);
+  min-width: 0;
 }
 
 div.header,
@@ -498,6 +529,7 @@ div.header,
 
 #app-router-view {
   flex: 1 1 auto;
+  min-width: 0;
   overflow-y: auto;
 }
 

@@ -9,6 +9,7 @@ import pytest
 from yuxi.services.academic_paper_analysis_service import (
     AcademicPaperAnalysisError,
     STAGE_INSTRUCTIONS,
+    _ensure_analysis_context_budget,
     _parse_json,
     _validate_stage,
 )
@@ -228,3 +229,34 @@ class TestStageInstructions:
         instruction = STAGE_INSTRUCTIONS["gaps"]
         assert "evidence" in instruction
         assert "future_directions" in instruction
+
+
+class TestAnalysisContextBudget:
+    def test_declared_context_length_rejects_oversized_input(self):
+        model = type("Model", (), {"info": {"context_length": 1_024}, "model": object()})()
+
+        with pytest.raises(AcademicPaperAnalysisError) as exc_info:
+            _ensure_analysis_context_budget(
+                model,
+                stage="structure",
+                system_prompt="system",
+                context="word " * 1_000,
+            )
+
+        assert exc_info.value.error_type == "analysis_context_exceeded"
+        assert "structure" in exc_info.value.message
+        assert "不会静默截断" in exc_info.value.message
+
+    def test_runtime_input_limit_is_used_when_available(self):
+        profile = {"max_input_tokens": 100}
+        model = type("Model", (), {"info": {}, "model": type("Runtime", (), {"profile": profile})()})()
+
+        with pytest.raises(AcademicPaperAnalysisError) as exc_info:
+            _ensure_analysis_context_budget(
+                model,
+                stage="innovations",
+                system_prompt="system",
+                context="word " * 100,
+            )
+
+        assert "innovations" in exc_info.value.message

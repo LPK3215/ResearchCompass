@@ -18,6 +18,17 @@ from yuxi.utils.singleton import SingletonMeta
 CombinedBase = declarative_base()
 AGENT_RUN_TERMINAL_STATUS_SQL = ", ".join(f"'{status}'" for status in AGENT_RUN_TERMINAL_STATUSES)
 
+
+def _log_async_session_rollback(error: Exception) -> None:
+    """记录异步事务回滚原因，避免把预期 4xx 业务控制流记为 ERROR。"""
+    status_code = getattr(error, "status_code", None)
+    if isinstance(status_code, int) and 400 <= status_code < 500:
+        logger.debug(f"PostgreSQL async operation rolled back for expected HTTP {status_code}: {error}")
+        return
+
+    logger.error(f"PostgreSQL async operation failed: {error}")
+
+
 # 继承所有表
 for module in [KnowledgeBase, BusinessBase]:
     for table_name in dir(module):
@@ -83,6 +94,7 @@ class PostgresManager(metaclass=SingletonMeta):
                 conninfo=langgraph_db_url,
                 max_size=10,  # 根据你的 Agent 并发情况设置，通常 5-10 足够了
                 kwargs={"autocommit": True},  # LangGraph Checkpoint 强依赖 autocommit
+                open=False,
             )
 
             self._initialized = True
@@ -95,6 +107,14 @@ class PostgresManager(metaclass=SingletonMeta):
         """检查是否已初始化"""
         if not self._initialized:
             raise RuntimeError("PostgreSQL manager not initialized. Please check configuration.")
+
+    async def open_langgraph_pool(self) -> None:
+        """显式打开 LangGraph checkpoint 连接池。"""
+        self._check_initialized()
+        if self.langgraph_pool is None:
+            raise RuntimeError("LangGraph PostgreSQL pool is not initialized.")
+        if self.langgraph_pool.closed:
+            await self.langgraph_pool.open(wait=True)
 
     async def create_tables(self):
         """创建所有表（知识库和业务表）"""
@@ -157,6 +177,10 @@ class PostgresManager(metaclass=SingletonMeta):
             "ALTER TABLE IF EXISTS knowledge_chunks ADD COLUMN IF NOT EXISTS chunk_metadata JSONB",
             "ALTER TABLE IF EXISTS academic_papers ADD COLUMN IF NOT EXISTS metadata_error TEXT",
             "ALTER TABLE IF EXISTS academic_paper_analysis_runs ADD COLUMN IF NOT EXISTS strategy VARCHAR(32)",
+            (
+                "ALTER TABLE IF EXISTS academic_graph_sync_runs ADD COLUMN IF NOT EXISTS "
+                "processed_paper_ids JSONB NOT NULL DEFAULT '[]'::jsonb"
+            ),
             "UPDATE academic_paper_analysis_runs SET strategy = 'multi_agent' WHERE strategy IS NULL",
             "ALTER TABLE IF EXISTS academic_paper_analysis_runs ALTER COLUMN strategy SET NOT NULL",
             (
@@ -201,7 +225,8 @@ class PostgresManager(metaclass=SingletonMeta):
             "ALTER TABLE IF EXISTS evaluation_experiments ADD COLUMN IF NOT EXISTS source_kb_id VARCHAR(80)",
             "ALTER TABLE IF EXISTS evaluation_experiments ADD COLUMN IF NOT EXISTS dataset_id VARCHAR(64)",
             "ALTER TABLE IF EXISTS evaluation_experiments ADD COLUMN IF NOT EXISTS corpus_snapshot JSONB",
-            "ALTER TABLE IF EXISTS evaluation_experiment_variants ADD COLUMN IF NOT EXISTS execution_type VARCHAR(32) NOT NULL DEFAULT 'research_compass'",
+            "ALTER TABLE IF EXISTS evaluation_experiment_variants ADD COLUMN IF NOT EXISTS "
+            "execution_type VARCHAR(32) NOT NULL DEFAULT 'research_compass'",
             "ALTER TABLE IF EXISTS evaluation_experiment_variants ADD COLUMN IF NOT EXISTS provenance JSONB",
             "ALTER TABLE IF EXISTS evaluation_experiment_variants ADD COLUMN IF NOT EXISTS input_snapshot JSONB",
             "ALTER TABLE IF EXISTS evaluation_run_items ADD COLUMN IF NOT EXISTS gold_chunk_ids JSONB",
@@ -1007,7 +1032,7 @@ class PostgresManager(metaclass=SingletonMeta):
             await session.commit()
         except Exception as e:
             await session.rollback()
-            logger.error(f"PostgreSQL async operation failed: {e}")
+            _log_async_session_rollback(e)
             raise
         finally:
             await session.close()

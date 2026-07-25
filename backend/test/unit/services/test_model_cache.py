@@ -52,6 +52,7 @@ def test_model_cache_prefers_model_base_url_override(monkeypatch):
                 "id": "qwen3-rerank",
                 "type": "rerank",
                 "display_name": "Qwen3 Rerank",
+                "context_length": 32_768,
                 "base_url_override": "https://invalid.example/rerank",
             }
         ]
@@ -62,6 +63,7 @@ def test_model_cache_prefers_model_base_url_override(monkeypatch):
     cache.rebuild([Provider()])
 
     assert saved_cache["alibaba-cn:qwen3-rerank"].base_url == "https://invalid.example/rerank"
+    assert saved_cache["alibaba-cn:qwen3-rerank"].context_length == 32_768
 
 
 def test_model_cache_loads_from_redis_and_uses_local_ttl(monkeypatch: pytest.MonkeyPatch):

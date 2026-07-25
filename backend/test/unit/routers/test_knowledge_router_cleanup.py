@@ -14,6 +14,7 @@ pytestmark = pytest.mark.asyncio
 class FakeTaskContext:
     def __init__(self):
         self.result = None
+        self.payload = {}
 
     async def set_message(self, message: str) -> None:
         return None
@@ -348,6 +349,63 @@ async def test_parse_pending_documents_enqueues_status_scoped_task(monkeypatch):
         {"kb_id": "kb_1", "file_id": "file_1", "operator_id": "uid-user"},
         {"kb_id": "kb_1", "file_id": "file_2", "operator_id": "uid-user"},
     ]
+
+
+async def test_document_actions_fail_the_task_after_partial_processing(monkeypatch):
+    parse_context = FakeTaskContext()
+
+    async def failing_parse(*_args, **_kwargs):
+        raise RuntimeError("parser unavailable")
+
+    monkeypatch.setattr(knowledge_router.knowledge_base, "parse_file", failing_parse)
+    with pytest.raises(RuntimeError, match="解析完成，失败 1 个"):
+        await knowledge_router._run_parse_file_ids(
+            context=parse_context,
+            kb_id="kb_1",
+            file_ids=["file_1"],
+            operator_id="uid-user",
+        )
+    assert parse_context.result == {
+        "items": [{"file_id": "file_1", "status": "failed", "error": "parser unavailable"}],
+        "processed": 1,
+        "failed": 1,
+    }
+
+    index_context = FakeTaskContext()
+
+    async def failing_index(*_args, **_kwargs):
+        raise RuntimeError("embedding unavailable")
+
+    monkeypatch.setattr(knowledge_router.knowledge_base, "index_file", failing_index)
+    with pytest.raises(RuntimeError, match="入库完成，失败 1 个"):
+        await knowledge_router._run_index_file_ids(
+            context=index_context,
+            kb_id="kb_1",
+            file_ids=["file_1"],
+            operator_id="uid-user",
+            params={},
+        )
+    assert index_context.result == {
+        "items": [{"file_id": "file_1", "status": "failed", "error": "embedding unavailable"}],
+        "processed": 1,
+        "failed": 1,
+    }
+
+
+async def test_parse_resume_handler_uses_persisted_operator_and_file_ids(monkeypatch):
+    context = FakeTaskContext()
+    context.payload = {"kb_id": "kb_1", "operator_id": "uid-user", "file_ids": ["file_1"]}
+    parsed: list[tuple[str, str, str]] = []
+
+    async def fake_parse(kb_id: str, file_id: str, operator_id: str | None = None):
+        parsed.append((kb_id, file_id, operator_id or ""))
+        return {"file_id": file_id, "status": "parsed"}
+
+    monkeypatch.setattr(knowledge_router.knowledge_base, "parse_file", fake_parse)
+    result = await knowledge_router._resume_parse_task(context)
+
+    assert result["failed"] == 0
+    assert parsed == [("kb_1", "file_1", "uid-user")]
 
 
 async def test_index_pending_documents_uses_pending_statuses_and_params(monkeypatch):

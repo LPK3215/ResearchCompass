@@ -325,13 +325,12 @@ class MilvusKB(KnowledgeBase):
             # 连接到 Milvus
             connections.connect(alias=self.connection_alias, uri=self.milvus_uri, token=self.milvus_token)
 
-            # 创建数据库（如果不存在）
             try:
-                if self.milvus_db not in db.list_database():
-                    db.create_database(self.milvus_db)
-                db.using_database(self.milvus_db)
-            except Exception as e:
-                logger.warning(f"Database operation failed, using default: {e}")
+                if self.milvus_db not in db.list_database(using=self.connection_alias):
+                    db.create_database(self.milvus_db, using=self.connection_alias)
+                db.using_database(self.milvus_db, using=self.connection_alias)
+            except Exception as exc:
+                raise RuntimeError(f"Milvus database initialization failed: {self.milvus_db}") from exc
 
             logger.info(f"Connected to Milvus at {self.milvus_uri}")
 
@@ -1480,14 +1479,11 @@ class MilvusKB(KnowledgeBase):
         """删除数据库，同时清除Milvus中的集合"""
 
         def delete_milvus_collections() -> None:
-            try:
-                if utility.has_collection(kb_id, using=self.connection_alias):
-                    utility.drop_collection(kb_id, using=self.connection_alias)
-                    logger.info(f"Dropped Milvus collection for {kb_id}")
-                else:
-                    logger.info(f"Milvus collection {kb_id} does not exist, skipping")
-            except Exception as e:
-                logger.error(f"Failed to drop Milvus collection {kb_id}: {e}")
+            if utility.has_collection(kb_id, using=self.connection_alias):
+                utility.drop_collection(kb_id, using=self.connection_alias)
+                logger.info(f"Dropped Milvus collection for {kb_id}")
+            else:
+                logger.info(f"Milvus collection {kb_id} does not exist, skipping")
 
             from yuxi.knowledge.graphs.milvus_graph_vector_store import MilvusGraphVectorStore
 

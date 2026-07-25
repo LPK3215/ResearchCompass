@@ -2087,7 +2087,7 @@ defineExpose({
   }
 }
 
-:deep(.recommendation-card) {
+.recommendation-card {
   cursor: default;
   &:hover {
     border-color: var(--gray-150);

@@ -22,6 +22,7 @@ class FakeRepo:
 
     def __init__(self, preset: list[FakeRecord] | None = None):
         self.preset = preset or []
+        self.records = {record.to_dict()["id"]: record.to_dict().copy() for record in self.preset}
         self.upsert_calls = 0
         self.progress_writes: list[float] = []
         self.deleted: list[str] = []
@@ -29,13 +30,71 @@ class FakeRepo:
     async def upsert(self, task_id: str, data: dict) -> None:
         self.upsert_calls += 1
         self.progress_writes.append(data.get("progress"))
+        existing = self.records.get(task_id, {})
+        if existing.get("cancel_requested") and not data.get("cancel_requested"):
+            data = {**data, "cancel_requested": 1}
+        self.records[task_id] = {"id": task_id, **data}
 
     async def delete(self, task_id: str) -> bool:
         self.deleted.append(task_id)
+        self.records.pop(task_id, None)
         return True
 
     async def list_all(self) -> list[FakeRecord]:
-        return self.preset
+        return [FakeRecord(data) for data in self.records.values()]
+
+    async def list_for_startup(self, *, terminal_limit: int, terminal_statuses: set[str]) -> list[FakeRecord]:
+        active = [data for data in self.records.values() if data.get("status") not in terminal_statuses]
+        terminal = [data for data in self.records.values() if data.get("status") in terminal_statuses]
+        terminal.sort(key=lambda data: str(data.get("created_at") or ""), reverse=True)
+        return [FakeRecord(data) for data in [*active, *terminal[:terminal_limit]]]
+
+    async def list(self, status: str | None = None, limit: int = 100) -> list[FakeRecord]:
+        records = [
+            data for data in self.records.values() if status is None or data.get("status") == status
+        ]
+        records.sort(key=lambda data: str(data.get("created_at") or ""), reverse=True)
+        return [FakeRecord(data) for data in records[:limit]]
+
+    async def get_list_summary(self, *, status: str | None) -> dict:
+        status_counts = {}
+        type_counts = {}
+        for data in self.records.values():
+            status_counts[data["status"]] = status_counts.get(data["status"], 0) + 1
+            type_counts[data["type"]] = type_counts.get(data["type"], 0) + 1
+        return {
+            "total": len(self.records),
+            "filtered_total": status_counts.get(status, 0) if status else len(self.records),
+            "status_counts": status_counts,
+            "type_counts": type_counts,
+        }
+
+    async def get_by_id(self, task_id: str) -> FakeRecord | None:
+        data = self.records.get(task_id)
+        return FakeRecord(data) if data else None
+
+    async def request_cancellation(self, task_id: str) -> FakeRecord | None:
+        data = self.records.get(task_id)
+        if data is None or data.get("status") in {"success", "failed", "cancelled"}:
+            return None
+        data["cancel_requested"] = 1
+        return FakeRecord(data)
+
+    async def delete_terminal(self, task_id: str, statuses: set[str]) -> bool:
+        data = self.records.get(task_id)
+        if data is None or data.get("status") not in statuses:
+            return False
+        self.deleted.append(task_id)
+        del self.records[task_id]
+        return True
+
+    async def find_by_payload(self, *, task_type: str, payload_match: dict, statuses: set[str] | None = None):
+        for data in self.records.values():
+            if data.get("type") != task_type or (statuses is not None and data.get("status") not in statuses):
+                continue
+            if all((data.get("payload") or {}).get(key) == value for key, value in payload_match.items()):
+                return FakeRecord(data)
+        return None
 
 
 async def _make_tasker(
@@ -303,7 +362,7 @@ async def test_worker_cancellation_exposes_shutdown_reason():
     await tasker.shutdown()
 
 
-async def test_completed_tasks_are_pruned_to_limit(monkeypatch):
+async def test_completed_tasks_are_evicted_from_memory_without_deleting_persistent_history(monkeypatch):
     monkeypatch.setattr(task_service, "MAX_TERMINAL_TASKS", 3)
     repo = FakeRepo()
     tasker = await _make_tasker(repo)
@@ -316,12 +375,13 @@ async def test_completed_tasks_are_pruned_to_limit(monkeypatch):
         await _wait_status(tasker, task.id, {"success"})
 
     listing = await tasker.list_tasks(limit=100)
-    assert listing["summary"]["total"] <= 3
-    assert len(repo.deleted) >= 3
+    assert listing["summary"]["total"] == 6
+    assert len(repo.deleted) == 0
+    assert len(tasker._tasks) <= 3
     await tasker.shutdown()
 
 
-async def test_load_state_marks_interrupted_and_prunes(monkeypatch):
+async def test_load_state_marks_interrupted_and_evicts_only_memory_cache(monkeypatch):
     monkeypatch.setattr(task_service, "MAX_TERMINAL_TASKS", 2)
     repo = FakeRepo(
         preset=[
@@ -344,8 +404,82 @@ async def test_load_state_marks_interrupted_and_prunes(monkeypatch):
     # 中断的 running 任务被标记为 failed
     interrupted = await tasker.get_task("a")
     assert interrupted["status"] == "failed"
-    # 仅保留最近 MAX_TERMINAL_TASKS 条终态任务，最旧的被清理
+    # 仅在内存中保留最近 MAX_TERMINAL_TASKS 条终态任务，持久化历史保持完整
     listing = await tasker.list_tasks(limit=100)
-    assert listing["summary"]["total"] == 2
-    assert "c" in repo.deleted and "d" in repo.deleted
+    assert listing["summary"]["total"] == 4
+    assert repo.deleted == []
+    assert set(tasker._tasks) == {"a", "b"}
     await tasker.shutdown()
+
+
+async def test_registered_resumable_task_is_requeued_after_restart():
+    payload = {task_service.RESUMABLE_PAYLOAD_KEY: True, "job_id": "job-1"}
+    repo = FakeRepo(
+        preset=[
+            FakeRecord(
+                {
+                    "id": "resumable-task",
+                    "name": "可恢复任务",
+                    "type": "resumable",
+                    "status": "running",
+                    "payload": payload,
+                    "created_at": "2026-01-01T00:00:00",
+                }
+            )
+        ]
+    )
+    tasker = Tasker(worker_count=1)
+    tasker._repo = repo
+    observed_payloads: list[dict] = []
+
+    async def resume(context):
+        observed_payloads.append(context.payload)
+        return "resumed"
+
+    tasker.register_resumable_handler("resumable", resume)
+    await tasker.start()
+    try:
+        completed = await _wait_status(tasker, "resumable-task", {"success"})
+        assert completed["result"] == "resumed"
+        assert observed_payloads == [payload]
+    finally:
+        await tasker.shutdown()
+
+
+async def test_resumable_task_survives_worker_shutdown_and_runs_on_next_startup():
+    repo = FakeRepo()
+    first_tasker = Tasker(worker_count=1)
+    first_tasker._repo = repo
+    started = asyncio.Event()
+
+    async def resumed(context):
+        return f"resumed:{context.payload['job_id']}"
+
+    async def running_before_shutdown(context):
+        started.set()
+        await asyncio.Event().wait()
+
+    first_tasker.register_resumable_handler("resumable", resumed)
+    await first_tasker.start()
+    task = await first_tasker.enqueue(
+        name="可恢复任务",
+        task_type="resumable",
+        payload={"job_id": "job-2"},
+        coroutine=running_before_shutdown,
+    )
+    await started.wait()
+    await _wait_status(first_tasker, task.id, {"running"})
+    await first_tasker.shutdown()
+
+    assert repo.records[task.id]["status"] == "pending"
+    assert repo.records[task.id]["payload"][task_service.RESUMABLE_PAYLOAD_KEY] is True
+
+    second_tasker = Tasker(worker_count=1)
+    second_tasker._repo = repo
+    second_tasker.register_resumable_handler("resumable", resumed)
+    await second_tasker.start()
+    try:
+        completed = await _wait_status(second_tasker, task.id, {"success"})
+        assert completed["result"] == "resumed:job-2"
+    finally:
+        await second_tasker.shutdown()

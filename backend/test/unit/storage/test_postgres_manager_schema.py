@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
+from yuxi.storage.postgres import manager as postgres_manager
 from yuxi.storage.postgres.manager import PostgresManager
 
 
@@ -30,6 +33,76 @@ class _RecordingEngine:
 
     def begin(self):
         return _RecordingBegin(self.connection)
+
+
+class _HTTPStyleError(Exception):
+    def __init__(self, status_code: int):
+        super().__init__(f"{status_code}: expected HTTP error")
+        self.status_code = status_code
+
+
+class _RecordingLangGraphPool:
+    def __init__(self, *, closed: bool):
+        self.closed = closed
+        self.open_calls: list[bool] = []
+
+    async def open(self, *, wait: bool):
+        self.open_calls.append(wait)
+        self.closed = False
+
+
+def test_log_async_session_rollback_demotes_expected_4xx_http_errors(monkeypatch):
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        postgres_manager,
+        "logger",
+        SimpleNamespace(
+            debug=lambda message: calls.append(("debug", message)),
+            error=lambda message: calls.append(("error", message)),
+        ),
+    )
+
+    postgres_manager._log_async_session_rollback(_HTTPStyleError(409))
+
+    assert len(calls) == 1
+    assert calls[0][0] == "debug"
+    assert "expected HTTP 409" in calls[0][1]
+
+
+@pytest.mark.asyncio
+async def test_open_langgraph_pool_opens_only_a_closed_pool():
+    manager = PostgresManager()
+    original_initialized = manager._initialized
+    original_pool = manager.langgraph_pool
+    pool = _RecordingLangGraphPool(closed=True)
+    manager._initialized = True
+    manager.langgraph_pool = pool
+    try:
+        await manager.open_langgraph_pool()
+        await manager.open_langgraph_pool()
+    finally:
+        manager._initialized = original_initialized
+        manager.langgraph_pool = original_pool
+
+    assert pool.open_calls == [True]
+
+
+@pytest.mark.parametrize("error", [_HTTPStyleError(500), RuntimeError("database is unavailable")])
+def test_log_async_session_rollback_keeps_unexpected_errors_at_error_level(error, monkeypatch):
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        postgres_manager,
+        "logger",
+        SimpleNamespace(
+            debug=lambda message: calls.append(("debug", message)),
+            error=lambda message: calls.append(("error", message)),
+        ),
+    )
+
+    postgres_manager._log_async_session_rollback(error)
+
+    assert len(calls) == 1
+    assert calls[0][0] == "error"
 
 
 @pytest.mark.asyncio
@@ -138,3 +211,23 @@ async def test_ensure_business_schema_removes_unbound_api_keys_before_requiring_
     assert statements.index("DELETE FROM api_keys WHERE user_id IS NULL") < statements.index(
         "ALTER TABLE IF EXISTS api_keys ALTER COLUMN user_id SET NOT NULL"
     )
+
+
+@pytest.mark.asyncio
+async def test_ensure_knowledge_schema_adds_graph_sync_checkpoint_column():
+    manager = PostgresManager()
+    original_initialized = manager._initialized
+    original_engine = manager.async_engine
+    connection = _RecordingConnection()
+
+    manager._initialized = True
+    manager.async_engine = _RecordingEngine(connection)
+    try:
+        await manager.ensure_knowledge_schema()
+    finally:
+        manager._initialized = original_initialized
+        manager.async_engine = original_engine
+
+    statements = "\n".join(connection.statements)
+
+    assert "academic_graph_sync_runs ADD COLUMN IF NOT EXISTS processed_paper_ids" in statements

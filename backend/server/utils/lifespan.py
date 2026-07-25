@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from yuxi.services.task_service import tasker
+from server.utils.client_ip import validate_trusted_proxy_cidrs
 from yuxi.agents.mcp.service import ensure_builtin_mcp_servers_in_db
 from yuxi.models.providers.service import ensure_builtin_model_providers_in_db
 from yuxi.services.run_queue_service import close_queue_clients, get_redis_client
@@ -20,6 +21,7 @@ from yuxi.config import config
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """FastAPI lifespan事件管理器"""
+    validate_trusted_proxy_cidrs()
     # 初始化数据库连接
     try:
         pg_manager.initialize()
@@ -100,9 +102,10 @@ async def lifespan(app: FastAPI):
     # =========================================================
     # 2. 核心修复：在这里执行一次 setup()，建完表就拉倒
     # =========================================================
+    await pg_manager.open_langgraph_pool()
     checkpointer = AsyncPostgresSaver(pg_manager.langgraph_pool)
     await checkpointer.setup()
-    print("LangGraph Checkpoint tables verified/created!")
+    logger.info("LangGraph checkpoint tables verified/created")
 
     await tasker.start()
     try:
@@ -129,6 +132,14 @@ async def lifespan(app: FastAPI):
             logger.info(f"Recovered {recovered} academic paper analysis runs")
     except Exception as e:
         logger.error(f"Failed to recover academic paper analysis runs: {e}")
+    try:
+        from yuxi.services.research_synthesis_service import recover_research_synthesis_runs
+
+        recovered = await recover_research_synthesis_runs()
+        if recovered:
+            logger.info(f"Recovered {recovered} research synthesis runs")
+    except Exception as e:
+        logger.error(f"Failed to recover research synthesis runs: {e}")
     try:
         from yuxi.services.academic_paper_analysis_evaluation_service import AcademicPaperAnalysisEvaluationService
 

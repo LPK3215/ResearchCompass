@@ -20,14 +20,33 @@ def _trend_keywords(rows: list[tuple[int | None, list[str], int | None]]) -> lis
     keyword_year_counts: dict[str, dict[int, int]] = defaultdict(lambda: defaultdict(int))
     keyword_display: dict[str, str] = {}
     for year, keywords, _ in rows:
-        if year is None:
-            continue
-        for keyword in set(keywords):
-            normalized = " ".join(keyword.casefold().split())
-            if not normalized:
-                continue
-            keyword_display.setdefault(normalized, keyword)
-            keyword_year_counts[normalized][int(year)] += 1
+        _update_keyword_counts(keyword_year_counts, keyword_display, year, keywords)
+
+    return _serialize_keyword_trends(keyword_year_counts, keyword_display)
+
+
+def _update_keyword_counts(
+    keyword_year_counts: dict[str, dict[int, int]],
+    keyword_display: dict[str, str],
+    year: int | None,
+    keywords: list[str],
+) -> None:
+    if year is None:
+        return
+    normalized_keywords: dict[str, str] = {}
+    for keyword in keywords:
+        display = str(keyword).strip()
+        normalized = " ".join(display.casefold().split())
+        if normalized:
+            normalized_keywords.setdefault(normalized, display)
+    for normalized, display in normalized_keywords.items():
+        keyword_display.setdefault(normalized, display)
+        keyword_year_counts[normalized][int(year)] += 1
+
+
+def _serialize_keyword_trends(
+    keyword_year_counts: dict[str, dict[int, int]], keyword_display: dict[str, str]
+) -> list[dict[str, Any]]:
 
     result = []
     for normalized, counts in keyword_year_counts.items():
@@ -97,20 +116,27 @@ async def get_academic_trends(
     await _ensure_access(current_user, kb_id)
     if year_from is not None and year_to is not None and year_from > year_to:
         raise AcademicTrendError("invalid_filter", "year_from 不能大于 year_to")
-    rows, total = await AcademicPaperRepository().list_trend_records(
+    if offset:
+        raise AcademicTrendError("trend_pagination_unsupported", "趋势统计不支持分页，请移除 offset 参数")
+
+    publication_counts: dict[int, int] = defaultdict(int)
+    citation_totals: dict[int, int] = defaultdict(int)
+    keyword_year_counts: dict[str, dict[int, int]] = defaultdict(lambda: defaultdict(int))
+    keyword_display: dict[str, str] = {}
+    total = 0
+    async for rows in AcademicPaperRepository().iter_trend_record_batches(
         kb_id=kb_id,
         year_from=year_from,
         year_to=year_to,
-        offset=offset,
-        limit=limit,
-    )
-    publication_counts: dict[int, int] = defaultdict(int)
-    citation_totals: dict[int, int] = defaultdict(int)
-    for year, _, citation_count in rows:
-        if year is None:
-            continue
-        publication_counts[int(year)] += 1
-        citation_totals[int(year)] += max(int(citation_count or 0), 0)
+        batch_size=limit,
+    ):
+        total += len(rows)
+        for year, row_keywords, citation_count in rows:
+            if year is None:
+                continue
+            publication_counts[int(year)] += 1
+            citation_totals[int(year)] += max(int(citation_count or 0), 0)
+            _update_keyword_counts(keyword_year_counts, keyword_display, year, row_keywords)
     publication_trend = [
         {
             "year": year,
@@ -119,7 +145,7 @@ async def get_academic_trends(
         }
         for year in sorted(publication_counts)
     ]
-    keywords = _trend_keywords(rows)
+    keywords = _serialize_keyword_trends(keyword_year_counts, keyword_display)
     emerging_directions = _emerging_keywords(keywords)
     keyword_totals = [
         {"keyword": item["keyword"], "total": item["total"]}
@@ -134,11 +160,9 @@ async def get_academic_trends(
         "scope": {
             "year_from": year_from,
             "year_to": year_to,
-            "offset": offset,
-            "limit": limit,
             "total_papers": total,
-            "returned_papers": len(rows),
-            "has_more": offset + len(rows) < total,
+            "returned_papers": total,
+            "has_more": False,
         },
         "publication_trend": publication_trend,
         "keyword_totals": keyword_totals,
