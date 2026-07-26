@@ -201,21 +201,33 @@ class EvaluationService:
             raise ValueError("消融实验仅支持 Milvus 知识库")
 
         records = await self.file_repo.list_by_kb_id(kb_id)
-        indexed_hashes = sorted(
+        indexed_records = [
+            record
+            for record in records
+            if not record.is_folder
+            and record.status in {"indexed", "done"}
+            and isinstance(record.content_hash, str)
+            and record.content_hash.strip()
+        ]
+        documents = sorted(
             [
-                str(record.content_hash).strip()
-                for record in records
-                if not record.is_folder
-                and record.status in {"indexed", "done"}
-                and isinstance(record.content_hash, str)
-                and record.content_hash.strip()
-            ]
+                {
+                    "filename": str(record.filename or ""),
+                    "content_hash": str(record.content_hash).strip(),
+                    "chunk_count": int(record.chunk_count or 0),
+                    "file_size": int(record.file_size or 0),
+                }
+                for record in indexed_records
+            ],
+            key=lambda item: (item["content_hash"], item["filename"]),
         )
-        if not indexed_hashes:
+        if not documents:
             raise ValueError(f"对照知识库没有可用于评估的已索引文档: {kb_id}")
+        indexed_hashes = [document["content_hash"] for document in documents]
         return {
             "kb_id": str(kb.kb_id),
             "embedding_model_spec": str(kb.embedding_model_spec or ""),
+            "documents": documents,
             "content_hashes": indexed_hashes,
             "corpus_fingerprint": _corpus_fingerprint(indexed_hashes),
         }
@@ -444,6 +456,23 @@ class EvaluationService:
         return {
             "filename": self._safe_jsonl_filename(row.name, row.dataset_id),
             "content": self._build_jsonl_content(items),
+        }
+
+    async def export_corpus_manifest(self, kb_id: str) -> dict[str, str]:
+        """导出当前已索引语料的确定性清单，供演示与实验固定输入。"""
+        corpus = await self._get_indexed_corpus_snapshot(kb_id)
+        fingerprint = corpus["corpus_fingerprint"]
+        manifest = {
+            "schema_version": "research_compass_corpus_manifest.v1",
+            "kb_id": corpus["kb_id"],
+            "corpus_fingerprint": fingerprint,
+            "embedding_model_spec": corpus["embedding_model_spec"],
+            "document_count": len(corpus["documents"]),
+            "documents": corpus["documents"],
+        }
+        return {
+            "filename": f"researchcompass-corpus-{fingerprint[:12]}.json",
+            "content": json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         }
 
     async def export_external_baseline_template(self, kb_id: str, dataset_id: str) -> dict[str, str]:

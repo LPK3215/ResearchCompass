@@ -145,6 +145,27 @@ async def list_evaluation_datasets(kb_id: str, current_user: User = Depends(get_
         raise _internal_http_error("获取评估数据集列表失败", "获取评估数据集列表失败", exc) from exc
 
 
+@evaluation.get("/databases/{kb_id}/corpus-manifest")
+async def download_corpus_manifest(kb_id: str, current_user: User = Depends(get_admin_user)):
+    """导出当前知识库已索引论文的内容哈希清单。"""
+    try:
+        await _ensure_access(current_user, kb_id)
+        export_info = await EvaluationService().export_corpus_manifest(kb_id)
+        return Response(
+            content=export_info["content"].encode("utf-8"),
+            media_type="application/json",
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(export_info['filename'])}"},
+        )
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        if "not found" in str(exc).lower() or "不存在" in str(exc):
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise _internal_http_error("导出固定语料清单失败", "导出固定语料清单失败", exc) from exc
+
+
 @evaluation.get("/databases/{kb_id}/datasets/{dataset_id}")
 async def get_evaluation_dataset(
     kb_id: str, dataset_id: str, page: int = 1, page_size: int = 10, current_user: User = Depends(get_admin_user)

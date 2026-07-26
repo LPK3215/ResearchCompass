@@ -8,7 +8,7 @@ import uuid
 
 import pytest
 
-pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
+pytestmark = [pytest.mark.asyncio(loop_scope="function"), pytest.mark.integration]
 
 
 async def _upload_test_dataset(test_client, admin_headers: dict[str, str], kb_id: str) -> tuple[str, str]:
@@ -59,3 +59,23 @@ async def test_download_dataset_not_found(test_client, admin_headers):
         headers=admin_headers,
     )
     assert response.status_code == 404, response.text
+
+
+async def test_download_corpus_manifest_requires_authentication(test_client):
+    response = await test_client.get("/api/evaluation/databases/kb-private/corpus-manifest")
+
+    assert response.status_code == 401, response.text
+
+
+async def test_download_corpus_manifest_rejects_empty_database(
+    test_client,
+    admin_headers,
+    knowledge_database,
+):
+    response = await test_client.get(
+        f"/api/evaluation/databases/{knowledge_database['kb_id']}/corpus-manifest",
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 400, response.text
+    assert "没有可用于评估的已索引文档" in response.json()["detail"]

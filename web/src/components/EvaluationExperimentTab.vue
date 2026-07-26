@@ -5,10 +5,16 @@
         <h3>消融实验</h3>
         <p>同一评估基准、共享模型条件下比较多组检索配置；系统只报告实测差异。</p>
       </div>
-      <a-button type="primary" class="lucide-icon-btn" :disabled="datasets.length === 0" @click="openCreate">
-        <FlaskConical :size="16" />
-        新建实验
-      </a-button>
+      <a-space class="experiment-actions">
+        <a-button class="lucide-icon-btn" :loading="manifestDownloading" @click="downloadCorpusManifest">
+          <FileDown :size="16" />
+          固定语料清单
+        </a-button>
+        <a-button type="primary" class="lucide-icon-btn" :disabled="datasets.length === 0" @click="openCreate">
+          <FlaskConical :size="16" />
+          新建实验
+        </a-button>
+      </a-space>
     </div>
 
     <ResourceEmptyState
@@ -93,6 +99,9 @@
         </div>
         <div class="variant-heading">
           <strong>实验变体</strong><span>选择一个基线，其余变体将显示相对于基线的绝对指标差值。</span>
+          <a-button type="link" size="small" class="preset-button" @click="loadStandardAblationPreset">
+            <ListChecks :size="14" /> 加载标准四组
+          </a-button>
         </div>
         <div v-for="(variant, index) in form.variants" :key="index" class="variant-card">
           <div class="variant-card-head">
@@ -203,7 +212,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { FileDown, FileUp, FlaskConical, Plus, Trash2 } from 'lucide-vue-next'
+import { FileDown, FileUp, FlaskConical, ListChecks, Plus, Trash2 } from 'lucide-vue-next'
 import { databaseApi, evaluationApi } from '@/apis/knowledge_api'
 import ModelSelectorComponent from '@/components/ModelSelectorComponent.vue'
 import ResourceEmptyState from '@/components/shared/ResourceEmptyState.vue'
@@ -217,12 +226,13 @@ const experiments = ref([])
 const createVisible = ref(false)
 const creating = ref(false)
 const templateDownloading = ref(false)
+const manifestDownloading = ref(false)
 const reportVisible = ref(false)
 const reportLoading = ref(false)
 const selectedExperiment = ref(null)
 let refreshTimer = null
 
-const freshVariant = (name, baseline = false) => ({
+const freshVariant = (name, baseline = false, overrides = {}) => ({
   name,
   baseline,
   kb_id: props.kbId,
@@ -242,7 +252,8 @@ const freshVariant = (name, baseline = false) => ({
   corpus_fingerprint: '',
   external_results: [],
   external_file_name: '',
-  external_loading: false
+  external_loading: false,
+  ...overrides
 })
 
 const form = reactive({
@@ -345,6 +356,44 @@ const resetForm = () => {
   form.answer_llm = ''
   form.judge_llm = ''
   form.variants = [freshVariant('基线：纯向量检索', true), freshVariant('对照：向量 + 图谱')]
+}
+
+const loadStandardAblationPreset = () => {
+  if (!form.name.trim()) form.name = 'ResearchCompass 标准检索消融'
+  if (!form.description.trim()) form.description = '固定语料、评估基准和模型，仅比较检索策略。'
+  form.variants = [
+    freshVariant('基线：纯向量检索', true),
+    freshVariant('对照：BM25', false, { search_mode: 'keyword' }),
+    freshVariant('对照：向量 + BM25', false, { search_mode: 'hybrid' }),
+    freshVariant('对照：混合检索 + 知识图谱增强', false, {
+      search_mode: 'hybrid',
+      use_graph_retrieval: true
+    })
+  ]
+}
+
+const downloadCorpusManifest = async () => {
+  if (manifestDownloading.value) return
+  manifestDownloading.value = true
+  try {
+    const response = await evaluationApi.downloadCorpusManifest(props.kbId)
+    const blob = await response.blob()
+    const contentDisposition = response.headers.get('content-disposition') || ''
+    const encodedFilename = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+    const filename = encodedFilename
+      ? decodeURIComponent(encodedFilename)
+      : 'researchcompass-corpus-manifest.json'
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = filename
+    anchor.click()
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    message.error(error.message || '固定语料清单下载失败')
+  } finally {
+    manifestDownloading.value = false
+  }
 }
 
 const changeExecutionType = (variant) => {
@@ -519,6 +568,7 @@ onUnmounted(() => refreshTimer && window.clearInterval(refreshTimer))
 }
 .experiment-alert { margin-bottom: 16px; }
 .template-download { display: inline-flex; align-items: center; gap: 5px; padding-left: 0; }
+.preset-button { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; padding-right: 0; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
 .variant-heading { margin: 4px 0 10px; display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; color: var(--gray-500); font-size: 13px;
   strong { color: var(--gray-900); font-size: 14px; }
@@ -533,5 +583,9 @@ onUnmounted(() => refreshTimer && window.clearInterval(refreshTimer))
   code { font-size: 11px; }
 }
 .disabled { color: var(--gray-400); pointer-events: none; }
-@media (max-width: 760px) { .experiment-header { flex-direction: column; } .form-grid { grid-template-columns: 1fr; } }
+@media (max-width: 760px) {
+  .experiment-header { flex-direction: column; gap: 12px; }
+  .experiment-actions { width: 100%; flex-wrap: wrap; }
+  .form-grid { grid-template-columns: 1fr; }
+}
 </style>

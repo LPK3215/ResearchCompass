@@ -1,4 +1,4 @@
-import { apiGet, apiAdminGet, apiAdminPost, apiAdminPut, apiAdminDelete, apiRequest } from './base'
+import { apiGet, apiAdminGet, apiAdminPost, apiAdminPut, apiAdminDelete, apiRequest } from './base.js'
 
 /**
  * 知识库管理API模块
@@ -568,6 +568,9 @@ export const evaluationApi = {
   listDatasets: async (kbId) => {
     return apiAdminGet(`/api/evaluation/databases/${kbId}/datasets`)
   },
+
+  downloadCorpusManifest: async (kbId) =>
+    apiAdminGet(`/api/evaluation/databases/${encodeURIComponent(kbId)}/corpus-manifest`, {}, 'blob'),
 
   getDataset: async (kbId, datasetId, page = 1, pageSize = 50) => {
     const params = new URLSearchParams({
