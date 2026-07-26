@@ -13,6 +13,7 @@ from yuxi.storage.postgres.models_knowledge import (
     AcademicPaper,
     KnowledgeChunk,
     KnowledgeFile,
+    ResearchSearchRun,
     ResearchSynthesisRun,
     ResearchUserStudy,
     ResearchUserStudyInvite,
@@ -262,6 +263,14 @@ async def _exercise_research_compass_core_business(
     assert chunks["items"][0]["metadata"]["section_type"] == "introduction"
     assert chunks["items"][0]["start_char_pos"] == 0
 
+    await _exercise_research_search_history_api(
+        test_client,
+        admin_headers=admin_headers,
+        kb_id=kb_id,
+        uid=admin_uid,
+        seeded=seeded,
+    )
+
     trends_response = await test_client.get(
         f"/api/research/databases/{kb_id}/trends",
         params={"top_keywords": 10},
@@ -381,6 +390,135 @@ async def _exercise_research_compass_core_business(
         "invite_id": study["invites"][0]["invite_id"],
         "response_id": response_id,
     }
+
+
+async def _exercise_research_search_history_api(
+    test_client,
+    *,
+    admin_headers: dict[str, str],
+    kb_id: str,
+    uid: str,
+    seeded: dict[str, str],
+) -> None:
+    success_run_id = f"search_{uuid.uuid4().hex[:12]}"
+    running_run_id = f"search_{uuid.uuid4().hex[:12]}"
+    result_snapshot = {
+        "run_id": success_run_id,
+        "query": "How reliable is the evidence workflow?",
+        "rewritten_query": "reliable evidence workflow",
+        "keywords": ["evidence", "workflow"],
+        "items": [
+            {
+                "paper_id": seeded["paper_id"],
+                "title": "Evidence-grounded Research Opportunity Discovery",
+                "authors": ["Test Researcher"],
+                "publication_year": 2025,
+                "ranking_score": 0.91,
+                "scores": {"rerank": 0.91},
+                "evidence": [
+                    {
+                        "chunk_id": seeded["first_chunk_id"],
+                        "file_id": seeded["file_id"],
+                        "content": "The introduction defines an evidence-grounded research workflow.",
+                        "section_title": "Introduction",
+                        "locator": {"chunk_id": seeded["first_chunk_id"]},
+                    }
+                ],
+            }
+        ],
+        "total": 1,
+        "graph_expansion": None,
+        "config": {"mode": "local_hybrid", "top_k": 10, "recall_top_k": 50},
+        "stage_timings": {"retrieval_ms": 2},
+    }
+    async with pg_manager.get_async_session_context() as session:
+        session.add_all(
+            [
+                ResearchSearchRun(
+                    run_id=success_run_id,
+                    kb_id=kb_id,
+                    uid=uid,
+                    raw_query=result_snapshot["query"],
+                    rewritten_query=result_snapshot["rewritten_query"],
+                    rewrite_keywords=result_snapshot["keywords"],
+                    model_config_json={"chat_model": "test-chat", "reranker_model": "test-reranker"},
+                    retrieval_config=result_snapshot["config"],
+                    status="success",
+                    stage_timings=result_snapshot["stage_timings"],
+                    result_count=1,
+                    result_snapshot=result_snapshot,
+                ),
+                ResearchSearchRun(
+                    run_id=running_run_id,
+                    kb_id=kb_id,
+                    uid=uid,
+                    raw_query="Running query",
+                    model_config_json={},
+                    retrieval_config={"mode": "local_hybrid"},
+                    status="running",
+                    stage_timings={},
+                ),
+                ResearchSearchRun(
+                    run_id=f"search_{uuid.uuid4().hex[:12]}",
+                    kb_id=kb_id,
+                    uid="another-user",
+                    raw_query="Other user's query",
+                    model_config_json={},
+                    retrieval_config={"mode": "local_hybrid"},
+                    status="success",
+                    stage_timings={},
+                ),
+            ]
+        )
+
+    list_response = await test_client.get(
+        f"/api/research/databases/{kb_id}/search-runs",
+        params={"offset": 0, "limit": 20},
+        headers=admin_headers,
+    )
+    assert list_response.status_code == 200, list_response.text
+    history = list_response.json()
+    assert history["total"] == 2
+    assert {item["run_id"] for item in history["items"]} == {success_run_id, running_run_id}
+    assert all("result" not in item for item in history["items"])
+
+    pin_response = await test_client.patch(
+        f"/api/research/search-runs/{success_run_id}",
+        json={"is_pinned": True},
+        headers=admin_headers,
+    )
+    assert pin_response.status_code == 200, pin_response.text
+    assert pin_response.json()["is_pinned"] is True
+
+    detail_response = await test_client.get(
+        f"/api/research/search-runs/{success_run_id}",
+        headers=admin_headers,
+    )
+    assert detail_response.status_code == 200, detail_response.text
+    detail = detail_response.json()
+    assert detail["result"]["items"][0]["paper_id"] == seeded["paper_id"]
+    assert detail["result"]["items"][0]["evidence"][0]["chunk_id"] == seeded["first_chunk_id"]
+
+    running_delete_response = await test_client.delete(
+        f"/api/research/search-runs/{running_run_id}",
+        headers=admin_headers,
+    )
+    assert running_delete_response.status_code == 409
+    assert running_delete_response.json()["detail"] == {
+        "error": "run_active",
+        "message": "运行中的检索不能删除",
+    }
+
+    delete_response = await test_client.delete(
+        f"/api/research/search-runs/{success_run_id}",
+        headers=admin_headers,
+    )
+    assert delete_response.status_code == 204, delete_response.text
+    missing_response = await test_client.get(
+        f"/api/research/search-runs/{success_run_id}",
+        headers=admin_headers,
+    )
+    assert missing_response.status_code == 404
 
 
 def _synthesis_result(seeded: dict[str, str]) -> dict:

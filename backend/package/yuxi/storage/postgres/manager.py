@@ -184,6 +184,15 @@ class PostgresManager(metaclass=SingletonMeta):
             "ALTER TABLE IF EXISTS knowledge_files ADD COLUMN IF NOT EXISTS updated_by VARCHAR(64)",
             "ALTER TABLE IF EXISTS knowledge_files ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ",
             "ALTER TABLE IF EXISTS knowledge_chunks ADD COLUMN IF NOT EXISTS chunk_metadata JSONB",
+            "ALTER TABLE IF EXISTS research_search_runs ADD COLUMN IF NOT EXISTS result_snapshot JSONB",
+            (
+                "ALTER TABLE IF EXISTS research_search_runs ADD COLUMN IF NOT EXISTS "
+                "is_pinned BOOLEAN NOT NULL DEFAULT FALSE"
+            ),
+            (
+                "CREATE INDEX IF NOT EXISTS ix_research_search_runs_history "
+                "ON research_search_runs (kb_id, uid, is_pinned, created_at)"
+            ),
             "ALTER TABLE IF EXISTS academic_papers ADD COLUMN IF NOT EXISTS metadata_error TEXT",
             "ALTER TABLE IF EXISTS academic_paper_analysis_runs ADD COLUMN IF NOT EXISTS strategy VARCHAR(32)",
             (

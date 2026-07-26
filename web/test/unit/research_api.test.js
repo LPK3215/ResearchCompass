@@ -57,6 +57,35 @@ test('searchPapers sends the selected retrieval contract as JSON', async () => {
   ])
 })
 
+test('search history APIs encode ids and preserve management contracts', async () => {
+  await researchApi.listSearchRuns('kb/team one', { offset: 20, limit: 20 })
+  await researchApi.getSearchRun('run/1')
+  await researchApi.updateSearchRun('run/1', { is_pinned: true })
+  await researchApi.deleteSearchRun('run/1')
+
+  assert.deepEqual(calls, [
+    {
+      method: 'apiGet',
+      args: ['/api/research/databases/kb%2Fteam%20one/search-runs?offset=20&limit=20']
+    },
+    {
+      method: 'apiGet',
+      args: ['/api/research/search-runs/run%2F1']
+    },
+    {
+      method: 'apiRequest',
+      args: [
+        '/api/research/search-runs/run%2F1',
+        { method: 'PATCH', body: JSON.stringify({ is_pinned: true }) }
+      ]
+    },
+    {
+      method: 'apiRequest',
+      args: ['/api/research/search-runs/run%2F1', { method: 'DELETE' }]
+    }
+  ])
+})
+
 test('exportResearchSynthesis requests an authenticated blob response', async () => {
   await researchApi.exportResearchSynthesis('run/1', 'docx')
 

@@ -8,6 +8,8 @@
         <a-button
           v-if="userStore.isAdmin"
           class="lucide-icon-btn"
+          title="管理论文库"
+          aria-label="管理论文库"
           @click="openKnowledgeManagement"
         >
           <template #icon><Database :size="15" /></template>
@@ -16,6 +18,8 @@
         <a-button
           v-if="userStore.isAdmin"
           class="lucide-icon-btn"
+          title="导入公开论文"
+          aria-label="导入公开论文"
           :disabled="!selectedKbId"
           @click="externalImportOpen = true"
         >
@@ -25,6 +29,8 @@
         <a-button
           v-if="userStore.isAdmin"
           class="lucide-icon-btn"
+          title="同步引用图谱"
+          aria-label="同步引用图谱"
           :loading="graphSyncLoading"
           :disabled="!selectedKbId"
           @click="syncAcademicGraph"
@@ -32,7 +38,13 @@
           <template #icon><Network :size="15" /></template>
           同步引用图谱
         </a-button>
-        <a-button class="lucide-icon-btn" :loading="loading" @click="loadPapers">
+        <a-button
+          class="lucide-icon-btn"
+          title="刷新论文库"
+          aria-label="刷新论文库"
+          :loading="loading"
+          @click="loadPapers"
+        >
           <template #icon><RefreshCw :size="15" /></template>
           刷新
         </a-button>
@@ -85,165 +97,17 @@
         <a-empty v-else description="请选择论文知识库后创建分析对比" class="page-empty" />
       </section>
 
-      <section v-if="activeMode === 'search'" class="search-workspace">
-        <div class="search-form">
-          <div class="search-mode-toolbar">
-            <div class="toolbar-field search-mode-field">
-              <label>检索模式</label>
-              <a-radio-group
-                v-model:value="searchFilters.retrievalMode"
-                option-type="button"
-                button-style="solid"
-                @change="handleSearchModeChange"
-              >
-                <a-radio-button v-for="mode in searchModeOptions" :key="mode.value" :value="mode.value">
-                  {{ mode.label }}
-                </a-radio-button>
-              </a-radio-group>
-            </div>
-            <span class="search-mode-help">{{ selectedSearchMode.description }}</span>
-          </div>
-          <div class="search-options">
-            <div class="toolbar-field">
-              <label for="search-database">论文知识库</label>
-              <a-select
-                id="search-database"
-                v-model:value="selectedKbId"
-                :options="databaseOptions"
-                :loading="databasesLoading"
-                show-search
-                option-filter-prop="label"
-                @change="handleDatabaseChange"
-              />
-            </div>
-            <div class="toolbar-field">
-              <label>发表年份</label>
-              <div class="year-range">
-                <a-input-number v-model:value="searchFilters.yearFrom" :min="1500" :max="maxPublicationYear" placeholder="起始" />
-                <span>至</span>
-                <a-input-number v-model:value="searchFilters.yearTo" :min="1500" :max="maxPublicationYear" placeholder="结束" />
-              </div>
-            </div>
-            <div class="toolbar-field compact-option">
-              <label for="search-top-k">返回论文数</label>
-              <a-input-number id="search-top-k" v-model:value="searchFilters.topK" :min="1" :max="50" />
-            </div>
-            <div class="toolbar-field compact-option">
-              <label for="search-recall-k">候选证据数</label>
-              <a-input-number id="search-recall-k" v-model:value="searchFilters.recallTopK" :min="10" :max="200" />
-            </div>
-          </div>
-          <label for="research-query" class="query-label">自然语言研究问题</label>
-          <a-textarea
-            id="research-query"
-            v-model:value="searchQuery"
-            :rows="4"
-            :maxlength="4000"
-            show-count
-            placeholder="例如：近五年基于图神经网络的药物分子性质预测方法有哪些共同局限？"
-            @keydown.ctrl.enter="runResearchSearch"
-          />
-          <div class="search-form-footer">
-            <div class="search-pipeline-tags" aria-label="检索处理阶段">
-              <a-tag v-if="searchFilters.retrievalMode === strictHybridGraphMode" color="blue">图谱预检</a-tag>
-              <a-tag>查询改写</a-tag>
-              <a-tag>向量 + BM25</a-tag>
-              <a-tag>Cross-Encoder</a-tag>
-              <a-tag v-if="searchFilters.retrievalMode === strictHybridGraphMode" color="blue">引用图谱 PPR</a-tag>
-              <a-tag v-else color="green">本地证据聚合</a-tag>
-            </div>
-            <a-button type="primary" :loading="searchLoading" :disabled="!selectedKbId || !searchQuery.trim()" @click="runResearchSearch">
-              <template #icon><Search :size="15" /></template>
-              开始检索
-            </a-button>
-          </div>
-        </div>
-        <a-result v-if="searchError" status="error" title="科研检索失败" :sub-title="searchError">
-          <template #extra><a-button @click="runResearchSearch">重新执行</a-button></template>
-        </a-result>
-        <div v-else-if="searchResult" class="search-result-shell">
-          <div class="search-result-summary">
-            <div>
-              <div class="search-result-title-row">
-                <h2>{{ searchResult.total }} 篇相关论文</h2>
-                <a-tag :color="searchResult.config?.mode === strictHybridGraphMode ? 'blue' : 'green'">
-                  {{ getSearchModeLabel(searchResult.config?.mode) }}
-                </a-tag>
-              </div>
-              <p>改写查询：{{ searchResult.rewritten_query }}</p>
-              <div class="query-keywords">
-                <a-tag v-for="keyword in searchResult.keywords" :key="keyword">{{ keyword }}</a-tag>
-              </div>
-            </div>
-            <div class="run-meta">
-              <span>运行 {{ searchResult.run_id }}</span>
-              <span v-for="(duration, stage) in searchResult.stage_timings" :key="stage">{{ stage }} {{ duration }} ms</span>
-            </div>
-          </div>
-          <section v-if="searchResult.graph_expansion?.items?.length" class="citation-expansion-panel">
-            <div class="search-paper-heading">
-              <div>
-                <h3>引用图谱扩展</h3>
-                <p>
-                  {{ searchResult.graph_expansion.seed_count }} 个种子论文沿 CITES 网络扩展出
-                  {{ searchResult.graph_expansion.expanded_count }} 篇关联论文
-                </p>
-              </div>
-              <a-tag color="blue">PPR {{ searchResult.graph_expansion.citation_count }} 条边</a-tag>
-            </div>
-            <div class="citation-expansion-list">
-              <article
-                v-for="paper in searchResult.graph_expansion.items"
-                :key="paper.graph_paper_id"
-                class="citation-expansion-item"
-              >
-                <div>
-                  <strong>{{ paper.title || '未命名论文' }}</strong>
-                  <p>{{ paper.publication_year || '年份未知' }} · {{ paper.venue || '来源未知' }}</p>
-                </div>
-                <a-tag>图分数 {{ Number(paper.graph_score).toFixed(3) }}</a-tag>
-              </article>
-            </div>
-          </section>
-          <div class="search-result-list">
-            <article v-for="item in searchResult.items" :key="item.paper_id" class="search-paper-card">
-              <div class="search-paper-heading">
-                <div>
-                  <h3>{{ item.title }}</h3>
-                  <p>{{ item.authors?.join('、') }}<span v-if="item.publication_year"> · {{ item.publication_year }}</span></p>
-                </div>
-                <span class="ranking-score">{{ Number(item.ranking_score).toFixed(3) }}</span>
-              </div>
-              <div class="score-row">
-                <template v-for="(score, name) in item.scores" :key="name">
-                  <a-tag v-if="score !== null">{{ name }} {{ Number(score).toFixed(3) }}</a-tag>
-                </template>
-              </div>
-              <div class="evidence-list">
-                <div v-for="evidence in item.evidence" :key="evidence.chunk_id" class="evidence-item">
-                  <div class="evidence-heading">
-                    <span>{{ evidence.section_title || evidence.section_type || '论文内容' }}</span>
-                    <span v-if="evidence.source_page_start">页码 {{ evidence.source_page_start }}<template v-if="evidence.source_page_end && evidence.source_page_end !== evidence.source_page_start">–{{ evidence.source_page_end }}</template></span>
-                    <span v-if="evidence.start_char_pos !== null">字符 {{ evidence.start_char_pos }}–{{ evidence.end_char_pos }}</span>
-                  </div>
-                  <p>{{ evidence.content }}</p>
-                  <a-button
-                    v-if="evidence.locator"
-                    type="link"
-                    size="small"
-                    class="evidence-source-link"
-                    @click="openEvidence(item, evidence)"
-                  >
-                    查看原文定位
-                  </a-button>
-                </div>
-              </div>
-              <a-button type="link" class="paper-detail-link" @click="openPaper(item)">查看论文详情</a-button>
-            </article>
-          </div>
-        </div>
-        <a-empty v-else description="输入研究问题后开始检索" class="page-empty" />
-      </section>
+      <ResearchSearchWorkspace
+        v-if="activeMode === 'search'"
+        :kb-id="selectedKbId"
+        :database-options="databaseOptions"
+        :databases-loading="databasesLoading"
+        :max-publication-year="maxPublicationYear"
+        @change-database="handleDatabaseChange"
+        @open-paper="openPaper"
+        @open-evidence="handleSearchEvidenceOpen"
+        @start-synthesis="startSynthesisFromSearch"
+      />
 
       <section v-else-if="activeMode === 'synthesis'" class="synthesis-workspace">
         <div class="synthesis-grid">
@@ -1289,6 +1153,7 @@ import { databaseApi } from '@/apis/knowledge_api'
 import { researchApi } from '@/apis/research_api'
 import { downloadWorkspaceKnowledgeFile } from '@/apis/workspace_api'
 import PaperDetailDrawer from '@/components/research/PaperDetailDrawer.vue'
+import ResearchSearchWorkspace from '@/components/research/ResearchSearchWorkspace.vue'
 import UserStudyManager from '@/components/research/UserStudyManager.vue'
 import PaperAnalysisEvaluationManager from '@/components/research/PaperAnalysisEvaluationManager.vue'
 import PageHeader from '@/components/shared/PageHeader.vue'
@@ -1354,10 +1219,6 @@ const externalImportError = ref('')
 const externalImportingId = ref('')
 const maxPublicationYear = new Date().getFullYear() + 1
 const activeMode = ref('library')
-const searchQuery = ref('')
-const searchLoading = ref(false)
-const searchError = ref('')
-const searchResult = ref(null)
 const synthesisQuery = ref('')
 const synthesisRuns = ref([])
 const synthesisTotal = ref(0)
@@ -1394,23 +1255,6 @@ const opportunityData = ref(null)
 const opportunityLoading = ref(false)
 const opportunityError = ref('')
 const opportunityFilters = reactive({ yearFrom: null, yearTo: null })
-const localHybridMode = 'local_hybrid'
-const strictHybridGraphMode = 'strict_hybrid_citation_graph'
-const searchModeOptions = [
-  {
-    value: localHybridMode,
-    label: '本地混合',
-    description: '不依赖引用图谱，返回可追溯的文本证据'
-  },
-  {
-    value: strictHybridGraphMode,
-    label: '严格图谱',
-    description: '要求引用图谱可用，并执行 PPR 扩展'
-  }
-]
-const selectedSearchMode = computed(() => (
-  searchModeOptions.find((mode) => mode.value === searchFilters.retrievalMode) || searchModeOptions[0]
-))
 const synthesisActiveStatuses = new Set(['pending', 'retrieving', 'synthesizing', 'validating'])
 const selectedSynthesisResult = computed(() => selectedSynthesisRun.value?.result || null)
 const selectedSynthesisCoverage = computed(() => selectedSynthesisResult.value?.coverage || {})
@@ -1445,13 +1289,6 @@ let workspaceRequestGeneration = 0
 let evidencePdfLoadingTask = null
 let evidencePdfRenderTask = null
 let evidencePdfRequestId = 0
-const searchFilters = reactive({
-  yearFrom: null,
-  yearTo: null,
-  topK: 10,
-  recallTopK: 50,
-  retrievalMode: localHybridMode
-})
 const synthesisFilters = reactive({
   yearFrom: null,
   yearTo: null,
@@ -1528,9 +1365,6 @@ const graphSyncStatusMessage = computed(() => {
 })
 const selectedTrendKeywordData = computed(() =>
   (trendData.value?.keyword_trends || []).find((item) => item.keyword === selectedTrendKeyword.value)
-)
-const getSearchModeLabel = (mode) => (
-  searchModeOptions.find((item) => item.value === mode)?.label || '未知模式'
 )
 const evidencePdfPage = computed(() => Number(selectedEvidence.value?.source_page_start || 0))
 const hasPdfPageLocator = computed(() => (
@@ -1809,44 +1643,6 @@ const loadOpportunities = async () => {
 
 const selectTrendKeyword = (keyword) => {
   selectedTrendKeyword.value = keyword
-}
-
-const handleSearchModeChange = () => {
-  searchResult.value = null
-  searchError.value = ''
-}
-
-const runResearchSearch = async () => {
-  if (!selectedKbId.value || !searchQuery.value.trim()) return
-  if (searchFilters.yearFrom && searchFilters.yearTo && searchFilters.yearFrom > searchFilters.yearTo) {
-    searchError.value = '起始年份不能大于结束年份'
-    return
-  }
-  if (searchFilters.recallTopK < searchFilters.topK) {
-    searchError.value = '候选证据数不能小于返回论文数'
-    return
-  }
-  const kbId = selectedKbId.value
-  const requestGeneration = workspaceRequestGeneration
-  searchLoading.value = true
-  searchError.value = ''
-  try {
-    const result = await researchApi.searchPapers(kbId, {
-      query: searchQuery.value.trim(),
-      retrieval_mode: searchFilters.retrievalMode,
-      top_k: searchFilters.topK,
-      recall_top_k: searchFilters.recallTopK,
-      year_from: searchFilters.yearFrom,
-      year_to: searchFilters.yearTo
-    })
-    if (requestGeneration !== workspaceRequestGeneration || kbId !== selectedKbId.value) return
-    searchResult.value = result
-  } catch (error) {
-    if (requestGeneration !== workspaceRequestGeneration) return
-    searchError.value = error.message || '科研检索失败'
-  } finally {
-    if (requestGeneration === workspaceRequestGeneration) searchLoading.value = false
-  }
 }
 
 const clearSynthesisPolling = () => {
@@ -2410,7 +2206,8 @@ const exportAllBibtex = async () => {
   }
 }
 
-const handleDatabaseChange = () => {
+const handleDatabaseChange = (kbId) => {
+  if (typeof kbId === 'string') selectedKbId.value = kbId
   workspaceRequestGeneration += 1
   page.value = 1
   synthesisRequestGeneration += 1
@@ -2424,7 +2221,6 @@ const handleDatabaseChange = () => {
   publicationTrendChart = null
   keywordTrendChart = null
   loading.value = false
-  searchLoading.value = false
   graphLoading.value = false
   graphSyncLoading.value = false
   graphConflictsLoading.value = false
@@ -2439,8 +2235,6 @@ const handleDatabaseChange = () => {
   externalSearchPerformed.value = false
   externalImportError.value = ''
   loadPapers()
-  searchResult.value = null
-  searchError.value = ''
   graphData.value = null
   graphError.value = ''
   selectedGraphNode.value = null
@@ -2469,6 +2263,16 @@ const handleDatabaseChange = () => {
   if (activeMode.value === 'trends') loadTrends()
   if (activeMode.value === 'opportunities') loadOpportunities()
   if (activeMode.value === 'synthesis') loadSyntheses({ preserveSelection: false })
+}
+
+const handleSearchEvidenceOpen = ({ paper, evidence }) => {
+  openEvidence(paper, evidence)
+}
+
+const startSynthesisFromSearch = ({ query, yearFrom, yearTo, topK, recallTopK }) => {
+  synthesisQuery.value = query || ''
+  Object.assign(synthesisFilters, { yearFrom, yearTo, topK, recallTopK })
+  activeMode.value = 'synthesis'
 }
 
 const applyFilters = () => {
@@ -2554,12 +2358,6 @@ onBeforeUnmount(() => {
 
 .research-tabs {
   margin-bottom: 14px;
-}
-
-.search-workspace {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
 }
 
 .trends-workspace,
@@ -3351,271 +3149,14 @@ onBeforeUnmount(() => {
   text-align: right;
 }
 
-.search-mode-toolbar {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 18px;
-  margin-bottom: 16px;
-  padding: 12px 14px;
-  border: 1px solid var(--gray-150);
-  border-radius: 8px;
-  background: var(--gray-10);
-}
-
-.toolbar-field.search-mode-field {
-  display: flex;
-  flex-direction: row;
-  align-items: flex-end;
-  gap: 12px;
-}
-
-.search-mode-field :deep(.ant-radio-group) {
-  display: inline-flex;
-}
-
-.search-form .search-mode-field label {
-  margin: 0;
-  white-space: nowrap;
-}
-
-.search-mode-help {
-  color: var(--color-text-tertiary);
-  font-size: 12px;
-  line-height: 32px;
-  text-align: right;
-}
-
-.search-form,
-.search-result-shell {
-  padding: 18px;
-  border: 1px solid var(--gray-150);
-  border-radius: 8px;
-  background: var(--gray-0);
-}
-
-.search-form label {
-  display: block;
-  margin-bottom: 8px;
-  color: var(--color-text-secondary);
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.search-options {
-  display: grid;
-  grid-template-columns: minmax(220px, 1.3fr) minmax(250px, 1fr) 110px 110px;
-  gap: 12px;
-  align-items: end;
-  margin-bottom: 16px;
-}
-
-.compact-option :deep(.ant-input-number) {
-  width: 100%;
-}
-
 .query-label {
   margin-top: 2px;
-}
-
-.query-keywords {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 8px;
-}
-
-.paper-detail-link {
-  margin-top: 8px;
-  padding: 0;
-}
-
-.search-form-footer,
-.search-result-summary,
-.search-paper-heading,
-.evidence-heading,
-.run-meta,
-.score-row {
-  display: flex;
-  align-items: center;
-}
-
-.search-form-footer {
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 12px;
-  color: var(--color-text-tertiary);
-  font-size: 12px;
 }
 
 .search-pipeline-tags {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-}
-
-.search-result-summary {
-  justify-content: space-between;
-  gap: 16px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--gray-100);
-}
-
-.search-result-summary h2,
-.search-result-summary p {
-  margin: 0;
-}
-
-.search-result-summary h2 {
-  color: var(--color-text);
-  font-size: 17px;
-}
-
-.search-result-title-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.search-result-summary p {
-  margin-top: 5px;
-  color: var(--color-text-secondary);
-  font-size: 12px;
-}
-
-.run-meta {
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 5px 10px;
-  max-width: 48%;
-  color: var(--color-text-tertiary);
-  font-size: 11px;
-}
-
-.search-result-list,
-.evidence-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.search-result-list {
-  margin-top: 14px;
-}
-
-.citation-expansion-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-bottom: 14px;
-  padding: 14px;
-  border: 1px solid var(--gray-150);
-  border-radius: 8px;
-  background: var(--gray-10);
-}
-
-.citation-expansion-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 8px;
-}
-
-.citation-expansion-item {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 10px;
-  border: 1px solid var(--gray-150);
-  border-radius: 6px;
-  background: var(--gray-0);
-}
-
-.citation-expansion-item strong {
-  color: var(--color-text);
-  font-size: 13px;
-}
-
-.citation-expansion-item p {
-  margin: 4px 0 0;
-  color: var(--color-text-secondary);
-  font-size: 11px;
-}
-
-.search-paper-card {
-  padding: 15px;
-  border: 1px solid var(--gray-150);
-  border-radius: 7px;
-  background: var(--gray-10);
-}
-
-.search-paper-heading {
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.search-paper-heading h3,
-.search-paper-heading p {
-  margin: 0;
-}
-
-.search-paper-heading h3 {
-  color: var(--color-text);
-  font-size: 15px;
-}
-
-.search-paper-heading p {
-  margin-top: 4px;
-  color: var(--color-text-secondary);
-  font-size: 12px;
-}
-
-.ranking-score {
-  flex: none;
-  color: var(--main-color);
-  font-size: 14px;
-  font-variant-numeric: tabular-nums;
-  font-weight: 650;
-}
-
-.score-row {
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 10px;
-}
-
-.evidence-list {
-  margin-top: 12px;
-}
-
-.evidence-item {
-  padding: 10px;
-  border-left: 3px solid var(--main-200);
-  background: var(--gray-0);
-}
-
-.evidence-item p {
-  display: -webkit-box;
-  margin: 5px 0 0;
-  overflow: hidden;
-  color: var(--color-text-secondary);
-  font-size: 12px;
-  line-height: 1.55;
-  -webkit-line-clamp: 5;
-  -webkit-box-orient: vertical;
-}
-
-.evidence-heading {
-  justify-content: space-between;
-  gap: 8px;
-  color: var(--color-text-tertiary);
-  font-size: 11px;
-}
-
-.evidence-source-link {
-  padding: 2px 0;
-  margin-top: 5px;
-  font-size: 12px;
 }
 
 .evidence-detail {
@@ -4266,10 +3807,6 @@ onBeforeUnmount(() => {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .search-options {
-    grid-template-columns: 1fr 1fr;
-  }
-
   .research-toolbar {
     grid-template-columns: 1fr 1.4fr;
   }
@@ -4280,6 +3817,27 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 700px) {
+  .research-view :deep(.page-header) {
+    gap: 8px;
+  }
+
+  .research-view :deep(.page-header-right) {
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .research-view :deep(.page-header-right .lucide-icon-btn) {
+    width: 32px;
+    min-width: 32px;
+    height: 32px;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .research-view :deep(.page-header-right .lucide-icon-btn .ant-btn-icon) {
+    margin-inline-end: 0;
+  }
+
   .synthesis-options,
   .synthesis-coverage-cards {
     grid-template-columns: 1fr;
@@ -4331,33 +3889,6 @@ onBeforeUnmount(() => {
     flex-direction: column;
   }
 
-  .search-options {
-    grid-template-columns: 1fr;
-  }
-
-  .search-mode-toolbar,
-  .toolbar-field.search-mode-field {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .search-mode-field :deep(.ant-radio-group) {
-    width: 100%;
-  }
-
-  .search-mode-field :deep(.ant-radio-button-wrapper) {
-    flex: 1;
-    min-width: 0;
-    padding: 0 2px;
-    font-size: 12px;
-    text-align: center;
-  }
-
-  .search-mode-help {
-    line-height: 1.5;
-    text-align: left;
-  }
-
   .graph-toolbar {
     align-items: stretch;
     flex-direction: column;
@@ -4393,17 +3924,6 @@ onBeforeUnmount(() => {
   .paper-row {
     grid-template-columns: 32px minmax(0, 1fr);
     padding: 14px;
-  }
-
-  .search-form-footer,
-  .search-result-summary {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .run-meta {
-    justify-content: flex-start;
-    max-width: none;
   }
 
   .paper-icon {

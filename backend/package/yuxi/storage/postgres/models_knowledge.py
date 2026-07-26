@@ -149,6 +149,7 @@ class ResearchSearchRun(Base):
         UniqueConstraint("run_id", name="uq_research_search_runs_run_id"),
         Index("ix_research_search_runs_kb_created", "kb_id", "created_at"),
         Index("ix_research_search_runs_uid_created", "uid", "created_at"),
+        Index("ix_research_search_runs_history", "kb_id", "uid", "is_pinned", "created_at"),
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -163,6 +164,8 @@ class ResearchSearchRun(Base):
     status = Column(String(32), nullable=False, default="running", index=True)
     stage_timings = Column(JSON_VALUE)
     result_count = Column(Integer, nullable=False, default=0)
+    result_snapshot = Column(JSON_VALUE)
+    is_pinned = Column(Boolean, nullable=False, default=False)
     error_type = Column(String(128))
     error_message = Column(Text)
     created_at = Column(DateTime(timezone=True), default=utc_now_naive)

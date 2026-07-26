@@ -43,7 +43,7 @@ services:
     build:
       context: .
       dockerfile: docker/api.Dockerfile
-    image: yuxi-api:${YUXI_VERSION:-0.7.2}
+    image: yuxi-api:${YUXI_VERSION:-0.8.0}
     container_name: api-dev
     working_dir: /app
     volumes:
@@ -93,7 +93,7 @@ services:
     build:
       context: .
       dockerfile: docker/api.Dockerfile
-    image: yuxi-api:${YUXI_VERSION:-0.7.2}
+    image: yuxi-api:${YUXI_VERSION:-0.8.0}
     container_name: worker-dev
     working_dir: /app
     volumes:
@@ -132,7 +132,7 @@ services:
     build:
       context: ./docker/sandbox_provisioner
       dockerfile: Dockerfile
-    image: yuxi-sandbox-provisioner:${YUXI_VERSION:-0.7.2}
+    image: yuxi-sandbox-provisioner:${YUXI_VERSION:-0.8.0}
     container_name: sandbox-provisioner
     volumes:
       - ./docker/volumes/yuxi:/app/saves
@@ -187,7 +187,7 @@ services:
       context: .
       dockerfile: docker/web.Dockerfile
       target: development
-    image: yuxi-web:${YUXI_VERSION:-0.7.2}
+    image: yuxi-web:${YUXI_VERSION:-0.8.0}
     container_name: web-dev
     volumes:
       - ./web/src:/app/src

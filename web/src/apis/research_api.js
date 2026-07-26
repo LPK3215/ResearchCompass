@@ -91,6 +91,25 @@ export const researchApi = {
 
   getSearchRun: (runId) => apiGet(`/api/research/search-runs/${encodeURIComponent(runId)}`),
 
+  listSearchRuns: (kbId, params = {}) => {
+    const query = buildQuery(params)
+    return apiGet(
+      `/api/research/databases/${encodeURIComponent(kbId)}/search-runs${query ? `?${query}` : ''}`
+    )
+  },
+
+  updateSearchRun: (runId, payload) =>
+    apiRequest(
+      `/api/research/search-runs/${encodeURIComponent(runId)}`,
+      { method: 'PATCH', body: JSON.stringify(payload) }
+    ),
+
+  deleteSearchRun: (runId) =>
+    apiRequest(
+      `/api/research/search-runs/${encodeURIComponent(runId)}`,
+      { method: 'DELETE' }
+    ),
+
   createResearchSynthesis: (kbId, payload) =>
     apiRequest(
       `/api/research/databases/${encodeURIComponent(kbId)}/syntheses`,

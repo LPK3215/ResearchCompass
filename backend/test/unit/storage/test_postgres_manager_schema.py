@@ -243,7 +243,7 @@ async def test_ensure_business_schema_removes_unbound_api_keys_before_requiring_
 
 
 @pytest.mark.asyncio
-async def test_ensure_knowledge_schema_adds_graph_sync_checkpoint_column():
+async def test_ensure_knowledge_schema_adds_research_runtime_columns_and_indexes():
     manager = PostgresManager()
     original_initialized = manager._initialized
     original_engine = manager.async_engine
@@ -260,3 +260,7 @@ async def test_ensure_knowledge_schema_adds_graph_sync_checkpoint_column():
     statements = "\n".join(connection.statements)
 
     assert "academic_graph_sync_runs ADD COLUMN IF NOT EXISTS processed_paper_ids" in statements
+    assert "research_search_runs ADD COLUMN IF NOT EXISTS result_snapshot JSONB" in statements
+    assert "research_search_runs ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN NOT NULL DEFAULT FALSE" in statements
+    assert "CREATE INDEX IF NOT EXISTS ix_research_search_runs_history" in statements
+    assert "ON research_search_runs (kb_id, uid, is_pinned, created_at)" in statements

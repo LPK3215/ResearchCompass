@@ -26,12 +26,14 @@ def test_search_mode_validation_preserves_strict_default():
 async def test_local_hybrid_search_skips_citation_graph(monkeypatch):
     created_run = {}
     query_options = {}
+    run_updates = []
 
     class FakeRunRepository:
         async def create(self, **values):
             created_run.update(values)
 
         async def update(self, run_id, values):
+            run_updates.append(values)
             return None
 
     class FakeKnowledgeBaseRepository:
@@ -112,6 +114,7 @@ async def test_local_hybrid_search_skips_citation_graph(monkeypatch):
     assert result["items"][0]["paper_id"] == "paper-1"
     assert "graph_preflight_ms" not in result["stage_timings"]
     assert "citation_graph_ms" not in result["stage_timings"]
+    assert run_updates[-1]["result_snapshot"] == result
 
 
 @pytest.mark.asyncio
@@ -258,3 +261,139 @@ async def test_get_search_run_rechecks_knowledge_base_access(monkeypatch):
 
     assert exc_info.value.status_code == 403
     assert checked_kb_ids == ["kb-private"]
+
+
+@pytest.mark.asyncio
+async def test_list_search_runs_is_scoped_and_returns_pagination(monkeypatch):
+    calls = {"access": [], "list": []}
+    records = [SimpleNamespace(run_id="run-pinned"), SimpleNamespace(run_id="run-recent")]
+
+    async def allow_access(current_user, kb_id):
+        calls["access"].append((current_user.uid, kb_id))
+
+    class FakeRepository:
+        async def list_for_user(self, **values):
+            calls["list"].append(values)
+            return records, 3
+
+        @staticmethod
+        def serialize(record, *, include_result=False):
+            return {"run_id": record.run_id, "include_result": include_result}
+
+    monkeypatch.setattr(research_search_service, "_ensure_access", allow_access)
+    monkeypatch.setattr(research_search_service, "ResearchSearchRunRepository", FakeRepository)
+
+    result = await research_search_service.list_search_runs(
+        kb_id="kb-research",
+        current_user=SimpleNamespace(uid="user-1"),
+        offset=0,
+        limit=2,
+    )
+
+    assert calls == {
+        "access": [("user-1", "kb-research")],
+        "list": [{"kb_id": "kb-research", "uid": "user-1", "offset": 0, "limit": 2}],
+    }
+    assert result == {
+        "items": [
+            {"run_id": "run-pinned", "include_result": False},
+            {"run_id": "run-recent", "include_result": False},
+        ],
+        "total": 3,
+        "offset": 0,
+        "limit": 2,
+        "has_more": True,
+    }
+
+
+@pytest.mark.asyncio
+async def test_set_search_run_pinned_updates_only_owned_run(monkeypatch):
+    calls = {"access": [], "update": []}
+    record = SimpleNamespace(run_id="run-1", kb_id="kb-research")
+    updated = SimpleNamespace(run_id="run-1", kb_id="kb-research", is_pinned=True)
+
+    async def allow_access(current_user, kb_id):
+        calls["access"].append((current_user.uid, kb_id))
+
+    class FakeRepository:
+        async def get(self, run_id, *, uid):
+            assert (run_id, uid) == ("run-1", "user-1")
+            return record
+
+        async def update(self, run_id, values):
+            calls["update"].append((run_id, values))
+            return updated
+
+        @staticmethod
+        def serialize(value, *, include_result=False):
+            return {"run_id": value.run_id, "is_pinned": value.is_pinned}
+
+    monkeypatch.setattr(research_search_service, "_ensure_access", allow_access)
+    monkeypatch.setattr(research_search_service, "ResearchSearchRunRepository", FakeRepository)
+
+    result = await research_search_service.set_search_run_pinned(
+        run_id="run-1",
+        current_user=SimpleNamespace(uid="user-1"),
+        is_pinned=True,
+    )
+
+    assert result == {"run_id": "run-1", "is_pinned": True}
+    assert calls == {
+        "access": [("user-1", "kb-research")],
+        "update": [("run-1", {"is_pinned": True})],
+    }
+
+
+@pytest.mark.asyncio
+async def test_delete_search_run_rejects_running_record(monkeypatch):
+    deleted = []
+
+    async def allow_access(*args, **kwargs):
+        return None
+
+    class FakeRepository:
+        async def get(self, run_id, *, uid):
+            return SimpleNamespace(kb_id="kb-research", status="running")
+
+        async def delete(self, run_id, *, uid):
+            deleted.append((run_id, uid))
+            return True
+
+    monkeypatch.setattr(research_search_service, "_ensure_access", allow_access)
+    monkeypatch.setattr(research_search_service, "ResearchSearchRunRepository", FakeRepository)
+
+    with pytest.raises(research_search_service.ResearchSearchError) as exc_info:
+        await research_search_service.delete_search_run(
+            run_id="run-active",
+            current_user=SimpleNamespace(uid="user-1"),
+        )
+
+    assert exc_info.value.error_type == "run_active"
+    assert deleted == []
+
+
+@pytest.mark.asyncio
+async def test_delete_search_run_removes_completed_owned_record(monkeypatch):
+    deleted = []
+
+    async def allow_access(*args, **kwargs):
+        return None
+
+    class FakeRepository:
+        async def get(self, run_id, *, uid):
+            assert uid == "user-1"
+            return SimpleNamespace(kb_id="kb-research", status="success")
+
+        async def delete(self, run_id, *, uid):
+            deleted.append((run_id, uid))
+            return True
+
+    monkeypatch.setattr(research_search_service, "_ensure_access", allow_access)
+    monkeypatch.setattr(research_search_service, "ResearchSearchRunRepository", FakeRepository)
+
+    await research_search_service.delete_search_run(
+        run_id="run-completed",
+        current_user=SimpleNamespace(uid="user-1"),
+    )
+
+    assert deleted == [("run-completed", "user-1")]

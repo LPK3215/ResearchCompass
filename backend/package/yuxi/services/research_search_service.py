@@ -418,16 +418,7 @@ async def search_papers(
         if not file_ids:
             timings["retrieval_ms"] = 0
             timings["aggregation_ms"] = 0
-            await run_repo.update(
-                run_id,
-                {
-                    "status": "success",
-                    "stage_timings": timings,
-                    "result_count": 0,
-                    "completed_at": _now(),
-                },
-            )
-            return {
+            response = {
                 "run_id": run_id,
                 "query": query,
                 "rewritten_query": rewrite["rewritten_query"],
@@ -448,6 +439,17 @@ async def search_papers(
                 },
                 "stage_timings": timings,
             }
+            await run_repo.update(
+                run_id,
+                {
+                    "status": "success",
+                    "stage_timings": timings,
+                    "result_count": 0,
+                    "result_snapshot": response,
+                    "completed_at": _now(),
+                },
+            )
+            return response
         started = time.perf_counter()
         try:
             chunks = await knowledge_base.aquery(
@@ -483,16 +485,7 @@ async def search_papers(
             timings["citation_graph_ms"] = _elapsed(started)
         else:
             results = results[:top_k]
-        await run_repo.update(
-            run_id,
-            {
-                "status": "success",
-                "stage_timings": timings,
-                "result_count": len(results),
-                "completed_at": _now(),
-            },
-        )
-        return {
+        response = {
             "run_id": run_id,
             "query": query,
             "rewritten_query": rewrite["rewritten_query"],
@@ -507,6 +500,17 @@ async def search_papers(
             },
             "stage_timings": timings,
         }
+        await run_repo.update(
+            run_id,
+            {
+                "status": "success",
+                "stage_timings": timings,
+                "result_count": len(results),
+                "result_snapshot": response,
+                "completed_at": _now(),
+            },
+        )
+        return response
     except ResearchSearchError as exc:
         await run_repo.update(
             run_id,
@@ -536,29 +540,60 @@ async def search_papers(
 
 
 async def get_search_run(*, run_id: str, current_user: User) -> dict[str, Any]:
-    record = await ResearchSearchRunRepository().get(run_id, uid=str(current_user.uid))
+    repository = ResearchSearchRunRepository()
+    record = await repository.get(run_id, uid=str(current_user.uid))
     if record is None:
         raise ResearchSearchError("run_not_found", "检索运行记录不存在")
     await _ensure_access(current_user, str(record.kb_id))
+    return repository.serialize(record, include_result=True)
+
+
+async def list_search_runs(
+    *,
+    kb_id: str,
+    current_user: User,
+    offset: int,
+    limit: int,
+) -> dict[str, Any]:
+    await _ensure_access(current_user, kb_id)
+    repository = ResearchSearchRunRepository()
+    records, total = await repository.list_for_user(
+        kb_id=kb_id,
+        uid=str(current_user.uid),
+        offset=offset,
+        limit=limit,
+    )
     return {
-        "run_id": record.run_id,
-        "kb_id": record.kb_id,
-        "raw_query": record.raw_query,
-        "rewritten_query": record.rewritten_query,
-        "keywords": record.rewrite_keywords or [],
-        "status": record.status,
-        "config": {
-            "models": record.model_config_json or {},
-            "retrieval": record.retrieval_config or {},
-        },
-        "stage_timings": record.stage_timings or {},
-        "result_count": record.result_count,
-        "error_type": record.error_type,
-        "error_message": record.error_message,
-        "created_at": record.created_at.isoformat() if record.created_at else None,
-        "started_at": record.started_at.isoformat() if record.started_at else None,
-        "completed_at": record.completed_at.isoformat() if record.completed_at else None,
+        "items": [repository.serialize(record) for record in records],
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "has_more": offset + len(records) < total,
     }
+
+
+async def set_search_run_pinned(*, run_id: str, current_user: User, is_pinned: bool) -> dict[str, Any]:
+    repository = ResearchSearchRunRepository()
+    record = await repository.get(run_id, uid=str(current_user.uid))
+    if record is None:
+        raise ResearchSearchError("run_not_found", "检索运行记录不存在")
+    await _ensure_access(current_user, str(record.kb_id))
+    updated = await repository.update(run_id, {"is_pinned": is_pinned})
+    if updated is None:
+        raise ResearchSearchError("run_not_found", "检索运行记录不存在")
+    return repository.serialize(updated)
+
+
+async def delete_search_run(*, run_id: str, current_user: User) -> None:
+    repository = ResearchSearchRunRepository()
+    record = await repository.get(run_id, uid=str(current_user.uid))
+    if record is None:
+        raise ResearchSearchError("run_not_found", "检索运行记录不存在")
+    await _ensure_access(current_user, str(record.kb_id))
+    if record.status == "running":
+        raise ResearchSearchError("run_active", "运行中的检索不能删除")
+    if not await repository.delete(run_id, uid=str(current_user.uid)):
+        raise ResearchSearchError("run_not_found", "检索运行记录不存在")
 
 
 __all__ = [
@@ -566,6 +601,9 @@ __all__ = [
     "LOCAL_HYBRID_MODE",
     "STRICT_HYBRID_GRAPH_MODE",
     "ResearchSearchError",
+    "delete_search_run",
     "get_search_run",
+    "list_search_runs",
     "search_papers",
+    "set_search_run_pinned",
 ]

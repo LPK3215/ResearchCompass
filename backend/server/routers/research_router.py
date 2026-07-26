@@ -26,8 +26,11 @@ from yuxi.services.research_search_service import (
     LOCAL_HYBRID_MODE,
     STRICT_HYBRID_GRAPH_MODE,
     ResearchSearchError,
+    delete_search_run,
     get_search_run,
+    list_search_runs,
     search_papers,
+    set_search_run_pinned,
 )
 from yuxi.services.research_synthesis_service import (
     ResearchSynthesisError,
@@ -150,6 +153,10 @@ class ResearchSearchRequest(BaseModel):
         return self
 
 
+class UpdateResearchSearchRunRequest(BaseModel):
+    is_pinned: bool
+
+
 class ResearchSynthesisRequest(BaseModel):
     query: str = Field(min_length=1, max_length=4000)
     top_k: int = Field(default=8, ge=2, le=20)
@@ -258,6 +265,7 @@ class PublicUserStudyTokenRequest(BaseModel):
 def _search_http_error(exc: ResearchSearchError) -> HTTPException:
     status = {
         "forbidden": 403,
+        "run_active": 409,
         "knowledge_base_not_found": 404,
         "run_not_found": 404,
         "invalid_query": 422,
@@ -640,6 +648,48 @@ async def research_search(
 async def research_search_run(run_id: str, current_user: User = Depends(get_required_user)):
     try:
         return await get_search_run(run_id=run_id, current_user=current_user)
+    except ResearchSearchError as exc:
+        raise _search_http_error(exc) from exc
+
+
+@research.get("/databases/{kb_id}/search-runs")
+async def research_search_runs(
+    kb_id: str,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await list_search_runs(
+            kb_id=kb_id,
+            current_user=current_user,
+            offset=offset,
+            limit=limit,
+        )
+    except ResearchSearchError as exc:
+        raise _search_http_error(exc) from exc
+
+
+@research.patch("/search-runs/{run_id}")
+async def update_research_search_run(
+    run_id: str,
+    payload: UpdateResearchSearchRunRequest,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await set_search_run_pinned(
+            run_id=run_id,
+            current_user=current_user,
+            is_pinned=payload.is_pinned,
+        )
+    except ResearchSearchError as exc:
+        raise _search_http_error(exc) from exc
+
+
+@research.delete("/search-runs/{run_id}", status_code=204)
+async def remove_research_search_run(run_id: str, current_user: User = Depends(get_required_user)):
+    try:
+        await delete_search_run(run_id=run_id, current_user=current_user)
     except ResearchSearchError as exc:
         raise _search_http_error(exc) from exc
 

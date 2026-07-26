@@ -31,7 +31,7 @@ set -euo pipefail
 # 3. 脚本运行后必须检查:
 #    - git diff，确认只有预期版本文件变化。
 #    - backend/package/pyproject.toml、backend/pyproject.toml、web/package.json、
-#      docker-compose*.yml、backend/*uv.lock 中的 Yuxi 版本一致。
+#      docker-compose*.yml、.env.prod.template、backend/*uv.lock 中的 Yuxi 版本一致。
 #    - dev 模式下 README.md、README.en.md、docs/intro/quick-start.md 和文档首页
 #      不应被更新。
 #
@@ -102,6 +102,7 @@ echo "  - backend/pyproject.toml"
 echo "  - web/package.json"
 echo "  - docker-compose.yml"
 echo "  - docker-compose.prod.yml"
+echo "  - .env.prod.template"
 echo "  - backend/uv.lock"
 echo "  - backend/package/uv.lock"
 if [ "$DEV_MODE" = false ]; then
@@ -148,6 +149,10 @@ perl -pi -e "s/\\\$\\{YUXI_VERSION:-[^}]+\\}/\\\${YUXI_VERSION:-${NEW_VERSION}}/
 echo "→ 更新 docker-compose.prod.yml"
 perl -pi -e "s/\\\$\\{YUXI_VERSION:-[^}]+\\}/\\\${YUXI_VERSION:-${NEW_VERSION}}/g" \
     "${PROJECT_ROOT}/docker-compose.prod.yml"
+
+echo "→ 更新 .env.prod.template"
+perl -pi -e "s/^YUXI_VERSION=.*/YUXI_VERSION=${NEW_VERSION}/" \
+    "${PROJECT_ROOT}/.env.prod.template"
 
 # -----------------------------------------------------------------------------
 # 5. 更新 uv.lock 中的项目版本号
@@ -210,6 +215,9 @@ grep -E "image: yuxi-api:" "${PROJECT_ROOT}/docker-compose.yml" | head -1 | sed 
 
 echo "  docker-compose.prod.yml (web):"
 grep -E "image: yuxi-web:" "${PROJECT_ROOT}/docker-compose.prod.yml" | head -1 | sed 's/^/    /'
+
+echo "  .env.prod.template:"
+grep -E "^YUXI_VERSION=" "${PROJECT_ROOT}/.env.prod.template" | head -1 | sed 's/^/    /'
 
 echo ""
 echo "后续步骤:"
