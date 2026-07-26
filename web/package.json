@@ -1,6 +1,6 @@
 {
   "name": "yuxi-web",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,9 +8,10 @@
     "server": "vite serve --host",
     "server:prod": "vite serve --host --port 8080",
     "build": "vite build",
-    "test:unit": "node --test test/unit/*.test.js",
+    "test:unit": "node --experimental-test-module-mocks --test test/unit/*.test.js",
     "preview": "vite preview",
     "lint": "eslint . --fix --cache",
+    "lint:check": "eslint . --no-cache",
     "format": "prettier --write --experimental-cli src/"
   },
   "dependencies": {

@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest_asyncio
+import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -220,3 +221,50 @@ async def test_get_mcp_tools_sets_handle_tool_error(monkeypatch):
     assert tools[0].handle_tool_error is True
 
     mcp_service.clear_mcp_cache()
+
+
+async def test_get_mcp_tools_default_failure_is_sanitized_and_non_fatal(monkeypatch):
+    secret = "Authorization=secret-api-key provider-body=<private>"
+    log_entries: list[tuple] = []
+
+    async def fake_get_enabled_mcp_server_config(server_name: str, db=None):
+        del server_name, db
+        return {"transport": "stdio", "command": "demo"}
+
+    async def fail_client(_server_configs):
+        raise RuntimeError(secret)
+
+    class Logger:
+        def __getattr__(self, _level):
+            def record(*args, **kwargs):
+                log_entries.append((args, kwargs))
+
+            return record
+
+    monkeypatch.setattr(mcp_service, "get_enabled_mcp_server_config", fake_get_enabled_mcp_server_config)
+    monkeypatch.setattr(mcp_service, "get_mcp_client", fail_client)
+    monkeypatch.setattr(mcp_service, "logger", Logger())
+
+    tools = await mcp_service.get_mcp_tools("demo")
+
+    assert tools == []
+    assert secret not in repr(log_entries)
+
+
+async def test_get_mcp_tools_strict_failure_is_explicit_and_sanitized(monkeypatch):
+    secret = "Authorization=secret-api-key provider-body=<private>"
+
+    async def fake_get_enabled_mcp_server_config(server_name: str, db=None):
+        del server_name, db
+        return {"transport": "stdio", "command": "demo"}
+
+    async def fail_client(_server_configs):
+        raise RuntimeError(secret)
+
+    monkeypatch.setattr(mcp_service, "get_enabled_mcp_server_config", fake_get_enabled_mcp_server_config)
+    monkeypatch.setattr(mcp_service, "get_mcp_client", fail_client)
+
+    with pytest.raises(mcp_service.MCPToolsLoadError, match="MCP 工具加载失败") as exc_info:
+        await mcp_service.get_mcp_tools("demo", strict=True)
+
+    assert secret not in str(exc_info.value)

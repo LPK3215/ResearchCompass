@@ -130,6 +130,42 @@ async def test_fetch_remote_models_loads_embedding_only_when_capability_enabled(
     assert [model["type"] for model in models] == ["chat", "embedding"]
 
 
+@pytest.mark.asyncio
+async def test_fetch_remote_models_ignores_environment_proxy(monkeypatch):
+    captured = {}
+
+    class Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            return False
+
+    def async_client(**kwargs):
+        captured.update(kwargs)
+        return Client()
+
+    async def fake_fetch(*_args, **_kwargs):
+        return []
+
+    monkeypatch.setattr("yuxi.models.providers.service.httpx.AsyncClient", async_client)
+    monkeypatch.setattr("yuxi.models.providers.service._fetch_models_from_endpoint", fake_fetch)
+
+    class Provider:
+        base_url = "https://example.com/v1"
+        api_key = "secret"
+        api_key_env = None
+        headers_json = {}
+        capabilities = ["chat"]
+        models_endpoint = "/models"
+        embedding_models_endpoint = None
+        rerank_models_endpoint = None
+
+    await fetch_remote_models(Provider())
+
+    assert captured["trust_env"] is False
+
+
 def test_normalize_payload_rejects_ollama_provider_type():
     with pytest.raises(ValueError, match="provider_type 必须是"):
         _normalize_payload(

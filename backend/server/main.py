@@ -25,6 +25,7 @@ from server.utils.client_ip import extract_client_ip
 from server.utils.lifespan import lifespan
 from server.utils.common_utils import setup_logging
 from server.utils.access_log_middleware import AccessLogMiddleware
+from yuxi.utils.logging_config import logger
 
 # 设置日志配置
 setup_logging()
@@ -74,6 +75,51 @@ def _build_cors_options(origins: list[str] | None = None) -> dict[str, object]:
 
 
 app = FastAPI(lifespan=lifespan)
+
+
+class SafeExceptionMiddleware:
+    """Close the HTTP error boundary without forwarding exception bodies to the ASGI server log."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        response_started = False
+        response_completed = False
+
+        async def send_wrapper(message):
+            nonlocal response_completed, response_started
+            if message["type"] == "http.response.start":
+                response_started = True
+            elif message["type"] == "http.response.body" and not message.get("more_body", False):
+                response_completed = True
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_wrapper)
+        except Exception as exc:
+            route = scope.get("route")
+            route_path = getattr(route, "path", "unmatched")
+            logger.error(
+                "Unhandled HTTP failure "
+                f"(method={scope.get('method')}, route={route_path}, "
+                f"response_started={response_started}, error_type={type(exc).__name__})"
+            )
+            if response_started:
+                if not response_completed:
+                    await send({"type": "http.response.body", "body": b"", "more_body": False})
+                return
+            response = JSONResponse(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                content={"detail": "服务暂时不可用，请稍后重试"},
+            )
+            await response(scope, receive, send)
+
+
 # 所有业务接口统一挂载到 /api，具体分组在 server.routers 中集中注册。
 app.include_router(router, prefix="/api")
 
@@ -129,6 +175,9 @@ app.add_middleware(AccessLogMiddleware)
 
 # 添加登录限流中间件
 app.add_middleware(LoginRateLimitMiddleware)
+
+# 最外层业务异常边界，避免未知异常正文进入 HTTP 响应或 ASGI 服务器 traceback。
+app.add_middleware(SafeExceptionMiddleware)
 
 if __name__ == "__main__":
     # uvicorn.run(app, host="0.0.0.0", port=5050, threads=10, workers=10, reload=True)

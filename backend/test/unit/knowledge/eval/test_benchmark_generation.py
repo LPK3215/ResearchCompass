@@ -8,6 +8,7 @@ os.environ.setdefault("OPENAI_API_KEY", "test-key")
 
 from yuxi.knowledge.eval import benchmark_generation
 from yuxi.knowledge.eval.benchmark_generation import (
+    BenchmarkGenerationError,
     build_benchmark_generation_prompt,
     clamp_neighbors_count,
     collect_kb_chunks,
@@ -411,3 +412,29 @@ async def test_iter_generated_benchmark_items_stops_at_max_attempts(monkeypatch)
 
     assert items == []
     assert fake_llm.calls == 50
+
+
+@pytest.mark.asyncio
+async def test_generation_model_failure_stops_without_exposing_provider_secret(monkeypatch):
+    secret = "Authorization=secret-api-key provider-body=<private>"
+
+    class FailingLlm:
+        async def call(self, *args, **kwargs):
+            raise RuntimeError(secret)
+
+    monkeypatch.setattr(benchmark_generation, "select_model", lambda model_spec: FailingLlm())
+
+    with pytest.raises(BenchmarkGenerationError, match="评估数据集生成模型调用失败") as exc_info:
+        _ = [
+            item
+            async for item in iter_generated_benchmark_items(
+                kb_instance=NoQueryKnowledgeBase(),
+                kb_id="db_1",
+                count=2,
+                neighbors_count=1,
+                concurrency_count=2,
+                llm_model_spec="test-provider:test-model",
+            )
+        ]
+
+    assert secret not in str(exc_info.value)

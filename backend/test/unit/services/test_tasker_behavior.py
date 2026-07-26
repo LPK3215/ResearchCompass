@@ -483,3 +483,73 @@ async def test_resumable_task_survives_worker_shutdown_and_runs_on_next_startup(
         assert completed["result"] == "resumed:job-2"
     finally:
         await second_tasker.shutdown()
+
+
+async def test_same_tasker_restart_discards_stale_non_resumable_queue_entries():
+    repo = FakeRepo()
+    tasker = Tasker(worker_count=1)
+    tasker._repo = repo
+    running = asyncio.Event()
+    queued_started = asyncio.Event()
+
+    async def blocking(context):
+        running.set()
+        await asyncio.Event().wait()
+
+    async def queued(context):
+        queued_started.set()
+
+    await tasker.start()
+    await tasker.enqueue(name="running", task_type="demo", coroutine=blocking)
+    queued_task = await tasker.enqueue(name="queued", task_type="demo", coroutine=queued)
+    await running.wait()
+    await tasker.shutdown()
+
+    await tasker.start()
+    try:
+        await asyncio.sleep(0.05)
+        restarted = await tasker.get_task(queued_task.id)
+
+        assert restarted["status"] == "failed"
+        assert restarted["message"] == "服务重启时任务未继续执行"
+        assert not queued_started.is_set()
+    finally:
+        await tasker.shutdown()
+
+
+async def test_same_tasker_restart_requeues_queued_resumable_task_once():
+    repo = FakeRepo()
+    tasker = Tasker(worker_count=1)
+    tasker._repo = repo
+    running = asyncio.Event()
+    resume_calls = 0
+
+    async def blocking(context):
+        running.set()
+        await asyncio.Event().wait()
+
+    async def resume(context):
+        nonlocal resume_calls
+        resume_calls += 1
+        return "resumed"
+
+    tasker.register_resumable_handler("resumable", resume)
+    await tasker.start()
+    await tasker.enqueue(name="running", task_type="demo", coroutine=blocking)
+    queued_task = await tasker.enqueue(
+        name="queued resumable",
+        task_type="resumable",
+        coroutine=resume,
+    )
+    await running.wait()
+    await tasker.shutdown()
+
+    await tasker.start()
+    try:
+        completed = await _wait_status(tasker, queued_task.id, {"success"})
+        await asyncio.sleep(0.05)
+
+        assert completed["result"] == "resumed"
+        assert resume_calls == 1
+    finally:
+        await tasker.shutdown()

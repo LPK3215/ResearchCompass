@@ -4,18 +4,44 @@ import os
 import re
 import time
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from yuxi.storage.minio import get_minio_client
 from yuxi.utils import logger
 
 DEFAULT_IMAGE_BUCKET = "public"
 DEFAULT_IMAGE_PREFIX = "unknown/kb-images"
+MAX_ZIP_ENTRIES = 5_000
+MAX_ZIP_ENTRY_BYTES = 100 * 1024 * 1024
+MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES = 512 * 1024 * 1024
+MAX_ZIP_MARKDOWN_BYTES = 50 * 1024 * 1024
+MAX_ZIP_IMAGE_BYTES = 25 * 1024 * 1024
+MAX_ZIP_TOTAL_IMAGE_BYTES = 250 * 1024 * 1024
 
 
 def _normalize_object_prefix(prefix: str | None) -> str:
     normalized = (prefix or DEFAULT_IMAGE_PREFIX).strip("/")
     return normalized or DEFAULT_IMAGE_PREFIX
+
+
+def _validate_zip_members(zip_file: zipfile.ZipFile) -> None:
+    members = zip_file.infolist()
+    if len(members) > MAX_ZIP_ENTRIES:
+        raise ValueError("ZIP 文件条目数量超过限制")
+
+    total_uncompressed_size = 0
+    for member in members:
+        normalized_name = member.filename.replace("\\", "/")
+        path = PurePosixPath(normalized_name)
+        if path.is_absolute() or ".." in path.parts:
+            raise ValueError("ZIP 包含不安全路径")
+        if member.flag_bits & 0x1:
+            raise ValueError("ZIP 不支持加密条目")
+        if member.file_size < 0 or member.file_size > MAX_ZIP_ENTRY_BYTES:
+            raise ValueError("ZIP 文件条目超过大小限制")
+        total_uncompressed_size += member.file_size
+        if total_uncompressed_size > MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES:
+            raise ValueError("ZIP 解压后大小超过限制")
 
 
 async def process_zip_file(
@@ -39,20 +65,21 @@ async def process_zip_file(
         }
     """
     with zipfile.ZipFile(zip_path, "r") as zf:
-        for name in zf.namelist():
-            if name.startswith("/") or name.startswith("\\"):
-                raise ValueError(f"ZIP 包含不安全路径: {name}")
-            if ".." in Path(name).parts:
-                raise ValueError(f"ZIP 路径包含上级引用: {name}")
+        _validate_zip_members(zf)
 
         md_files = [n for n in zf.namelist() if n.lower().endswith(".md")]
         if not md_files:
             raise ValueError("压缩包中未找到 .md 文件")
 
         md_file = next((n for n in md_files if Path(n).name == "full.md"), md_files[0])
+        if zf.getinfo(md_file).file_size > MAX_ZIP_MARKDOWN_BYTES:
+            raise ValueError("ZIP Markdown 文件超过大小限制")
 
         with zf.open(md_file) as f:
-            markdown_content = f.read().decode("utf-8")
+            markdown_bytes = f.read(MAX_ZIP_MARKDOWN_BYTES + 1)
+        if len(markdown_bytes) > MAX_ZIP_MARKDOWN_BYTES:
+            raise ValueError("ZIP Markdown 文件超过大小限制")
+        markdown_content = markdown_bytes.decode("utf-8")
 
         images_info = []
         images_dir = find_images_directory(zf, md_file)
@@ -143,38 +170,54 @@ async def process_images(
     normalized_prefix = _normalize_object_prefix(image_prefix)
 
     minio_client = get_minio_client()
-    await asyncio.to_thread(minio_client.ensure_bucket_exists, image_bucket)
+    uploaded_objects: list[str] = []
+    total_image_bytes = 0
+    try:
+        await asyncio.to_thread(minio_client.ensure_bucket_exists, image_bucket)
 
-    for img_name in image_names:
-        suffix = Path(img_name).suffix.lower()
-        if suffix not in supported_extensions:
-            continue
+        for img_name in image_names:
+            normalized_name = img_name.replace("\\", "/")
+            suffix = PurePosixPath(normalized_name).suffix.lower()
+            if suffix not in supported_extensions:
+                continue
 
-        try:
+            image_size = zip_file.getinfo(img_name).file_size
+            total_image_bytes += image_size
+            if image_size > MAX_ZIP_IMAGE_BYTES or total_image_bytes > MAX_ZIP_TOTAL_IMAGE_BYTES:
+                raise ValueError("ZIP 图片超过大小限制")
+
             with zip_file.open(img_name) as f:
-                data = f.read()
+                data = f.read(MAX_ZIP_IMAGE_BYTES + 1)
+            if len(data) > MAX_ZIP_IMAGE_BYTES:
+                raise ValueError("ZIP 图片超过大小限制")
 
             timestamp = int(time.time() * 1000000)
-            object_name = f"{normalized_prefix}/{timestamp}_{Path(img_name).name}"
+            image_name = PurePosixPath(normalized_name).name
+            object_name = f"{normalized_prefix}/{timestamp}_{image_name}"
 
             result = await minio_client.aupload_file(
                 bucket_name=image_bucket,
                 object_name=object_name,
                 data=data,
             )
+            uploaded_objects.append(object_name)
 
             img_info = {
-                "name": Path(img_name).name,
+                "name": image_name,
                 "url": result.url,
-                "path": f"images/{Path(img_name).name}",
+                "path": f"images/{image_name}",
             }
             images.append(img_info)
 
-            logger.debug(f"图片上传成功: {Path(img_name).name} -> {result.url}")
-
-        except Exception as e:
-            logger.error(f"上传图片失败 {Path(img_name).name}: {e}")
-            continue
+            logger.debug("ZIP 图片上传成功")
+    except Exception as error:
+        for object_name in reversed(uploaded_objects):
+            try:
+                await minio_client.adelete_file(image_bucket, object_name)
+            except Exception as cleanup_error:
+                logger.warning(f"ZIP 图片回滚失败 (error_type={type(cleanup_error).__name__})")
+        logger.error(f"ZIP 图片处理失败 (error_type={type(error).__name__})")
+        raise RuntimeError("ZIP 图片处理失败") from error
 
     return images
 

@@ -42,9 +42,9 @@ async def get_graphs(current_user: User = Depends(get_admin_user)):
                 }
             )
         return {"success": True, "data": graphs}
-    except Exception as e:
-        logger.exception(f"Failed to list graphs: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to list graphs: {str(e)}")
+    except Exception as exc:
+        logger.error("Failed to list graphs: exception_type={}", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="获取知识图谱列表失败") from exc
 
 
 @graph.get("/subgraph")
@@ -58,7 +58,6 @@ async def get_subgraph(
 ):
     """查询 Milvus 知识库图谱子图"""
     try:
-        logger.info(f"Querying subgraph - kb_id: {kb_id}, label: {node_label}")
         service = await _get_graph_service(kb_id)
         result_data = await service.query_nodes(
             keyword=node_label,
@@ -69,9 +68,9 @@ async def get_subgraph(
         return {"success": True, "data": result_data}
     except HTTPException:
         raise
-    except Exception as e:
-        logger.exception(f"Failed to get subgraph: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to get subgraph: {str(e)}")
+    except Exception as exc:
+        logger.error("Failed to get subgraph: exception_type={}", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="查询知识子图失败") from exc
 
 
 @graph.get("/labels")
@@ -86,9 +85,9 @@ async def get_graph_labels(
         return {"success": True, "data": {"labels": labels}}
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Failed to get labels: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to get labels: {str(e)}")
+    except Exception as exc:
+        logger.error("Failed to get graph labels: exception_type={}", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="获取知识图谱标签失败") from exc
 
 
 @graph.get("/stats")
@@ -103,6 +102,6 @@ async def get_graph_stats(
         return {"success": True, "data": stats_data}
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Failed to get stats: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to get stats: {str(e)}")
+    except Exception as exc:
+        logger.error("Failed to get graph stats: exception_type={}", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="获取知识图谱统计失败") from exc

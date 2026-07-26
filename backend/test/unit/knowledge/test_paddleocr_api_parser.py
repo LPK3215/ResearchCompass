@@ -19,10 +19,50 @@ class FakeResponse:
     text: str = ""
     content: bytes = b""
     headers: dict[str, str] | None = None
+    closed: bool = False
 
     def json(self) -> dict[str, Any]:
         assert self.json_body is not None
         return self.json_body
+
+    def close(self) -> None:
+        self.closed = True
+
+    def iter_lines(self, decode_unicode: bool = False):
+        assert decode_unicode is False
+        for line in self.text.splitlines():
+            yield line.encode("utf-8")
+
+    def iter_content(self, chunk_size: int):
+        assert chunk_size > 0
+        if self.content:
+            yield self.content
+
+
+@pytest.fixture(autouse=True)
+def isolated_requests_session(monkeypatch: pytest.MonkeyPatch):
+    class SessionProxy:
+        def __init__(self):
+            self.trust_env = True
+
+        def post(self, *args, **kwargs):
+            kwargs.pop("allow_redirects", None)
+            return paddleocr_api.requests.post(*args, **kwargs)
+
+        def get(self, *args, **kwargs):
+            kwargs.pop("allow_redirects", None)
+            kwargs.pop("stream", None)
+            return paddleocr_api.requests.get(*args, **kwargs)
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(paddleocr_api.requests, "Session", SessionProxy)
+    monkeypatch.setattr(
+        paddleocr_api.socket,
+        "getaddrinfo",
+        lambda host, port: [(2, 1, 6, "", ("8.8.8.8", port))],
+    )
 
 
 def _build_file(tmp_path: Path, suffix: str = ".png") -> Path:
@@ -198,13 +238,15 @@ def test_paddleocr_failed_job_raises_parser_exception(tmp_path: Path, monkeypatc
         "get",
         lambda *args, **kwargs: FakeResponse(
             200,
-            {"data": {"state": "failed", "errorMsg": "quota exceeded"}},
+            {"data": {"state": "failed", "errorMsg": "Authorization=secret-api-key provider-body=<private>"}},
         ),
     )
 
     parser = PaddleOCRVLParser(api_token="token")
-    with pytest.raises(DocumentParserException, match="quota exceeded"):
+    with pytest.raises(DocumentParserException, match="PaddleOCR 任务失败") as exc_info:
         parser.process_file(str(file_path))
+
+    assert "secret-api-key" not in str(exc_info.value)
 
 
 def test_paddleocr_missing_token_health_and_parse_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -287,3 +329,15 @@ def test_paddleocr_vl_uploads_markdown_images(tmp_path: Path, monkeypatch: pytes
         "object_name": "kb/images/1000000_table.png",
         "data": b"image-bytes",
     }
+
+
+def test_paddleocr_rejects_private_result_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        paddleocr_api.socket,
+        "getaddrinfo",
+        lambda host, port: [(2, 1, 6, "", ("127.0.0.1", port))],
+    )
+    parser = PaddleOCRVLParser(api_token="token")
+
+    with pytest.raises(DocumentParserException, match="URL 无效"):
+        parser._download_jsonl("https://internal.example/result.jsonl")

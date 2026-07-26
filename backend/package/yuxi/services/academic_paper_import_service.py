@@ -17,14 +17,14 @@ from yuxi.services.semantic_scholar_service import (
     SemanticScholarError,
     is_paper_identifier,
 )
-from yuxi.services.task_service import TaskContext, tasker
+from yuxi.services.task_service import PublicTaskError, TaskContext, tasker
 from yuxi.storage.minio.client import MinIOClient, get_minio_client
 from yuxi.storage.postgres.models_business import User
 from yuxi.utils import hashstr, logger
 from yuxi.knowledge.utils import calculate_content_hash
 
 
-class AcademicPaperImportError(RuntimeError):
+class AcademicPaperImportError(PublicTaskError):
     def __init__(self, error_type: str, message: str):
         super().__init__(message)
         self.error_type = error_type
@@ -167,6 +167,7 @@ async def _run_import_task(
     operator_id: str,
 ) -> dict[str, Any]:
     try:
+        await _ensure_import_owner_can_write(operator_id=operator_id, kb_id=kb_id, file_id=file_id)
         await context.raise_if_cancelled()
         file_info = await knowledge_base.get_file_basic_info(kb_id, file_id)
         file_meta = file_info.get("meta") if isinstance(file_info, dict) else None
@@ -185,6 +186,7 @@ async def _run_import_task(
         parsed = file_meta
         if file_status in {"uploaded", "error_parsing", "failed"}:
             await context.set_progress(5, "准备解析外部论文")
+            await _ensure_import_owner_can_write(operator_id=operator_id, kb_id=kb_id, file_id=file_id)
             parsed = await knowledge_base.parse_file(kb_id, file_id, operator_id=operator_id)
             await context.raise_if_cancelled()
         elif file_status == "indexing":
@@ -203,6 +205,7 @@ async def _run_import_task(
             raise ValueError(f"外部论文文件处于不可索引状态: {file_status}")
         await context.set_progress(55, "正在建立学术分块和检索索引")
         await context.raise_if_cancelled()
+        await _ensure_import_owner_can_write(operator_id=operator_id, kb_id=kb_id, file_id=file_id)
         indexed = await knowledge_base.index_file(
             kb_id,
             file_id,
@@ -213,6 +216,7 @@ async def _run_import_task(
             },
         )
         await context.raise_if_cancelled()
+        await _ensure_import_owner_can_write(operator_id=operator_id, kb_id=kb_id, file_id=file_id)
         result = {
             "kb_id": kb_id,
             "file_id": file_id,
@@ -224,9 +228,79 @@ async def _run_import_task(
         await context.set_result(result)
         await context.set_progress(100, "外部论文已完成解析与索引")
         return result
-    except Exception:
-        logger.exception("外部论文导入任务失败: file_id=%s", file_id)
+    except AcademicPaperImportError:
         raise
+    except Exception as exc:
+        error_message = "外部论文解析与索引失败"
+        logger.error(
+            "外部论文导入任务失败: file_id=%s exception_type=%s",
+            file_id,
+            type(exc).__name__,
+        )
+        try:
+            await KnowledgeFileRepository().update_fields(
+                file_id=file_id,
+                kb_id=kb_id,
+                data={"status": "failed", "error_message": error_message},
+            )
+        except Exception as update_exc:
+            logger.error(
+                "更新外部论文导入失败状态失败: file_id=%s exception_type=%s",
+                file_id,
+                type(update_exc).__name__,
+            )
+        raise AcademicPaperImportError("paper_import_failed", error_message) from exc
+
+
+async def _ensure_import_owner_can_write(*, operator_id: str, kb_id: str, file_id: str) -> User:
+    file_repo = KnowledgeFileRepository()
+    user = await UserRepository().get_by_uid(operator_id)
+    if user is None or bool(user.is_deleted):
+        error = "外部论文导入任务所有者不存在或已删除"
+        await file_repo.update_fields(
+            file_id=file_id,
+            kb_id=kb_id,
+            data={"status": "failed", "error_message": error},
+        )
+        raise AcademicPaperImportError("forbidden", error)
+    try:
+        await _ensure_access(user, kb_id, write=True)
+    except HTTPException as exc:
+        error = "外部论文导入任务所有者已失去知识库权限"
+        await file_repo.update_fields(
+            file_id=file_id,
+            kb_id=kb_id,
+            data={"status": "failed", "error_message": error},
+        )
+        raise AcademicPaperImportError("forbidden", error) from exc
+    return user
+
+
+async def _cleanup_failed_import(
+    *,
+    kb_id: str,
+    minio_client: MinIOClient,
+    object_name: str,
+    file_id: str | None = None,
+) -> None:
+    if file_id:
+        try:
+            await knowledge_base.delete_file(kb_id, file_id)
+        except Exception as exc:
+            logger.error(
+                "清理外部论文导入失败的文件记录失败: kb_id=%s file_id=%s exception_type=%s",
+                kb_id,
+                file_id,
+                type(exc).__name__,
+            )
+    try:
+        await minio_client.adelete_file(MinIOClient.KB_BUCKETS["documents"], object_name)
+    except Exception as exc:
+        logger.error(
+            "清理外部论文导入失败的对象存储文件失败: kb_id=%s exception_type=%s",
+            kb_id,
+            type(exc).__name__,
+        )
 
 
 async def import_external_paper(*, identifier: str, kb_id: str, current_user: User) -> dict[str, Any]:
@@ -252,21 +326,43 @@ async def import_external_paper(*, identifier: str, kb_id: str, current_user: Us
         pdf_bytes, final_url = await client.download_open_access_pdf(pdf_url)
     except SemanticScholarError as exc:
         raise AcademicPaperImportError(exc.error_type, exc.message) from exc
+    except AcademicPaperImportError:
+        raise
+    except Exception as exc:
+        logger.error("获取外部论文失败: exception_type=%s", type(exc).__name__)
+        raise AcademicPaperImportError(
+            "paper_import_fetch_failed", "获取外部论文元数据或公开 PDF 失败"
+        ) from exc
 
-    content_hash = await calculate_content_hash(pdf_bytes)
-    if await knowledge_base.file_existed_in_db(kb_id, content_hash):
-        raise AcademicPaperImportError("file_already_imported", "该 PDF 内容已经存在于当前知识库")
+    try:
+        content_hash = await calculate_content_hash(pdf_bytes)
+        if await knowledge_base.file_existed_in_db(kb_id, content_hash):
+            raise AcademicPaperImportError("file_already_imported", "该 PDF 内容已经存在于当前知识库")
+    except AcademicPaperImportError:
+        raise
+    except Exception as exc:
+        logger.error("准备外部论文导入失败: exception_type=%s", type(exc).__name__)
+        raise AcademicPaperImportError("paper_import_prepare_failed", "外部论文导入准备失败") from exc
 
     paper_id = str(paper["paperId"])
     filename = _safe_filename(paper_metadata["title"], paper_id)
     object_name = f"{kb_id}/upload/{filename.rsplit('.', 1)[0]}-{hashstr(content_hash, 10)}.pdf"
     minio_client = get_minio_client()
-    upload_result = await minio_client.aupload_file(
-        bucket_name=MinIOClient.KB_BUCKETS["documents"],
-        object_name=object_name,
-        data=pdf_bytes,
-        content_type="application/pdf",
-    )
+    try:
+        upload_result = await minio_client.aupload_file(
+            bucket_name=MinIOClient.KB_BUCKETS["documents"],
+            object_name=object_name,
+            data=pdf_bytes,
+            content_type="application/pdf",
+        )
+    except Exception as exc:
+        await _cleanup_failed_import(
+            kb_id=kb_id,
+            minio_client=minio_client,
+            object_name=object_name,
+        )
+        logger.error("上传外部论文失败: exception_type=%s", type(exc).__name__)
+        raise AcademicPaperImportError("paper_import_upload_failed", "外部论文 PDF 上传失败") from exc
     params = {
         "content_type": "file",
         "content_hashes": {upload_result.url: content_hash},
@@ -287,6 +383,16 @@ async def import_external_paper(*, identifier: str, kb_id: str, current_user: Us
             params=params,
             operator_id=str(current_user.uid),
         )
+    except Exception as exc:
+        await _cleanup_failed_import(
+            kb_id=kb_id,
+            minio_client=minio_client,
+            object_name=object_name,
+        )
+        logger.error("创建外部论文文件记录失败: exception_type=%s", type(exc).__name__)
+        raise AcademicPaperImportError("paper_import_record_failed", "外部论文文件记录创建失败") from exc
+
+    try:
         task = await tasker.enqueue(
             name=f"导入学术论文 ({paper_metadata['title'][:220]})",
             task_type="academic_paper_import",
@@ -298,26 +404,17 @@ async def import_external_paper(*, identifier: str, kb_id: str, current_user: Us
                 "paper_metadata": paper_metadata,
                 "operator_id": str(current_user.uid),
             },
-            coroutine=lambda context: _run_import_task(
-                context,
-                kb_id=kb_id,
-                file_id=file_meta["file_id"],
-                paper_metadata=paper_metadata,
-                operator_id=str(current_user.uid),
-            ),
+            coroutine=_resume_external_paper_import_task,
         )
     except Exception as exc:
-        if "file_meta" in locals() and file_meta.get("file_id"):
-            try:
-                await knowledge_base.delete_file(kb_id, file_meta["file_id"])
-            except Exception:
-                logger.exception("清理外部论文导入失败的文件记录失败: file_id=%s", file_meta["file_id"])
-        try:
-            await minio_client.adelete_file(MinIOClient.KB_BUCKETS["documents"], object_name)
-        except Exception:
-            logger.exception("清理外部论文导入失败的 MinIO 对象失败: object_name=%s", object_name)
-        error_type = "paper_import_enqueue_failed" if "task" not in locals() else "paper_import_record_failed"
-        raise AcademicPaperImportError(error_type, f"外部论文导入失败: {exc}") from exc
+        await _cleanup_failed_import(
+            kb_id=kb_id,
+            minio_client=minio_client,
+            object_name=object_name,
+            file_id=str(file_meta["file_id"]),
+        )
+        logger.error("提交外部论文导入任务失败: exception_type=%s", type(exc).__name__)
+        raise AcademicPaperImportError("paper_import_enqueue_failed", "外部论文导入任务提交失败") from exc
 
     return {
         "status": "queued",
@@ -344,25 +441,7 @@ async def _resume_external_paper_import_task(context: TaskContext) -> dict[str, 
         raise ValueError("外部论文导入恢复参数无效")
 
     file_repo = KnowledgeFileRepository()
-    user = await UserRepository().get_by_uid(operator_id)
-    if user is None or bool(user.is_deleted):
-        error = "外部论文导入任务所有者不存在或已删除"
-        await file_repo.update_fields(
-            file_id=file_id,
-            kb_id=kb_id,
-            data={"status": "failed", "error_message": error},
-        )
-        raise RuntimeError(error)
-    try:
-        await _ensure_access(user, kb_id, write=True)
-    except HTTPException as exc:
-        error = "外部论文导入任务所有者已失去知识库权限"
-        await file_repo.update_fields(
-            file_id=file_id,
-            kb_id=kb_id,
-            data={"status": "failed", "error_message": error},
-        )
-        raise RuntimeError(error) from exc
+    await _ensure_import_owner_can_write(operator_id=operator_id, kb_id=kb_id, file_id=file_id)
 
     file_info = await knowledge_base.get_file_basic_info(kb_id, file_id)
     file_meta = file_info.get("meta") if isinstance(file_info, dict) else None
@@ -443,15 +522,6 @@ async def recover_external_paper_imports() -> int:
                 continue
             operator_id = str(user.uid)
 
-            async def run(context: TaskContext, item=record, metadata=paper_metadata, operator=operator_id):
-                return await _run_import_task(
-                    context,
-                    kb_id=str(item.kb_id),
-                    file_id=str(item.file_id),
-                    paper_metadata=metadata,
-                    operator_id=operator,
-                )
-
             try:
                 _, created = await tasker.enqueue_unique_by_payload(
                     name=f"恢复外部论文导入 ({record.filename})",
@@ -465,18 +535,19 @@ async def recover_external_paper_imports() -> int:
                     },
                     payload_match={"kb_id": record.kb_id, "file_id": record.file_id},
                     statuses={"pending", "running"},
-                    coroutine=run,
+                    coroutine=_resume_external_paper_import_task,
                 )
             except Exception as exc:
-                logger.exception(
-                    "恢复外部论文导入任务入队失败: kb_id=%s file_id=%s",
+                logger.error(
+                    "恢复外部论文导入任务入队失败: kb_id=%s file_id=%s exception_type=%s",
                     record.kb_id,
                     record.file_id,
+                    type(exc).__name__,
                 )
                 await file_repo.update_fields(
                     file_id=record.file_id,
                     kb_id=record.kb_id,
-                    data={"status": "failed", "error_message": f"恢复任务入队失败: {exc}"},
+                    data={"status": "failed", "error_message": "外部论文导入恢复任务提交失败"},
                 )
                 continue
             recovered += int(created)

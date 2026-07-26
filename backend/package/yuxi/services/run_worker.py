@@ -36,6 +36,16 @@ LOADING_FLUSH_INTERVAL_MS = 100
 LOADING_FLUSH_MAX_CHARS = 512
 RUN_CANCEL_POLL_SECONDS = 0.2
 SUPPORTED_RUN_TYPES = {"chat", "resume", "subagent"}
+RUN_RETRY_MESSAGE = "运行暂时失败，正在重试"
+RUN_RETRY_EXHAUSTED_MESSAGE = "智能体运行重试次数已耗尽"
+RUN_FAILED_MESSAGE = "智能体运行失败"
+PUBLIC_STREAM_ERROR_MESSAGES = {
+    "content_guard_blocked": "输入内容包含敏感词",
+    "invalid_agent": "智能体不存在、不可用或无权限访问",
+    "invalid_runtime": "智能体运行参数无效",
+    "unexpected_error": RUN_FAILED_MESSAGE,
+    "resume_error": "对话恢复失败",
+}
 
 
 class RetryableRunError(Exception):
@@ -213,8 +223,22 @@ def _iter_json_chunks(chunk_bytes: bytes) -> list[dict]:
         try:
             chunks.append(json.loads(line))
         except Exception:
-            logger.warning(f"Failed to parse run stream chunk: {line[:200]}")
+            logger.warning(f"Failed to parse run stream chunk (size={len(line)})")
     return chunks
+
+
+def _public_stream_error_chunk(chunk: dict, *, request_id: str, thread_id: str | None) -> dict:
+    raw_error_type = chunk.get("error_type")
+    error_type = raw_error_type if raw_error_type in PUBLIC_STREAM_ERROR_MESSAGES else "stream_error"
+    error_message = PUBLIC_STREAM_ERROR_MESSAGES.get(error_type, RUN_FAILED_MESSAGE)
+    return {
+        "status": "error",
+        "error_type": error_type,
+        "error_message": error_message,
+        "request_id": request_id,
+        "thread_id": thread_id,
+        "retryable": False,
+    }
 
 
 def _loading_chunk_size(chunk: dict) -> int:
@@ -286,22 +310,33 @@ async def _finish_run(
 
 
 async def _consume_stream_with_cancel(agen, run_ctx: RunContext):
-    while True:
-        next_task = asyncio.create_task(agen.__anext__())
-        cancel_task = asyncio.create_task(run_ctx.wait_cancelled())
-        done, _ = await asyncio.wait({next_task, cancel_task}, return_when=asyncio.FIRST_COMPLETED)
-
-        if cancel_task in done:
-            next_task.cancel()
-            await asyncio.gather(next_task, return_exceptions=True)
-            raise asyncio.CancelledError(f"run {run_ctx.run_id} cancelled")
-
-        cancel_task.cancel()
-        await asyncio.gather(cancel_task, return_exceptions=True)
-        try:
-            yield next_task.result()
-        except StopAsyncIteration:
-            return
+    try:
+        while True:
+            next_task = asyncio.create_task(agen.__anext__())
+            cancel_task = asyncio.create_task(run_ctx.wait_cancelled())
+            try:
+                done, _ = await asyncio.wait(
+                    {next_task, cancel_task},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if cancel_task in done:
+                    raise asyncio.CancelledError(f"run {run_ctx.run_id} cancelled")
+                try:
+                    chunk = next_task.result()
+                except StopAsyncIteration:
+                    return
+            finally:
+                next_task.cancel()
+                cancel_task.cancel()
+                await asyncio.gather(next_task, cancel_task, return_exceptions=True)
+            yield chunk
+    finally:
+        close_stream = getattr(agen, "aclose", None)
+        if close_stream is not None:
+            try:
+                await close_stream()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Agent stream close failed: exception_type={}", type(exc).__name__)
 
 
 async def process_agent_run(ctx, run_id: str):
@@ -424,6 +459,7 @@ async def process_agent_run(ctx, run_id: str):
         thread_id=thread_id,
     )
     terminal_set = False
+    stream_consumer = None
 
     try:
         async with pg_manager.get_async_session_context() as db:
@@ -448,9 +484,16 @@ async def process_agent_run(ctx, run_id: str):
             else:
                 raise RuntimeError(f"unsupported run_type after validation: {run_type}")
 
-            async for chunk_bytes in _consume_stream_with_cancel(stream, run_ctx):
+            stream_consumer = _consume_stream_with_cancel(stream, run_ctx)
+            async for chunk_bytes in stream_consumer:
                 for chunk in _iter_json_chunks(chunk_bytes):
                     target_thread_id = _chunk_thread_id(chunk, thread_id)
+                    if chunk.get("status") == "error":
+                        chunk = _public_stream_error_chunk(
+                            chunk,
+                            request_id=request_id,
+                            thread_id=target_thread_id,
+                        )
                     if chunk.get("status") == "loading":
                         await writer.append(chunk, thread_id=target_thread_id)
                         continue
@@ -554,42 +597,46 @@ async def process_agent_run(ctx, run_id: str):
         await writer.flush()
         if _is_retryable_exception(e):
             job_try = _job_try(ctx)
-            logger.warning(f"Run retryable failure {run_id} (try={job_try}): {e}")
+            last_try = _is_last_try(ctx)
+            error_message = RUN_RETRY_EXHAUSTED_MESSAGE if last_try else RUN_RETRY_MESSAGE
+            logger.warning(
+                f"Run retryable failure {run_id} (try={job_try}, error_type={type(e).__name__})"
+            )
             retryable_error_chunk = {
                 "status": "error",
                 "error_type": "retryable_worker_error",
-                "error_message": str(e),
+                "error_message": error_message,
                 "request_id": request_id,
-                "retryable": True,
+                "retryable": not last_try,
                 "job_try": job_try,
             }
             await append_run_event(
                 run_id,
                 "error",
-                {"chunk": retryable_error_chunk, "retryable": True},
+                {"chunk": retryable_error_chunk, "retryable": not last_try},
                 thread_id=thread_id,
             )
-            if _is_last_try(ctx):
+            if last_try:
                 await _finish_run(
                     run_id,
                     "failed",
                     thread_id=thread_id,
                     chunk=retryable_error_chunk,
                     error_type="retryable_worker_error",
-                    error_message=str(e),
+                    error_message=error_message,
                 )
-                logger.error(f"Run failed after retries exhausted {run_id}: {e}")
+                logger.error(
+                    f"Run failed after retries exhausted {run_id} (error_type={type(e).__name__})"
+                )
                 return
 
-            if isinstance(e, RetryableRunError):
-                raise
-            raise RetryableRunError(str(e)) from e
+            raise RetryableRunError(RUN_RETRY_MESSAGE) from None
 
-        logger.error(f"Run failed {run_id}: {e}")
+        logger.error(f"Run failed {run_id} (error_type={type(e).__name__})")
         error_chunk = {
             "status": "error",
             "error_type": "worker_error",
-            "error_message": str(e),
+            "error_message": RUN_FAILED_MESSAGE,
             "request_id": request_id,
             "retryable": False,
         }
@@ -605,10 +652,17 @@ async def process_agent_run(ctx, run_id: str):
             thread_id=thread_id,
             chunk=error_chunk,
             error_type="worker_error",
-            error_message=str(e),
+            error_message=RUN_FAILED_MESSAGE,
         )
         return
     finally:
+        if stream_consumer is not None:
+            close_consumer = getattr(stream_consumer, "aclose", None)
+            if close_consumer is not None:
+                try:
+                    await close_consumer()
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Run stream cleanup failed: exception_type={}", type(exc).__name__)
         await run_ctx.close()
         await clear_cancel_signal(run_id)
         # completed 后尝试派发线程的下一个排队请求
@@ -644,6 +698,13 @@ async def _worker_startup(ctx):
 
 
 async def _worker_shutdown(ctx):
+    del ctx
+    sys_config.stop_runtime_sync()
+    from yuxi.knowledge.parser.factory import DocumentProcessorFactory
+    from yuxi.services.langfuse_service import close_langfuse_client
+
+    DocumentProcessorFactory.clear_cache()
+    close_langfuse_client()
     await pg_manager.close()
 
 

@@ -11,6 +11,7 @@ __pycache__/
 ### Vue gitignore
 dist
 node_modules
+.pnpm-store/
 
 ### common gitignore
 .DS_Store
@@ -82,4 +83,3 @@ docs/vibe
 
 .taskr/
 web/src/utils/__tests__/
-web/test/

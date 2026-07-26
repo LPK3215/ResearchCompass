@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -63,6 +64,7 @@ class Config(BaseModel):
 
     _config_file: Path | None = PrivateAttr(default=None)
     _runtime_sync_thread: Any = PrivateAttr(default=None)
+    _runtime_sync_stop_event: Any = PrivateAttr(default=None)
 
     model_config = {"arbitrary_types_allowed": True, "extra": "allow"}
 
@@ -96,25 +98,41 @@ class Config(BaseModel):
                 else:
                     logger.warning(f"Unknown config key: {key}")
 
-        except Exception as e:
-            logger.error(f"Failed to load config from {self._config_file}: {e}")
+        except Exception as exc:
+            logger.error("Failed to load config: exception_type={}", type(exc).__name__)
 
     def start_runtime_sync(self, interval: float = runtime_cache.RUNTIME_CONFIG_SYNC_INTERVAL_SECONDS) -> None:
         """启动后台线程周期性从 Redis 同步运行时配置。多次调用仅启动一次。"""
+        if self._runtime_sync_thread is not None and self._runtime_sync_thread.is_alive():
+            return
+        self._runtime_sync_stop_event = threading.Event()
         self._runtime_sync_thread = runtime_cache.start_runtime_sync(
             self,
             self._runtime_sync_thread,
+            stop_event=self._runtime_sync_stop_event,
             interval=interval,
         )
+
+    def stop_runtime_sync(self) -> None:
+        """停止后台配置同步并释放线程引用。多次调用安全。"""
+        thread = self._runtime_sync_thread
+        stop_event = self._runtime_sync_stop_event
+        self._runtime_sync_thread = None
+        self._runtime_sync_stop_event = None
+        if stop_event is not None:
+            stop_event.set()
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=1.0)
+            if thread.is_alive():
+                logger.warning("Runtime config sync thread did not stop before timeout")
 
     def refresh(self) -> None:
         """从 Redis 快照刷新公开配置字段到内存；Redis 不可用或无快照时保持当前值。"""
         runtime_cache.refresh_runtime_config(self)
 
-    def save(self) -> None:
+    def save(self) -> bool:
         if not self._config_file:
-            logger.warning("Config file path not set")
-            return
+            raise RuntimeError("Config file path not set")
 
         logger.info(f"Saving config to {self._config_file}")
         user_modified = {}
@@ -129,9 +147,10 @@ class Config(BaseModel):
             with open(self._config_file, "wb") as f:
                 tomli_w.dump(user_modified, f)
             logger.info(f"Config saved to {self._config_file}")
-            runtime_cache.save_runtime_config(self)
-        except Exception as e:
-            logger.error(f"Failed to save config to {self._config_file}: {e}")
+            return runtime_cache.save_runtime_config(self)
+        except Exception as exc:
+            logger.error("Failed to save config: exception_type={}", type(exc).__name__)
+            raise RuntimeError("配置文件保存失败") from exc
 
     def dump_config(self) -> dict[str, Any]:
         config_dict = self.model_dump()
@@ -151,13 +170,16 @@ class Config(BaseModel):
         return config_dict
 
     def update(self, other: dict[str, Any]) -> None:
+        normalized_updates: dict[str, Any] = {}
         for key, value in other.items():
             if self.can_update(key):
-                self.set_value(key, value)
+                normalized_updates[key] = self._normalize_config_value(key, value)
             elif key in READONLY_CONFIG_FIELDS:
                 logger.warning(f"Readonly config key ignored: {key}")
             else:
                 logger.warning(f"Unknown config key: {key}")
+        for key, value in normalized_updates.items():
+            setattr(self, key, value)
 
     def can_update(self, key: object) -> bool:
         return isinstance(key, str) and key in type(self).model_fields and key not in READONLY_CONFIG_FIELDS

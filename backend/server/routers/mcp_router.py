@@ -107,9 +107,9 @@ async def get_mcp_servers(
                 }
             )
         return {"success": True, "data": data}
-    except Exception as e:
-        logger.error(f"Failed to get MCP servers: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        logger.error("Failed to get MCP servers: exception_type={}", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="获取 MCP 服务器失败") from exc
 
 
 @mcp.post("")
@@ -151,9 +151,9 @@ async def create_mcp_server_route(
         return {"success": True, "data": server.to_dict()}
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
-    except Exception as e:
-        logger.error(f"Failed to create MCP server: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        logger.error("Failed to create MCP server: exception_type={}", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="创建 MCP 服务器失败") from exc
 
 
 @mcp.get("/{slug}")
@@ -168,9 +168,9 @@ async def get_mcp_server_route(
         return {"success": True, "data": server.to_dict()}
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Failed to get MCP server: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        logger.error("Failed to get MCP server: exception_type={}", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="获取 MCP 服务器失败") from exc
 
 
 @mcp.put("/{slug}")
@@ -212,9 +212,9 @@ async def update_mcp_server_route(
         return {"success": True, "data": server.to_dict()}
     except ValueError as ve:
         raise HTTPException(status_code=404, detail=str(ve))
-    except Exception as e:
-        logger.error(f"Failed to update MCP server: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        logger.error("Failed to update MCP server: exception_type={}", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="更新 MCP 服务器失败") from exc
 
 
 @mcp.delete("/{slug}")
@@ -236,9 +236,9 @@ async def delete_mcp_server_route(
         return {"success": True, "message": f"服务器 '{slug}' 已删除"}
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Failed to delete MCP server: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        logger.error("Failed to delete MCP server: exception_type={}", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="删除 MCP 服务器失败") from exc
 
 
 # =============================================================================
@@ -264,12 +264,13 @@ async def test_mcp_server(
                 "tool_count": len(tools),
             }
         except Exception as test_error:
-            raise HTTPException(status_code=500, detail=f"连接失败: {str(test_error)}")
+            logger.warning("MCP connection test failed: exception_type={}", type(test_error).__name__)
+            raise HTTPException(status_code=500, detail="MCP 服务器连接失败") from test_error
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Failed to test MCP server: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        logger.error("Failed to test MCP server: exception_type={}", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="测试 MCP 服务器失败") from exc
 
 
 @mcp.put("/{slug}/status")
@@ -290,9 +291,9 @@ async def update_mcp_server_status_route(
         }
     except ValueError as ve:
         raise HTTPException(status_code=404, detail=str(ve))
-    except Exception as e:
-        logger.error(f"Failed to toggle MCP server: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        logger.error("Failed to toggle MCP server: exception_type={}", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="更新 MCP 服务器状态失败") from exc
 
 
 # =============================================================================
@@ -342,13 +343,13 @@ async def get_mcp_server_tools(
                 "total": len(tool_list),
             }
         except Exception as tool_error:
-            logger.error(f"Failed to get tools from MCP server '{slug}': {tool_error}")
-            raise HTTPException(status_code=500, detail=f"获取工具失败: {str(tool_error)}")
+            logger.error("Failed to get MCP tools: exception_type={}", type(tool_error).__name__)
+            raise HTTPException(status_code=500, detail="获取 MCP 工具失败") from tool_error
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Failed to get MCP server tools: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        logger.error("Failed to get MCP server tools: exception_type={}", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="获取 MCP 工具失败") from exc
 
 
 @mcp.post("/{slug}/tools/refresh")
@@ -384,12 +385,13 @@ async def refresh_mcp_server_tools(
                 "disabled_count": disabled_count,
             }
         except Exception as tool_error:
-            raise HTTPException(status_code=500, detail=f"刷新失败: {str(tool_error)}")
+            logger.error("Failed to refresh MCP tools: exception_type={}", type(tool_error).__name__)
+            raise HTTPException(status_code=500, detail="刷新 MCP 工具失败") from tool_error
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Failed to refresh MCP server tools: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        logger.error("Failed to refresh MCP server tools: exception_type={}", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="刷新 MCP 工具失败") from exc
 
 
 @mcp.put("/{slug}/tools/{tool_name}/toggle")
@@ -410,6 +412,6 @@ async def toggle_mcp_server_tool_route(
         }
     except ValueError as ve:
         raise HTTPException(status_code=404, detail=str(ve))
-    except Exception as e:
-        logger.error(f"Failed to toggle MCP server tool: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        logger.error("Failed to toggle MCP server tool: exception_type={}", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="更新 MCP 工具状态失败") from exc

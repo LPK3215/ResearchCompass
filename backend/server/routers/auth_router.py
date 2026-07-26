@@ -942,10 +942,11 @@ async def upload_user_avatar(
 
         return {"success": True, "avatar_url": avatar_url, "message": "头像上传成功"}
 
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"头像上传失败: {str(e)}")
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error("Avatar upload failed: exception_type={}", type(exc).__name__)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="头像上传失败") from exc
 
 
 # 路由：模拟用户登录（超级管理员专用）

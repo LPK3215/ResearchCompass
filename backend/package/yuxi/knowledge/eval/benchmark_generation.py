@@ -7,11 +7,16 @@ from typing import Any
 import json_repair
 
 from yuxi.models import select_model
+from yuxi.services.task_service import PublicTaskError
 from yuxi.utils import logger
 
 DEFAULT_BENCHMARK_GENERATION_CONCURRENCY = 10
 MAX_BENCHMARK_GENERATION_CONCURRENCY = 20
 DEFAULT_GRAPH_EXPAND_TOP_K = 1
+
+
+class BenchmarkGenerationError(PublicTaskError):
+    error_type = "benchmark_generation_model_failed"
 MAX_GRAPH_EXPAND_TOP_K = 3
 GRAPH_SEED_DECAY = 0.9
 GRAPH_PPR_DAMPING = 0.85
@@ -232,7 +237,7 @@ async def _generate_benchmark_item_once(
         answer = obj.get("gold_answer")
         gold_ids = obj.get("gold_chunk_ids")
         if not query or not answer or not isinstance(gold_ids, list):
-            logger.warning(f"Generated JSON missing fields or invalid format: {obj}")
+            logger.warning("Generated benchmark JSON is missing required fields")
             return None
 
         gold_ids = [str(item) for item in gold_ids if str(item) in allowed_ids]
@@ -241,9 +246,9 @@ async def _generate_benchmark_item_once(
             return None
 
         return {"query": query, "gold_chunk_ids": gold_ids, "gold_answer": answer}
-    except Exception as e:
-        logger.warning(f"Benchmark generation failed for one item: {e}")
-        return None
+    except Exception as exc:
+        logger.warning("Benchmark generation failed: exception_type={}", type(exc).__name__)
+        raise BenchmarkGenerationError("评估数据集生成模型调用失败") from exc
 
 
 async def iter_generated_benchmark_items(
@@ -277,7 +282,10 @@ async def iter_generated_benchmark_items(
     if not llm_model_spec:
         raise ValueError("llm_model_spec 不能为空")
 
-    llm = select_model(model_spec=llm_model_spec)
+    try:
+        llm = select_model(model_spec=llm_model_spec)
+    except Exception as exc:
+        raise BenchmarkGenerationError("评估数据集生成模型初始化失败") from exc
     context_count = max(clamp_neighbors_count(neighbors_count), 1)
     max_attempts = max(count * 5, 50)
     worker_count = normalize_generation_concurrency_count(concurrency_count)

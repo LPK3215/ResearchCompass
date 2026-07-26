@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from yuxi.storage.postgres import manager as postgres_manager
-from yuxi.storage.postgres.manager import PostgresManager
+from yuxi.storage.postgres.manager import PostgresManager, _redact_database_url
 
 
 class _RecordingConnection:
@@ -49,6 +49,35 @@ class _RecordingLangGraphPool:
     async def open(self, *, wait: bool):
         self.open_calls.append(wait)
         self.closed = False
+
+
+@pytest.mark.parametrize(
+    ("database_url", "expected"),
+    [
+        (
+            "postgresql+asyncpg://research_user:super%40secret@postgres:5432/research_compass",
+            "postgresql+asyncpg://research_user:***@postgres:5432/research_compass",
+        ),
+        (
+            "postgresql+asyncpg://postgres:5432/research_compass",
+            "postgresql+asyncpg://postgres:5432/research_compass",
+        ),
+    ],
+)
+def test_redact_database_url_never_exposes_password(database_url, expected):
+    redacted = _redact_database_url(database_url)
+
+    assert redacted == expected
+    assert "super%40secret" not in redacted
+
+
+def test_redact_database_url_does_not_echo_invalid_input():
+    secret = "not a URL containing secret-password"
+
+    redacted = _redact_database_url(secret)
+
+    assert redacted == "<invalid database URL>"
+    assert secret not in redacted
 
 
 def test_log_async_session_rollback_demotes_expected_4xx_http_errors(monkeypatch):

@@ -359,13 +359,18 @@ async def fetch_remote_models(provider: ModelProvider) -> list[dict[str, Any]]:
 
     seen_ids: set[tuple[str, str]] = set()
     models: list[dict[str, Any]] = []
-    async with httpx.AsyncClient(timeout=40.0) as client:
-        results = await asyncio.gather(
-            *[
-                _fetch_models_from_endpoint(client, provider, headers, endpoint, model_type)
-                for endpoint, model_type in endpoint_specs
-            ]
-        )
+    async with httpx.AsyncClient(timeout=40.0, trust_env=False) as client:
+        tasks = [
+            asyncio.create_task(_fetch_models_from_endpoint(client, provider, headers, endpoint, model_type))
+            for endpoint, model_type in endpoint_specs
+        ]
+        try:
+            results = await asyncio.gather(*tasks)
+        except BaseException:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
         for fetched_models in results:
             for model in fetched_models:
                 model_key = (model["id"], model["type"])

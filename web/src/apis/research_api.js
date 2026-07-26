@@ -1,4 +1,4 @@
-import { apiGet, apiRequest } from './base'
+import { apiGet, apiRequest } from './base.js'
 
 const buildQuery = (params = {}) => {
   const query = new URLSearchParams()

@@ -15,6 +15,9 @@ from yuxi.knowledge.parser.base import BaseDocumentProcessor, DocumentParserExce
 from yuxi.knowledge.parser.zip_utils import process_zip_file_sync
 from yuxi.utils import logger
 
+MAX_MINERU_RESPONSE_BYTES = 512 * 1024 * 1024
+MINERU_DOWNLOAD_CHUNK_SIZE = 1024 * 1024
+
 
 class MinerUParser(BaseDocumentProcessor):
     """MinerU 文档解析器 - 使用 HTTP API 进行文档理解和解析"""
@@ -22,6 +25,8 @@ class MinerUParser(BaseDocumentProcessor):
     def __init__(self, server_url: str | None = None):
         self.server_url = server_url or os.getenv("MINERU_API_URI") or "http://localhost:30001"
         self.parse_endpoint = f"{self.server_url}/file_parse"
+        self._session = requests.Session()
+        self._session.trust_env = False
 
     def get_service_name(self) -> str:
         return "mineru_ocr"
@@ -35,59 +40,67 @@ class MinerUParser(BaseDocumentProcessor):
         try:
             # 尝试访问 OpenAPI JSON 端点来检查服务是否可用
             health_url = f"{self.server_url}/openapi.json"
-            response = requests.get(health_url, timeout=5)
-
-            if response.status_code == 200:
-                try:
-                    openapi_data = response.json()
-                    # 检查是否包含 file_parse 端点
-                    has_file_parse = "/file_parse" in openapi_data.get("paths", {})
-
-                    if has_file_parse:
-                        return {
-                            "status": "healthy",
-                            "message": "MinerU 服务运行正常",
-                            "details": {
-                                "server_url": self.server_url,
-                                "api_version": openapi_data.get("info", {}).get("version", "unknown"),
-                            },
-                        }
-                    else:
+            with self._session.get(health_url, timeout=5) as response:
+                status_code = response.status_code
+                if status_code == 200:
+                    try:
+                        openapi_data = response.json()
+                    except ValueError as error:
                         return {
                             "status": "unhealthy",
-                            "message": "MinerU 服务缺少必要的端点",
-                            "details": {"server_url": self.server_url},
+                            "message": "MinerU 响应格式错误",
+                            "details": {"error_type": type(error).__name__},
                         }
-                except Exception as e:
+                else:
+                    openapi_data = None
+
+            if status_code == 200:
+                if not isinstance(openapi_data, dict):
                     return {
                         "status": "unhealthy",
-                        "message": f"MinerU 响应格式错误: {str(e)}",
-                        "details": {"server_url": self.server_url},
+                        "message": "MinerU 响应格式错误",
+                        "details": {},
                     }
+                paths = openapi_data.get("paths")
+                has_file_parse = isinstance(paths, dict) and "/file_parse" in paths
+
+                if has_file_parse:
+                    info = openapi_data.get("info")
+                    api_version = info.get("version", "unknown") if isinstance(info, dict) else "unknown"
+                    return {
+                        "status": "healthy",
+                        "message": "MinerU 服务运行正常",
+                        "details": {"api_version": api_version},
+                    }
+                return {
+                    "status": "unhealthy",
+                    "message": "MinerU 服务缺少必要的端点",
+                    "details": {},
+                }
             else:
                 return {
                     "status": "unhealthy",
-                    "message": f"MinerU 服务响应异常: {response.status_code}",
-                    "details": {"server_url": self.server_url},
+                    "message": f"MinerU 服务响应异常: {status_code}",
+                    "details": {"status_code": status_code},
                 }
 
         except requests.exceptions.ConnectionError:
             return {
                 "status": "unavailable",
                 "message": "MinerU 服务无法连接,请检查服务是否启动",
-                "details": {"server_url": self.server_url},
+                "details": {},
             }
         except requests.exceptions.Timeout:
             return {
                 "status": "timeout",
                 "message": "MinerU 服务连接超时",
-                "details": {"server_url": self.server_url},
+                "details": {},
             }
         except Exception as e:
             return {
                 "status": "error",
-                "message": f"MinerU 健康检查失败: {str(e)}",
-                "details": {"server_url": self.server_url, "error": str(e)},
+                "message": "MinerU 健康检查失败",
+                "details": {"error_type": type(e).__name__},
             }
 
     def process_file(self, file_path: str, params: dict | None = None) -> str:
@@ -140,8 +153,9 @@ class MinerUParser(BaseDocumentProcessor):
         if server_url:
             data["server_url"] = server_url
 
+        start_time = time.time()
+        tmp_zip_path: str | None = None
         try:
-            start_time = time.time()
 
             logger.info(
                 f"MinerU 开始处理: {os.path.basename(file_path)} (backend={data['backend']}, lang={data['lang_list']})"
@@ -152,77 +166,86 @@ class MinerUParser(BaseDocumentProcessor):
                 files = {"files": (os.path.basename(file_path), f, "application/octet-stream")}
 
                 # 发送 POST 请求
-                response = requests.post(
+                with self._session.post(
                     self.parse_endpoint,
                     files=files,
                     data=data,
                     timeout=int(os.environ.get("MINERU_TIMEOUT", 1800)),  # 30分钟超时
-                )
-
-            # 检查响应状态
-            logger.debug(
-                f"MinerU 响应状态: {response.status_code}, Content-Type: {response.headers.get('content-type')}"
-            )
-
-            if response.status_code != 200:
-                error_detail = "未知错误"
-                try:
-                    error_data = response.json()
-                    error_detail = error_data.get("detail", str(error_data))
-                except Exception:
-                    error_detail = response.text or f"HTTP {response.status_code}"
-
-                logger.error(f"MinerU HTTP错误 {response.status_code}: {error_detail}")
-                raise DocumentParserException(
-                    f"MinerU 处理失败: {error_detail}",
-                    self.get_service_name(),
-                    f"http_{response.status_code}",
-                )
-
-            # 解析响应
-            try:
-                # 直接从响应内容获取 ZIP 数据
-                zip_data = response.content
-
-                # 保存到临时文件并处理
-                with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp_zip:
-                    tmp_zip.write(zip_data)
-                    tmp_zip.flush()
-
-                    try:
-                        image_bucket = params.get("image_bucket") or "public"
-                        image_prefix = params.get("image_prefix") or "unknown/kb-images"
-
-                        processed = process_zip_file_sync(
-                            tmp_zip.name,
-                            image_bucket=image_bucket,
-                            image_prefix=image_prefix,
-                        )
-                        text = processed["markdown_content"]
-                    finally:
-                        os.unlink(tmp_zip.name)
-
-                if not text:
-                    logger.error("MinerU 未返回任何文本内容")
-                    raise DocumentParserException(
-                        "MinerU 未返回任何文本内容",
-                        self.get_service_name(),
-                        "no_content",
+                    stream=True,
+                ) as response:
+                    logger.debug(
+                        f"MinerU 响应状态: {response.status_code}, "
+                        f"Content-Type: {response.headers.get('content-type')}"
                     )
 
-                processing_time = time.time() - start_time
-                logger.info(
-                    f"MinerU 处理成功: {os.path.basename(file_path)} - {len(text)} 字符 ({processing_time:.2f}s)"
+                    if response.status_code != 200:
+                        logger.error(f"MinerU HTTP错误 (status_code={response.status_code})")
+                        raise DocumentParserException(
+                            f"MinerU 处理失败: HTTP {response.status_code}",
+                            self.get_service_name(),
+                            f"http_{response.status_code}",
+                        )
+
+                    content_length = response.headers.get("content-length")
+                    if content_length is not None:
+                        try:
+                            declared_size = int(content_length)
+                        except ValueError as error:
+                            raise DocumentParserException(
+                                "MinerU 响应大小无效", self.get_service_name(), "response_too_large"
+                            ) from error
+                        if declared_size < 0 or declared_size > MAX_MINERU_RESPONSE_BYTES:
+                            raise DocumentParserException(
+                                "MinerU 响应超过大小限制", self.get_service_name(), "response_too_large"
+                            )
+
+                    with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp_zip:
+                        tmp_zip_path = tmp_zip.name
+                        downloaded_size = 0
+                        for chunk in response.iter_content(chunk_size=MINERU_DOWNLOAD_CHUNK_SIZE):
+                            if not chunk:
+                                continue
+                            downloaded_size += len(chunk)
+                            if downloaded_size > MAX_MINERU_RESPONSE_BYTES:
+                                raise DocumentParserException(
+                                    "MinerU 响应超过大小限制", self.get_service_name(), "response_too_large"
+                                )
+                            tmp_zip.write(chunk)
+
+            try:
+                image_bucket = params.get("image_bucket") or "public"
+                image_prefix = params.get("image_prefix") or "unknown/kb-images"
+                processed = process_zip_file_sync(
+                    tmp_zip_path,
+                    image_bucket=image_bucket,
+                    image_prefix=image_prefix,
                 )
-
-                return text
-
-            except Exception as e:
+                text = processed.get("markdown_content") if isinstance(processed, dict) else None
+            except DocumentParserException:
+                raise
+            except Exception as error:
+                logger.error(f"MinerU 响应解析失败 (error_type={type(error).__name__})")
                 raise DocumentParserException(
-                    f"MinerU 响应解析失败: {str(e)}",
+                    "MinerU 响应解析失败", self.get_service_name(), "response_parse_error"
+                ) from error
+            finally:
+                if tmp_zip_path and os.path.exists(tmp_zip_path):
+                    os.unlink(tmp_zip_path)
+
+            if not isinstance(text, str) or not text:
+                logger.error("MinerU 未返回任何文本内容")
+                raise DocumentParserException(
+                    "MinerU 未返回任何文本内容",
                     self.get_service_name(),
-                    "response_parse_error",
+                    "no_content",
                 )
+
+            processing_time = time.time() - start_time
+            logger.info(
+                f"MinerU 处理成功: {os.path.basename(file_path)} - {len(text)} 字符 ({processing_time:.2f}s)"
+            )
+
+            return text
 
         except DocumentParserException:
             raise
@@ -235,6 +258,11 @@ class MinerUParser(BaseDocumentProcessor):
             logger.error(error_msg)
             raise DocumentParserException(error_msg, self.get_service_name(), "connection_error")
         except Exception as e:
-            error_msg = f"MinerU 处理失败: {str(e)}"
-            logger.error(f"{error_msg} ({time.time() - start_time:.2f}s)")
-            raise DocumentParserException(error_msg, self.get_service_name(), "processing_failed")
+            logger.error(f"MinerU 处理失败 (error_type={type(e).__name__}, elapsed={time.time() - start_time:.2f}s)")
+            raise DocumentParserException("MinerU 处理失败", self.get_service_name(), "processing_failed") from e
+        finally:
+            if tmp_zip_path and os.path.exists(tmp_zip_path):
+                os.unlink(tmp_zip_path)
+
+    def close(self) -> None:
+        self._session.close()

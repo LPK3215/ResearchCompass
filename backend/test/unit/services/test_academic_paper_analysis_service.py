@@ -136,6 +136,9 @@ async def test_resume_analysis_skips_persisted_multi_agent_stages(monkeypatch):
     async def unexpected_stage_call(*args):
         pytest.fail("completed stages must not call the model again after restart")
 
+    async def allow_owner(*args, **kwargs):
+        return None
+
     monkeypatch.setattr(academic_paper_analysis_service, "AcademicPaperAnalysisRepository", FakeRepository)
     monkeypatch.setattr(
         academic_paper_analysis_service,
@@ -148,6 +151,7 @@ async def test_resume_analysis_skips_persisted_multi_agent_stages(monkeypatch):
         lambda *args: asyncio.sleep(0, result="graph context"),
     )
     monkeypatch.setattr(academic_paper_analysis_service, "_call_stage", unexpected_stage_call)
+    monkeypatch.setattr(academic_paper_analysis_service, "_ensure_analysis_owner_can_read", allow_owner)
 
     result = await academic_paper_analysis_service._run_analysis(
         Context(),
@@ -169,6 +173,50 @@ async def test_resume_analysis_skips_persisted_multi_agent_stages(monkeypatch):
         "research_gaps": stage_results["gaps"],
     }
     assert updates[-1]["status"] == "success"
+
+
+@pytest.mark.asyncio
+async def test_new_analysis_queues_owner_checked_handler(monkeypatch):
+    queued = {}
+    paper = SimpleNamespace(id=42, paper_id="paper-1", title="Paper")
+
+    async def allow_access(*args, **kwargs):
+        return None
+
+    async def paper_context(*args, **kwargs):
+        return paper, "paper context"
+
+    class FakeRepository:
+        async def create(self, **kwargs):
+            return None
+
+    async def enqueue_unique_by_payload(**kwargs):
+        queued.update(kwargs)
+        return SimpleNamespace(id="task-1", status="pending"), True
+
+    monkeypatch.setattr(academic_paper_analysis_service, "_ensure_access", allow_access)
+    monkeypatch.setattr(academic_paper_analysis_service, "_paper_context", paper_context)
+    monkeypatch.setattr(academic_paper_analysis_service, "AcademicPaperAnalysisRepository", FakeRepository)
+    monkeypatch.setattr(
+        academic_paper_analysis_service.model_cache,
+        "get_model_info",
+        lambda model: SimpleNamespace(model_type="chat", api_key="configured", provider_type="test"),
+    )
+    monkeypatch.setattr(
+        academic_paper_analysis_service.tasker,
+        "enqueue_unique_by_payload",
+        enqueue_unique_by_payload,
+    )
+
+    result = await academic_paper_analysis_service.enqueue_paper_analysis(
+        kb_id="kb-1",
+        paper_id="paper-1",
+        current_user=SimpleNamespace(uid="user-1"),
+        model_spec="chat:model",
+    )
+
+    assert result["task_id"] == "task-1"
+    assert queued["coroutine"] is academic_paper_analysis_service._resume_paper_analysis_task
 
 
 @pytest.mark.asyncio
@@ -222,3 +270,46 @@ async def test_resume_analysis_handler_uses_original_run_stage_checkpoint(monkey
     assert academic_paper_analysis_service.tasker._resumable_handlers["academic_paper_analysis"] is (
         academic_paper_analysis_service._resume_paper_analysis_task
     )
+
+
+@pytest.mark.asyncio
+async def test_analysis_unknown_failure_is_persisted_and_raised_without_provider_secret(monkeypatch):
+    secret = "Authorization=secret-api-key provider-body=<private>"
+    updates = []
+
+    class FakeRepository:
+        async def update(self, run_id, values):
+            updates.append(values)
+
+    class Context:
+        cancellation_reason = None
+
+        async def raise_if_cancelled(self):
+            return None
+
+        async def set_progress(self, *args):
+            return None
+
+    async def allow_owner(*args, **kwargs):
+        return None
+
+    async def fail_context(*args, **kwargs):
+        raise RuntimeError(secret)
+
+    monkeypatch.setattr(academic_paper_analysis_service, "AcademicPaperAnalysisRepository", FakeRepository)
+    monkeypatch.setattr(academic_paper_analysis_service, "_ensure_analysis_owner_can_read", allow_owner)
+    monkeypatch.setattr(academic_paper_analysis_service, "_paper_context", fail_context)
+
+    with pytest.raises(academic_paper_analysis_service.AcademicPaperAnalysisError) as exc_info:
+        await academic_paper_analysis_service._run_analysis(
+            Context(),
+            run_id="run-1",
+            kb_id="kb-1",
+            paper_id="paper-1",
+            model_spec="chat:model",
+            strategy="multi_agent",
+        )
+
+    assert exc_info.value.error_type == "analysis_failed"
+    assert exc_info.value.message == "论文分析任务执行失败"
+    assert secret not in repr(updates)

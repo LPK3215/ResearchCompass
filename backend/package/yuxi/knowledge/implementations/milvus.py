@@ -1,7 +1,6 @@
 import asyncio
 import os
 import time
-import traceback
 import weakref
 from dataclasses import MISSING, dataclass, field, fields
 from functools import partial
@@ -332,10 +331,10 @@ class MilvusKB(KnowledgeBase):
             except Exception as exc:
                 raise RuntimeError(f"Milvus database initialization failed: {self.milvus_db}") from exc
 
-            logger.info(f"Connected to Milvus at {self.milvus_uri}")
+            logger.info("Connected to Milvus")
 
         except Exception as e:
-            logger.error(f"Failed to connect to Milvus: {e}")
+            logger.error(f"Failed to connect to Milvus (error_type={type(e).__name__})")
             raise
 
     async def _create_kb_instance(self, kb_id: str, kb_config: dict) -> Any:
@@ -365,10 +364,7 @@ class MilvusKB(KnowledgeBase):
                 expected_model = embedding_info.model_id
 
                 if expected_model not in description:
-                    logger.warning(
-                        f"Collection {collection_name} model mismatch: "
-                        f"expected='{expected_model}', found_in_description='{description}'"
-                    )
+                    logger.warning(f"Collection {collection_name} model mismatch, recreating")
                     utility.drop_collection(collection_name, using=self.connection_alias)
                     return self._create_new_collection(collection_name, embedding_info, kb_id)
 
@@ -384,11 +380,12 @@ class MilvusKB(KnowledgeBase):
                 return self._create_new_collection(collection_name, embedding_info, kb_id)
 
         except (connections.MilvusException, RuntimeError) as e:
-            logger.error(f"Error checking collection {collection_name}: {e}")
+            logger.error(f"Error checking collection {collection_name} (error_type={type(e).__name__})")
             raise
         except Exception as e:
-            logger.error(f"Unexpected error while managing collection {collection_name}: {e}")
-            logger.debug(f"Traceback: {traceback.format_exc()}")
+            logger.error(
+                f"Unexpected error while managing collection {collection_name} (error_type={type(e).__name__})"
+            )
             raise
 
     def _create_new_collection(self, collection_name: str, embedding_info: Any, kb_id: str) -> Collection:
@@ -469,7 +466,7 @@ class MilvusKB(KnowledgeBase):
             instance.load()
             logger.info("Milvus collection loaded into memory")
         except Exception as e:
-            logger.warning(f"Failed to load collection into memory: {e}")
+            logger.warning(f"Failed to load collection into memory (error_type={type(e).__name__})")
 
     def _get_embedding_function(self, embedding_model_spec: str, *, sync: bool = False):
         """获取 embedding 编码函数。sync=True 返回同步版本，否则返回异步版本。"""
@@ -497,8 +494,7 @@ class MilvusKB(KnowledgeBase):
             return collection
 
         except Exception as e:
-            logger.error(f"Failed to create Milvus collection for {kb_id}: {e}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
+            logger.error(f"Failed to create Milvus collection for {kb_id} (error_type={type(e).__name__})")
             return None
 
     def _split_text_into_chunks(self, text: str, file_id: str, filename: str, params: dict) -> list[dict]:
@@ -567,11 +563,13 @@ class MilvusKB(KnowledgeBase):
         try:
             await chunk_repo.delete_by_file_id(file_id)
         except Exception as cleanup_error:
-            logger.error(f"Failed to rollback PostgreSQL chunks for {file_id}: {cleanup_error}")
+            logger.error(
+                f"Failed to rollback PostgreSQL chunks for {file_id} (error_type={type(cleanup_error).__name__})"
+            )
         try:
             await self._delete_file_chunks_from_milvus(collection, file_id)
         except Exception as cleanup_error:
-            logger.error(f"Failed to rollback Milvus chunks for {file_id}: {cleanup_error}")
+            logger.error(f"Failed to rollback Milvus chunks for {file_id} (error_type={type(cleanup_error).__name__})")
         raise errors[0]
 
     async def _embed_and_store_chunks(
@@ -799,13 +797,15 @@ class MilvusKB(KnowledgeBase):
             await self.refresh_database_stats(kb_id)
             return result
 
-        except (Exception, asyncio.CancelledError) as e:
-            if isinstance(e, asyncio.CancelledError):
+        except (Exception, asyncio.CancelledError) as error:
+            if isinstance(error, asyncio.CancelledError):
                 current_task = asyncio.current_task()
                 if current_task is not None and current_task.cancelling():
                     current_task.uncancel()
-            error_msg = "File indexing was cancelled" if isinstance(e, asyncio.CancelledError) else str(e)
-            logger.error(f"Indexing failed for {file_id}: {error_msg}")
+            error_msg = (
+                "File indexing was cancelled" if isinstance(error, asyncio.CancelledError) else "File indexing failed"
+            )
+            logger.error(f"Indexing failed for {file_id} (error_type={type(error).__name__})")
             update_data = {"status": FileStatus.ERROR_INDEXING, "error_message": error_msg}
             if operator_id:
                 update_data["updated_by"] = operator_id
@@ -895,18 +895,19 @@ class MilvusKB(KnowledgeBase):
                 updated_file_meta["file_id"] = file_id
                 processed_items_info.append(updated_file_meta)
 
-            except Exception as e:
-                logger.error(f"更新file {file_path} 失败: {e}, {traceback.format_exc()}")
+            except Exception as error:
+                error_msg = "File indexing failed"
+                logger.error(f"更新文件失败 (error_type={type(error).__name__})")
                 await KnowledgeFileRepository().update_fields(
                     file_id=file_id,
                     kb_id=kb_id,
-                    data={"status": FileStatus.ERROR_INDEXING, "error_message": str(e)},
+                    data={"status": FileStatus.ERROR_INDEXING, "error_message": error_msg},
                 )
 
                 # 返回失败的文件信息
                 failed_file_meta = file_meta.copy()
                 failed_file_meta["status"] = FileStatus.ERROR_INDEXING
-                failed_file_meta["error"] = str(e)
+                failed_file_meta["error"] = error_msg
                 failed_file_meta["file_id"] = file_id
                 processed_items_info.append(failed_file_meta)
 
@@ -1182,13 +1183,13 @@ class MilvusKB(KnowledgeBase):
             except Exception as exc:  # noqa: BLE001
                 if strict_research:
                     raise RuntimeError("科研检索重排序失败") from exc
-                logger.error(f"Reranking failed: {exc}, falling back to vector scores")
+                logger.error(f"Reranking failed (error_type={type(exc).__name__}), falling back to vector scores")
 
             # 统一返回结果
             return retrieved_chunks[:final_top_k]
 
         except Exception as e:
-            logger.error(f"Milvus query error: {e}, {traceback.format_exc()}")
+            logger.error(f"Milvus query error (error_type={type(e).__name__})")
             if strict_research:
                 raise RuntimeError("科研检索底层召回失败") from e
             return []
@@ -1258,7 +1259,7 @@ class MilvusKB(KnowledgeBase):
                 for chunk in chunks
             ]
         except Exception as exc:  # noqa: BLE001
-            logger.error(f"Graph retrieval failed for {kb_id}: {exc}")
+            logger.error(f"Graph retrieval failed for {kb_id} (error_type={type(exc).__name__})")
             if strict:
                 raise RuntimeError("科研检索图谱扩展失败") from exc
             return []
@@ -1398,7 +1399,7 @@ class MilvusKB(KnowledgeBase):
             try:
                 await MilvusGraphService().delete_file_graph(kb_id, file_id)
             except Exception as e:
-                logger.error(f"Failed to delete graph data for file {file_id}: {e}")
+                logger.error(f"Failed to delete graph data for file {file_id} (error_type={type(e).__name__})")
         await chunk_repo.delete_by_file_id(file_id)
         collection = await self._get_milvus_collection(kb_id)
 
@@ -1407,7 +1408,7 @@ class MilvusKB(KnowledgeBase):
             try:
                 await self._delete_file_chunks_from_milvus(collection, file_id)
             except Exception as e:
-                logger.error(f"Error checking file existence in Milvus: {e}")
+                logger.error(f"Error checking file existence in Milvus (error_type={type(e).__name__})")
         await KnowledgeFileRepository().update_fields(
             file_id=file_id,
             kb_id=kb_id,
@@ -1449,7 +1450,7 @@ class MilvusKB(KnowledgeBase):
                 for chunk in chunks
             ]
         except Exception as e:
-            logger.error(f"Failed to get file content from PostgreSQL: {e}")
+            logger.error(f"Failed to get file content from PostgreSQL (error_type={type(e).__name__})")
 
         if not content_info["lines"]:
             logger.warning(f"No chunks found in PostgreSQL for file {file_id}, file may not have been indexed")
@@ -1460,7 +1461,7 @@ class MilvusKB(KnowledgeBase):
                 content = await self._read_markdown_from_minio(file_meta["markdown_file"])
                 content_info["content"] = content
             except Exception as e:
-                logger.error(f"Failed to read markdown file for {file_id}: {e}")
+                logger.error(f"Failed to read markdown file for {file_id} (error_type={type(e).__name__})")
 
         return content_info
 

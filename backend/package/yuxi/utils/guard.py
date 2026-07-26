@@ -105,8 +105,9 @@ class ContentGuard:
 
         prompt = PROMPT_TEMPLATE.format(content=text_lower)
         response = await self.llm_model.call(prompt)
-        logger.debug(f"LLM response: {response.content}")
-        return True if "不合规" in response.content else False
+        rejected = "不合规" in response.content
+        logger.debug("LLM content guard completed: rejected={}", rejected)
+        return rejected
 
 
 # Global instance

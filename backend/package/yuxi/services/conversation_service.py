@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from yuxi.agents.backends.sandbox import (
     ensure_thread_dirs,
     sandbox_uploads_dir,
+    sandbox_user_data_dir,
 )
 from yuxi.agents.buildin import agent_manager
 from yuxi.config import config as app_config
@@ -99,8 +101,13 @@ async def _convert_upload_to_markdown(upload: UploadFile) -> ConversionResult:
             truncated=truncated,
         )
     except Exception as exc:  # noqa: BLE001
-        logger.error(f"Attachment conversion failed: {exc}")
+        logger.error(f"Attachment conversion failed (error_type={type(exc).__name__})")
         raise
+    finally:
+        try:
+            await asyncio.to_thread(temp_path.unlink, missing_ok=True)
+        except OSError as exc:
+            logger.warning(f"Attachment temporary file cleanup failed (error_type={type(exc).__name__})")
 
 
 async def require_user_conversation(conv_repo: ConversationRepository, thread_id: str, uid: str):
@@ -258,7 +265,7 @@ async def _sync_thread_upload_state(
     try:
         agent = agent_manager.get_agent(backend_id or agent_id)
         if not agent:
-            logger.warning(f"Skip upload state sync: agent not found ({agent_id})")
+            logger.warning("Skip upload state sync: agent not found")
             return
 
         graph = await agent.get_graph()
@@ -271,7 +278,7 @@ async def _sync_thread_upload_state(
             },
         )
     except Exception as exc:  # noqa: BLE001
-        logger.warning(f"Failed to sync upload state for thread {thread_id}: {exc}")
+        logger.warning(f"Failed to sync upload state (error_type={type(exc).__name__})")
 
 
 def serialize_attachment(record: dict) -> dict:
@@ -306,7 +313,7 @@ async def _materialize_attachment_files(
     upload_virtual_path = _make_upload_virtual_path(file_name)
     uploads_dir = sandbox_uploads_dir(thread_id)
     upload_actual_path = uploads_dir / Path(upload_virtual_path).name
-    upload_actual_path.write_bytes(file_content)
+    await asyncio.to_thread(upload_actual_path.write_bytes, file_content)
 
     record = {
         "status": "uploaded",
@@ -325,7 +332,7 @@ async def _materialize_attachment_files(
     except ValueError:
         return record
     except Exception as exc:  # noqa: BLE001
-        logger.warning(f"Attachment markdown materialization failed for {file_name}: {exc}")
+        logger.warning(f"Attachment markdown materialization failed (error_type={type(exc).__name__})")
         return record
 
     markdown_virtual_path, markdown_host_path = _build_attachment_storage_path(
@@ -333,7 +340,7 @@ async def _materialize_attachment_files(
         thread_id=thread_id,
         file_name=file_name,
     )
-    markdown_host_path.write_text(conversion.markdown, encoding="utf-8")
+    await asyncio.to_thread(markdown_host_path.write_text, conversion.markdown, encoding="utf-8")
 
     record.update(
         {
@@ -599,7 +606,7 @@ async def upload_tmp_attachment_view(*, file: UploadFile, current_uid: str) -> d
             content_type=file.content_type,
         )
     except StorageError as exc:
-        raise HTTPException(status_code=500, detail=f"临时附件上传失败: {exc}") from exc
+        raise HTTPException(status_code=500, detail="临时附件上传失败") from exc
 
     suffix = Path(file_name).suffix.lower()
     if suffix == ".pdf":
@@ -652,10 +659,10 @@ async def parse_tmp_attachment_view(
             content_type="text/markdown; charset=utf-8",
         )
     except StorageError as exc:
-        raise HTTPException(status_code=400, detail=f"读取临时附件失败: {exc}") from exc
+        raise HTTPException(status_code=400, detail="读取临时附件失败") from exc
     except Exception as exc:  # noqa: BLE001
-        logger.warning(f"Tmp attachment parse failed for {safe_name}: {exc}")
-        raise HTTPException(status_code=400, detail=f"附件解析失败: {exc}") from exc
+        logger.warning(f"Tmp attachment parse failed (error_type={type(exc).__name__})")
+        raise HTTPException(status_code=400, detail="附件解析失败") from exc
 
     return {
         "tmp_file_id": tmp_file_id,
@@ -697,7 +704,7 @@ async def confirm_tmp_thread_attachments_view(
         try:
             file_content = await minio_client.adownload_file(bucket_name, object_name)
         except StorageError as exc:
-            raise HTTPException(status_code=400, detail=f"读取临时附件失败: {exc}") from exc
+            raise HTTPException(status_code=400, detail="读取临时附件失败") from exc
 
         if len(file_content) > MAX_ATTACHMENT_SIZE_BYTES:
             max_size_mb = MAX_ATTACHMENT_SIZE_BYTES // (1024 * 1024)
@@ -714,7 +721,7 @@ async def confirm_tmp_thread_attachments_view(
                 parsed_bytes = await minio_client.adownload_file(bucket_name, parsed_object_name)
                 parsed_markdown = parsed_bytes.decode("utf-8")
             except StorageError as exc:
-                raise HTTPException(status_code=400, detail=f"读取解析附件失败: {exc}") from exc
+                raise HTTPException(status_code=400, detail="读取解析附件失败") from exc
             except UnicodeDecodeError as exc:
                 raise HTTPException(status_code=400, detail="解析附件内容不是有效的 Markdown 文本") from exc
 
@@ -731,7 +738,8 @@ async def confirm_tmp_thread_attachments_view(
     added_records: list[dict] = []
     for prepared in prepared_items:
         file_id = uuid.uuid4().hex
-        materialized = _materialize_tmp_attachment_files(
+        materialized = await asyncio.to_thread(
+            _materialize_tmp_attachment_files,
             thread_id=thread_id,
             uid=str(conversation.uid),
             file_id=file_id,
@@ -788,21 +796,26 @@ async def upload_thread_attachment_view(
 
     file_name = Path(file.filename).name
     await file.seek(0)
-    file_content = await file.read()
+    try:
+        file_content = await read_upload_with_limit(
+            file,
+            max_size_bytes=MAX_ATTACHMENT_SIZE_BYTES,
+            too_large_message="附件过大，当前仅支持 5 MB 以内的文件",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     file_size = len(file_content)
-    if file_size > MAX_ATTACHMENT_SIZE_BYTES:
-        max_size_mb = MAX_ATTACHMENT_SIZE_BYTES // (1024 * 1024)
-        raise HTTPException(status_code=400, detail=f"附件过大，当前仅支持 {max_size_mb} MB 以内的文件")
+    file_id = uuid.uuid4().hex
     materialized = await _materialize_attachment_files(
         thread_id=thread_id,
         uid=str(conversation.uid),
         upload=file,
-        file_name=file_name,
+        file_name=f"{file_id}_{file_name}",
         file_content=file_content,
     )
 
     attachment_record = {
-        "file_id": uuid.uuid4().hex,
+        "file_id": file_id,
         "file_name": file_name,
         "file_type": file.content_type,
         "file_size": file_size,
@@ -871,6 +884,7 @@ async def delete_thread_attachment_view(
         raise HTTPException(status_code=404, detail="附件不存在或已被删除")
 
     if target_attachment:
+        attachment_root = sandbox_user_data_dir(thread_id).resolve()
         delete_candidates = {
             str(value).strip()
             for value in (
@@ -882,11 +896,14 @@ async def delete_thread_attachment_view(
         }
         for candidate in delete_candidates:
             try:
-                file_path = Path(candidate)
-                if file_path.exists():
-                    file_path.unlink()
+                file_path = Path(candidate).resolve(strict=False)
+                if not file_path.is_relative_to(attachment_root):
+                    logger.warning("Skipped attachment cleanup outside thread user-data")
+                    continue
+                if file_path.is_file():
+                    await asyncio.to_thread(file_path.unlink)
             except Exception as exc:  # noqa: BLE001
-                logger.warning(f"Failed to remove attachment file {candidate}: {exc}")
+                logger.warning(f"Failed to remove attachment file (error_type={type(exc).__name__})")
 
     all_attachments = await conv_repo.get_attachments(conversation.id)
     await _sync_thread_upload_state(

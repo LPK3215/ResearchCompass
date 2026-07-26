@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -119,3 +120,99 @@ async def test_materialize_attachment_files_writes_markdown_copy_when_conversion
     assert (
         tmp_path / "threads" / "t-1" / "user-data" / "uploads" / "attachments" / "demo.md"
     ).read_text(encoding="utf-8") == "hello\nworld"
+
+
+@pytest.mark.asyncio
+async def test_upload_thread_attachment_uses_unique_storage_names_for_duplicate_filenames(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(cs.app_config, "save_dir", str(tmp_path))
+    attachments: list[dict] = []
+    conversation = SimpleNamespace(id=1, uid="u-1", agent_id="agent", extra_metadata={}, status="active")
+
+    class FakeConversationRepository:
+        def __init__(self, db):
+            del db
+
+        async def get_conversation_by_thread_id(self, thread_id):
+            return conversation
+
+        async def add_attachment(self, conversation_id, attachment):
+            attachments.append(attachment)
+
+        async def get_attachments(self, conversation_id):
+            return list(attachments)
+
+    async def unsupported_conversion(upload):
+        raise ValueError("unsupported")
+
+    async def no_op(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(cs, "ConversationRepository", FakeConversationRepository)
+    monkeypatch.setattr(cs, "_convert_upload_to_markdown", unsupported_conversion)
+    monkeypatch.setattr(cs, "_sync_thread_upload_state", no_op)
+    monkeypatch.setattr(cs, "invalidate_mention_cache", no_op)
+
+    first = await cs.upload_thread_attachment_view(
+        thread_id="t-1",
+        file=_DummyUpload(filename="demo.txt", content_type="text/plain", data=b"first"),
+        db=object(),
+        current_uid="u-1",
+    )
+    second = await cs.upload_thread_attachment_view(
+        thread_id="t-1",
+        file=_DummyUpload(filename="demo.txt", content_type="text/plain", data=b"second"),
+        db=object(),
+        current_uid="u-1",
+    )
+
+    assert first["path"] != second["path"]
+    assert Path(attachments[0]["storage_path"]).read_bytes() == b"first"
+    assert Path(attachments[1]["storage_path"]).read_bytes() == b"second"
+
+
+@pytest.mark.asyncio
+async def test_delete_thread_attachment_refuses_host_path_outside_thread_root(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(cs.app_config, "save_dir", str(tmp_path / "saves"))
+    outside_file = tmp_path / "outside.txt"
+    outside_file.write_text("keep", encoding="utf-8")
+    warnings: list[str] = []
+    conversation = SimpleNamespace(id=1, uid="u-1", agent_id="agent", extra_metadata={}, status="active")
+
+    class FakeConversationRepository:
+        def __init__(self, db):
+            del db
+            self.removed = False
+
+        async def get_conversation_by_thread_id(self, thread_id):
+            return conversation
+
+        async def get_attachments(self, conversation_id):
+            if self.removed:
+                return []
+            return [{"file_id": "f-1", "storage_path": str(outside_file)}]
+
+        async def remove_attachment(self, conversation_id, file_id):
+            self.removed = True
+            return True
+
+    async def no_op(*args, **kwargs):
+        return None
+
+    repository = FakeConversationRepository(None)
+    monkeypatch.setattr(cs, "ConversationRepository", lambda db: repository)
+    monkeypatch.setattr(cs, "_sync_thread_upload_state", no_op)
+    monkeypatch.setattr(cs, "invalidate_mention_cache", no_op)
+    monkeypatch.setattr(cs.logger, "warning", warnings.append)
+
+    await cs.delete_thread_attachment_view(
+        thread_id="t-1",
+        file_id="f-1",
+        db=object(),
+        current_uid="u-1",
+    )
+
+    assert outside_file.read_text(encoding="utf-8") == "keep"
+    assert any("outside thread user-data" in message for message in warnings)

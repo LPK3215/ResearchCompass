@@ -54,7 +54,7 @@ def get_langfuse_client() -> Langfuse | None:
     try:
         return Langfuse(**kwargs)
     except Exception as exc:
-        logger.warning(f"初始化 Langfuse 客户端失败，将跳过 tracing: {exc}")
+        logger.warning(f"初始化 Langfuse 客户端失败，将跳过 tracing (error_type={type(exc).__name__})")
         return None
 
 
@@ -221,7 +221,7 @@ def submit_user_feedback_score(
         client.flush()
         return True
     except Exception as exc:
-        logger.warning(f"提交 Langfuse 用户反馈评分失败，将保留本地反馈: {exc}")
+        logger.warning(f"提交 Langfuse 用户反馈评分失败，将保留本地反馈 (error_type={type(exc).__name__})")
         return False
 
 
@@ -263,4 +263,27 @@ def flush_langfuse() -> None:
     try:
         client.flush()
     except Exception as exc:
-        logger.warning(f"刷新 Langfuse 事件失败: {exc}")
+        logger.warning(f"刷新 Langfuse 事件失败 (error_type={type(exc).__name__})")
+
+
+def close_langfuse_client() -> None:
+    """Flush and close the cached Langfuse client without creating one during shutdown."""
+    if get_langfuse_client.cache_info().currsize == 0:
+        return
+
+    client = get_langfuse_client()
+    try:
+        if client is None:
+            return
+        try:
+            client.flush()
+        except Exception as exc:
+            logger.warning(f"刷新 Langfuse 事件失败 (error_type={type(exc).__name__})")
+
+        close_method = getattr(client, "shutdown", None) or getattr(client, "close", None)
+        if callable(close_method):
+            close_method()
+    except Exception as exc:
+        logger.warning(f"关闭 Langfuse 客户端失败 (error_type={type(exc).__name__})")
+    finally:
+        get_langfuse_client.cache_clear()

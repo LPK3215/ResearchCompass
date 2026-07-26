@@ -37,6 +37,7 @@ from yuxi.services.input_message_service import (
     build_resume_input_message,
 )
 from yuxi.services.run_queue_service import (
+    RunQueueUnavailableError,
     build_run_event_envelope,
     get_arq_pool,
     get_last_run_stream_seq,
@@ -357,7 +358,7 @@ async def get_agent_run_progress(run_id: str, *, message_limit: int = RUN_PROGRE
     try:
         events = await list_recent_run_stream_events(run_id, limit=RUN_PROGRESS_RECENT_EVENT_SCAN_LIMIT)
     except Exception as e:
-        logger.warning(f"Failed to read run progress events for run {run_id}: {e}")
+        logger.warning(f"Failed to read run progress events (error_type={type(e).__name__})")
         return {"last_seq": "0-0", "messages": []}
 
     last_seq = str(events[0]["seq"]) if events else "0-0"
@@ -864,13 +865,22 @@ async def request_cancel_agent_run(
     run = await repo.request_cancel(run_id)
     cancelled_ids.append(run_id)
     await db.commit()
-    await asyncio.gather(*(publish_cancel_signal(cid) for cid in cancelled_ids))
+    signal_results = await asyncio.gather(
+        *(publish_cancel_signal(cid) for cid in cancelled_ids),
+        return_exceptions=True,
+    )
+    signal_errors = [result for result in signal_results if isinstance(result, Exception)]
+    if signal_errors:
+        raise RunQueueUnavailableError("运行取消信号发布失败") from signal_errors[0]
     return run
 
 
 async def cancel_agent_run_view(*, run_id: str, current_uid: str, db: AsyncSession) -> dict:
     """HTTP 取消入口：取消父 run 时默认级联取消活跃子 run。"""
-    run = await request_cancel_agent_run(run_id=run_id, current_uid=current_uid, db=db, cascade_children=True)
+    try:
+        run = await request_cancel_agent_run(run_id=run_id, current_uid=current_uid, db=db, cascade_children=True)
+    except RunQueueUnavailableError as error:
+        raise HTTPException(status_code=503, detail="取消请求已记录，但工作进程通知失败，请重试") from error
     return {"run": run.to_dict() if run else None}
 
 
@@ -899,7 +909,7 @@ async def stream_agent_run_events(
             except asyncio.CancelledError:
                 raise
             except Exception as e:
-                logger.warning(f"Run SSE DB error for run {run_id}: {e}")
+                logger.warning(f"Run SSE DB error (error_type={type(e).__name__})")
                 yield format_sse(
                     {
                         "run_id": run_id,
@@ -913,7 +923,7 @@ async def stream_agent_run_events(
             try:
                 events = await list_run_stream_events(run_id, after_seq=last_seq, limit=200)
             except Exception as e:
-                logger.warning(f"Run SSE redis error for run {run_id}: {e}")
+                logger.warning(f"Run SSE redis error (error_type={type(e).__name__})")
                 yield format_sse(
                     {
                         "run_id": run_id,

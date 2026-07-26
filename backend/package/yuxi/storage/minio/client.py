@@ -204,17 +204,22 @@ class MinIOClient:
 
     def download_file(self, bucket_name: str, object_name: str) -> bytes:
         """下载文件"""
+        response = None
         try:
             response = self.client.get_object(bucket_name=bucket_name, object_name=object_name)
             data = response.read()
-            response.close()
             logger.info(f"成功下载 '{object_name}' 从存储桶 '{bucket_name}'")
             return data
 
         except S3Error as e:
             if e.code == "NoSuchKey":
                 raise StorageError(f"对象 '{object_name}' 在存储桶 '{bucket_name}' 中不存在")
-            raise StorageError(f"下载文件失败: {e}")
+            raise StorageError("下载文件失败") from e
+        except Exception as exc:
+            raise StorageError("下载文件失败") from exc
+        finally:
+            if response is not None:
+                self._close_download_response(response)
 
     async def adownload_response(self, bucket_name: str, object_name: str) -> BaseHTTPResponse:
         """异步下载文件"""
@@ -233,17 +238,29 @@ class MinIOClient:
 
     async def adownload_file(self, bucket_name: str, object_name: str) -> bytes:
         """异步下载文件"""
+        response = None
         try:
             response = await asyncio.to_thread(self.client.get_object, bucket_name=bucket_name, object_name=object_name)
             data = await asyncio.to_thread(response.read)
-            response.close()
             logger.info(f"成功下载 '{object_name}' 从存储桶 '{bucket_name}'")
             return data
 
         except S3Error as e:
             if e.code == "NoSuchKey":
                 raise StorageError(f"对象 '{object_name}' 在存储桶 '{bucket_name}' 中不存在")
-            raise StorageError(f"下载文件失败: {e}")
+            raise StorageError("下载文件失败") from e
+        except Exception as exc:
+            raise StorageError("下载文件失败") from exc
+        finally:
+            if response is not None:
+                await asyncio.to_thread(self._close_download_response, response)
+
+    @staticmethod
+    def _close_download_response(response: BaseHTTPResponse) -> None:
+        try:
+            response.close()
+        finally:
+            response.release_conn()
 
     def get_presigned_url(self, bucket_name: str, object_name: str, days=7) -> str:
         """将minio放在内网访问，外部通过返回代理链接访问"""

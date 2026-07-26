@@ -20,11 +20,11 @@ from yuxi.repositories.knowledge_chunk_repository import KnowledgeChunkRepositor
 from yuxi.repositories.user_repository import UserRepository
 from yuxi.services.research_paper_service import _ensure_access, _serialize_paper
 from yuxi.services.academic_paper_analysis_workflow import build_analysis_workflow
-from yuxi.services.task_service import TaskContext, tasker
+from yuxi.services.task_service import PublicTaskError, TaskContext, tasker
 from yuxi.storage.postgres.models_business import User
 
 
-class AcademicPaperAnalysisError(RuntimeError):
+class AcademicPaperAnalysisError(PublicTaskError):
     def __init__(self, error_type: str, message: str):
         super().__init__(message)
         self.error_type = error_type
@@ -344,9 +344,11 @@ async def _run_analysis(
     )
     stage_results: dict[str, Any] = dict(persisted_stage_results or {})
     try:
+        await _ensure_analysis_owner_can_read(repo, run_id, kb_id)
         paper, paper_context = await _paper_context(kb_id, paper_id)
         if strategy == "single_agent":
             await context.raise_if_cancelled()
+            await _ensure_analysis_owner_can_read(repo, run_id, kb_id)
             await context.set_progress(0, "正在执行单 Agent 全文分析")
             single_result = stage_results.get("single_agent")
             if not isinstance(single_result, dict):
@@ -361,6 +363,7 @@ async def _run_analysis(
             paper_context = f"{paper_context}\n\n{graph_context}"
 
             async def run_stage(stage: str, stage_input: str) -> dict[str, Any]:
+                await _ensure_analysis_owner_can_read(repo, run_id, kb_id)
                 if stage in stage_results:
                     await context.set_progress(
                         {"structure": 0, "innovations": 25, "methodology": 50, "gaps": 75}[stage],
@@ -391,6 +394,7 @@ async def _run_analysis(
                 "research_gaps": stage_results["gaps"],
             }
         await context.raise_if_cancelled()
+        await _ensure_analysis_owner_can_read(repo, run_id, kb_id)
         await repo.update(
             run_id,
             {
@@ -432,19 +436,41 @@ async def _run_analysis(
             )
         raise
     except Exception as exc:
-        error_type = getattr(exc, "error_type", "analysis_failed")
-        error_message = getattr(exc, "message", str(exc))
+        failure = (
+            exc
+            if isinstance(exc, AcademicPaperAnalysisError)
+            else AcademicPaperAnalysisError("analysis_failed", "论文分析任务执行失败")
+        )
         await repo.update(
             run_id,
             {
                 "status": "failed",
                 "stage_results": stage_results,
-                "error_type": error_type,
-                "error_message": error_message,
+                "error_type": failure.error_type,
+                "error_message": failure.message,
                 "completed_at": _now(),
             },
         )
-        raise
+        if failure is exc:
+            raise
+        raise failure from exc
+
+
+async def _ensure_analysis_owner_can_read(
+    repo: AcademicPaperAnalysisRepository,
+    run_id: str,
+    kb_id: str,
+) -> None:
+    record = await repo.get(run_id)
+    if record is None:
+        raise AcademicPaperAnalysisError("analysis_run_not_found", "论文分析运行不存在")
+    user = await UserRepository().get_by_uid(str(record.uid))
+    if user is None or bool(user.is_deleted):
+        raise AcademicPaperAnalysisError("forbidden", "论文分析任务所有者不存在或已删除")
+    try:
+        await _ensure_access(user, kb_id)
+    except HTTPException as exc:
+        raise AcademicPaperAnalysisError("forbidden", "论文分析任务所有者已失去知识库访问权限") from exc
 
 
 async def enqueue_paper_analysis(
@@ -467,16 +493,6 @@ async def enqueue_paper_analysis(
         strategy="multi_agent",
     )
 
-    async def run(context: TaskContext):
-        return await _run_analysis(
-            context,
-            run_id=run_id,
-            kb_id=kb_id,
-            paper_id=paper_id,
-            model_spec=resolved_model,
-            strategy="multi_agent",
-        )
-
     try:
         task, created = await tasker.enqueue_unique_by_payload(
             name=f"论文分析 ({paper.title})",
@@ -490,7 +506,7 @@ async def enqueue_paper_analysis(
             },
             payload_match={"kb_id": kb_id, "paper_id": paper_id},
             statuses={"pending", "running"},
-            coroutine=run,
+            coroutine=_resume_paper_analysis_task,
         )
         if not created:
             await repo.update(
@@ -511,7 +527,7 @@ async def enqueue_paper_analysis(
             {
                 "status": "failed",
                 "error_type": "task_enqueue_failed",
-                "error_message": str(exc),
+                "error_message": "论文分析任务提交失败",
                 "completed_at": _now(),
             },
         )
@@ -635,23 +651,6 @@ async def recover_paper_analysis_runs() -> int:
             )
             continue
 
-        async def run(
-            context: TaskContext,
-            item=record,
-            paper_id=str(paper.paper_id),
-            model=model_spec,
-            item_strategy=strategy,
-        ):
-            return await _run_analysis(
-                context,
-                run_id=str(item.run_id),
-                kb_id=str(item.kb_id),
-                paper_id=paper_id,
-                model_spec=model,
-                strategy=item_strategy,
-                persisted_stage_results=getattr(item, "stage_results", None),
-            )
-
         try:
             _, created = await tasker.enqueue_unique_by_payload(
                 name=f"恢复论文分析 ({paper.title})",
@@ -665,15 +664,15 @@ async def recover_paper_analysis_runs() -> int:
                 },
                 payload_match={"run_id": record.run_id},
                 statuses={"pending", "running"},
-                coroutine=run,
+                coroutine=_resume_paper_analysis_task,
             )
-        except Exception as exc:
+        except Exception:
             await repo.update(
                 record.run_id,
                 {
                     "status": "failed",
                     "error_type": "analysis_recovery_failed",
-                    "error_message": str(exc),
+                    "error_message": "论文分析恢复任务提交失败",
                     "completed_at": _now(),
                 },
             )

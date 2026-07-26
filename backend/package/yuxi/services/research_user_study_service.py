@@ -312,7 +312,8 @@ class ResearchUserStudyService:
             raise ResearchUserStudyError("invalid_response", "推荐意愿必须为 0–10 的整数")
         if len(feedback) > 4000:
             raise ResearchUserStudyError("invalid_response", "文字反馈不能超过 4000 字")
-        response = await self.repo.create_response_and_use_invite(
+        response, rejection = await self.repo.create_response_and_use_invite(
+            study_id=study.study_id,
             invite_id=invite.invite_id,
             response_data={
                 "response_id": f"response_{uuid.uuid4().hex[:12]}",
@@ -328,8 +329,18 @@ class ResearchUserStudyService:
                 "submitted_at": _now(),
             },
         )
+        if rejection:
+            error_messages = {
+                "study_not_found": "用户评测不存在",
+                "study_closed": "该用户评测已关闭",
+                "invite_used": "该评测链接已提交",
+            }
+            message = error_messages.get(rejection)
+            if message is None:
+                raise RuntimeError(f"未知的用户评测提交拒绝原因: {rejection}")
+            raise ResearchUserStudyError(rejection, message)
         if response is None:
-            raise ResearchUserStudyError("invite_used", "该评测链接已提交")
+            raise RuntimeError("用户评测响应事务未返回结果")
         return {"response_id": response.response_id, "submitted_at": response.submitted_at.isoformat()}
 
     async def export_study_csv(self, *, kb_id: str, study_id: str, current_user: User) -> tuple[str, str]:

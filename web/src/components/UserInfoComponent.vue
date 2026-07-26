@@ -132,7 +132,7 @@ const goToLogin = () => {
 }
 
 const openDocs = () => {
-  window.open('https://xerrors.github.io/Yuxi/', '_blank', 'noopener,noreferrer')
+  window.open('https://lpk3215.github.io/ResearchCompass/', '_blank', 'noopener,noreferrer')
 }
 
 const toggleTheme = () => {

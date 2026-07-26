@@ -8,7 +8,12 @@ from typing import Any
 
 import json_repair
 
+from yuxi.services.task_service import PublicTaskError
 from yuxi.utils import logger
+
+
+class EvaluationJudgeError(PublicTaskError):
+    error_type = "judge_model_failed"
 
 
 class RetrievalMetrics:
@@ -89,9 +94,9 @@ class AnswerMetrics:
 
             result = json_repair.loads(content)
             return {"score": float(result.get("score", 0.0)), "reasoning": result.get("reasoning", "")}
-        except Exception as e:
-            logger.error(f"LLM 评判失败: {e}")
-            return {"score": 0.0, "reasoning": f"评判出错: {str(e)}"}
+        except Exception as exc:
+            logger.error("LLM 评判失败: exception_type={}", type(exc).__name__)
+            raise EvaluationJudgeError("评估裁判模型调用失败") from exc
 
 
 class EvaluationMetricsCalculator:

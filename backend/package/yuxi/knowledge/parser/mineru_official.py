@@ -4,18 +4,23 @@ MinerU Official 解析器
 使用 MinerU 官方云服务 API 进行文档解析
 """
 
+import ipaddress
 import os
+import socket
 import tempfile
 import time
-import zipfile
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import requests
 
 from yuxi.knowledge.parser.base import BaseDocumentProcessor, DocumentParserException
 from yuxi.knowledge.parser.zip_utils import process_zip_file_sync
 from yuxi.utils import hashstr, logger
+
+MAX_MINERU_OFFICIAL_DOWNLOAD_BYTES = 512 * 1024 * 1024
+MINERU_OFFICIAL_DOWNLOAD_CHUNK_SIZE = 1024 * 1024
 
 
 class MinerUOfficialParser(BaseDocumentProcessor):
@@ -31,6 +36,8 @@ class MinerUOfficialParser(BaseDocumentProcessor):
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}",
         }
+        self._session = requests.Session()
+        self._session.trust_env = False
 
     def get_service_name(self) -> str:
         return "mineru_official"
@@ -42,45 +49,31 @@ class MinerUOfficialParser(BaseDocumentProcessor):
     def check_health(self) -> dict[str, Any]:
         """检查 API 可用性和密钥有效性"""
         try:
-            # 使用一个简单的测试请求来验证 API 密钥
-            # 由于没有专门的 ping 接口，我们尝试创建一个测试任务的请求
-            test_data = {"url": "https://cdn-mineru.openxlab.org.cn/demo/example.pdf", "is_ocr": True}
-
-            response = requests.post(f"{self.api_base}/extract/task", headers=self.headers, json=test_data, timeout=10)
+            # 查询一个不存在的批次只验证连通性和鉴权，不创建计费解析任务。
+            with self._session.get(
+                f"{self.api_base}/extract-results/batch/health-check",
+                headers=self.headers,
+                timeout=10,
+                allow_redirects=False,
+            ) as response:
+                status_code = response.status_code
 
             # 如果返回 401 或特定的 API 错误码，说明密钥有问题
-            if response.status_code == 401:
+            if status_code == 401:
                 return {"status": "unhealthy", "message": "API 密钥无效或已过期", "details": {"error_code": "A0202"}}
-            elif response.status_code == 403:
+            if status_code == 403:
                 return {"status": "unhealthy", "message": "API 密钥权限不足", "details": {"error_code": "A0211"}}
-            elif response.status_code == 200:
-                # 解析响应检查是否成功创建任务
-                try:
-                    result = response.json()
-                    if result.get("code") == 0:
-                        return {
-                            "status": "healthy",
-                            "message": "MinerU 官方 API 服务可用",
-                            "details": {"api_base": self.api_base},
-                        }
-                    else:
-                        return {
-                            "status": "unhealthy",
-                            "message": f"API 返回错误: {result.get('msg', '未知错误')}",
-                            "details": {"error_code": result.get("code")},
-                        }
-                except Exception:
-                    return {
-                        "status": "healthy",
-                        "message": "MinerU 官方 API 服务可用",
-                        "details": {"api_base": self.api_base},
-                    }
-            else:
+            if status_code >= 500:
                 return {
                     "status": "unhealthy",
-                    "message": f"API 服务异常: HTTP {response.status_code}",
-                    "details": {"status_code": response.status_code},
+                    "message": f"API 服务异常: HTTP {status_code}",
+                    "details": {"status_code": status_code},
                 }
+            return {
+                "status": "healthy",
+                "message": "MinerU 官方 API 服务可用",
+                "details": {"status_code": status_code},
+            }
 
         except requests.exceptions.Timeout:
             return {"status": "timeout", "message": "API 请求超时", "details": {"timeout": "10s"}}
@@ -88,10 +81,14 @@ class MinerUOfficialParser(BaseDocumentProcessor):
             return {
                 "status": "unavailable",
                 "message": "无法连接到 MinerU 官方 API 服务",
-                "details": {"api_base": self.api_base},
+                "details": {},
             }
         except Exception as e:
-            return {"status": "error", "message": f"健康检查失败: {str(e)}", "details": {"error": str(e)}}
+            return {
+                "status": "error",
+                "message": "健康检查失败",
+                "details": {"error_type": type(e).__name__},
+            }
 
     def process_file(self, file_path: str, params: dict[str, Any] | None = None) -> str:
         """
@@ -119,13 +116,6 @@ class MinerUOfficialParser(BaseDocumentProcessor):
                 f"不支持的文件类型: {file_ext}", self.get_service_name(), "unsupported_file_type"
             )
 
-        # 先检查 API 健康状态
-        health = self.check_health()
-        if health["status"] != "healthy":
-            raise DocumentParserException(
-                f"MinerU 官方 API 不可用: {health['message']}", self.get_service_name(), health["status"]
-            )
-
         # 处理参数
         params = params or {}
 
@@ -137,7 +127,7 @@ class MinerUOfficialParser(BaseDocumentProcessor):
 
             # 步骤 1: 申请文件上传链接
             batch_id = self._upload_file(file_path, params)
-            logger.info(f"文件上传成功，batch_id: {batch_id}")
+            logger.info("文件上传成功")
 
             # 步骤 2: 轮询任务结果
             result = self._poll_batch_result(batch_id)
@@ -145,15 +135,7 @@ class MinerUOfficialParser(BaseDocumentProcessor):
 
             zip_url = result.get("full_zip_url")
 
-            try:
-                zip_path = self._download_zip(zip_url)
-            except Exception:
-                text = self._download_and_extract(zip_url)
-                processing_time = time.time() - start_time
-                logger.info(
-                    f"MinerU Official: {os.path.basename(file_path)} - {len(text)} 字符 ({processing_time:.2f}s)"
-                )
-                return text
+            zip_path = self._download_zip(zip_url)
 
             try:
                 image_bucket = params.get("image_bucket") or "public"
@@ -165,22 +147,21 @@ class MinerUOfficialParser(BaseDocumentProcessor):
                     image_prefix=image_prefix,
                 )
                 text = processed["markdown_content"]
-            except Exception:
-                import zipfile
-
-                text = ""
-                logger.error(f"从 zip 文件中提取 full.md 失败: {zip_path}，使用第一个 md 文件")
-                with zipfile.ZipFile(zip_path, "r") as zf:
-                    md_files = [n for n in zf.namelist() if n.lower().endswith(".md")]
-                    if md_files:
-                        md_file = next((n for n in md_files if Path(n).name == "full.md"), md_files[0])
-                        with zf.open(md_file) as f:
-                            text = f.read().decode("utf-8")
+            except Exception as error:
+                logger.error(f"MinerU Official 响应解析失败 (error_type={type(error).__name__})")
+                raise DocumentParserException(
+                    "MinerU Official 响应解析失败", self.get_service_name(), "response_parse_error"
+                ) from error
             finally:
                 try:
                     os.unlink(zip_path)
-                except Exception:
-                    pass
+                except OSError as error:
+                    logger.warning(f"MinerU Official 临时文件清理失败 (error_type={type(error).__name__})")
+
+            if not isinstance(text, str) or not text:
+                raise DocumentParserException(
+                    "MinerU Official 未返回文本内容", self.get_service_name(), "no_content"
+                )
 
             processing_time = time.time() - start_time
             logger.info(
@@ -193,9 +174,12 @@ class MinerUOfficialParser(BaseDocumentProcessor):
             if isinstance(e, DocumentParserException):
                 raise
             processing_time = time.time() - start_time
-            error_msg = f"MinerU Official 处理失败: {str(e)}"
-            logger.error(f"{error_msg} ({processing_time:.2f}s)")
-            raise DocumentParserException(error_msg, self.get_service_name(), "processing_failed")
+            logger.error(
+                f"MinerU Official 处理失败 (error_type={type(e).__name__}, elapsed={processing_time:.2f}s)"
+            )
+            raise DocumentParserException(
+                "MinerU Official 处理失败", self.get_service_name(), "processing_failed"
+            ) from e
 
     def _upload_file(self, file_path: str, params: dict[str, Any]) -> str:
         """上传文件并返回 batch_id"""
@@ -220,35 +204,59 @@ class MinerUOfficialParser(BaseDocumentProcessor):
         }
 
         # 申请上传链接
-        response = requests.post(f"{self.api_base}/file-urls/batch", headers=self.headers, json=upload_data, timeout=30)
+        with self._session.post(
+            f"{self.api_base}/file-urls/batch",
+            headers=self.headers,
+            json=upload_data,
+            timeout=30,
+            allow_redirects=False,
+        ) as response:
+            if response.status_code != 200:
+                raise DocumentParserException(
+                    f"申请上传链接失败: HTTP {response.status_code}",
+                    self.get_service_name(),
+                    "upload_url_failed",
+                )
+            try:
+                result = response.json()
+            except ValueError as error:
+                raise DocumentParserException(
+                    "申请上传链接响应格式无效", self.get_service_name(), "response_parse_error"
+                ) from error
 
-        if response.status_code != 200:
+        if not isinstance(result, dict):
             raise DocumentParserException(
-                f"申请上传链接失败: HTTP {response.status_code}", self.get_service_name(), "upload_url_failed"
+                "申请上传链接响应格式无效", self.get_service_name(), "response_parse_error"
             )
-
-        result = response.json()
         if result.get("code") != 0:
-            error_msg = result.get("msg", "未知错误")
             raise DocumentParserException(
-                f"申请上传链接失败: {error_msg}", self.get_service_name(), f"api_error_{result.get('code', 'unknown')}"
+                "申请上传链接失败",
+                self.get_service_name(),
+                f"api_error_{result.get('code', 'unknown')}",
             )
 
-        batch_id = result["data"]["batch_id"]
-        upload_urls = result["data"]["file_urls"]
+        result_data = result.get("data")
+        if not isinstance(result_data, dict):
+            raise DocumentParserException(
+                "申请上传链接响应格式无效", self.get_service_name(), "response_parse_error"
+            )
+        batch_id = result_data.get("batch_id")
+        upload_urls = result_data.get("file_urls")
 
-        if not upload_urls:
+        if not isinstance(batch_id, str) or not isinstance(upload_urls, list) or not upload_urls:
             raise DocumentParserException("未获取到文件上传链接", self.get_service_name(), "no_upload_url")
 
         # 上传文件
         upload_url = upload_urls[0]
+        self._validate_provider_url(upload_url)
         with open(file_path, "rb") as f:
-            upload_response = requests.put(upload_url, data=f, timeout=60)
-
-        if upload_response.status_code != 200:
-            raise DocumentParserException(
-                f"文件上传失败: HTTP {upload_response.status_code}", self.get_service_name(), "file_upload_failed"
-            )
+            with self._session.put(upload_url, data=f, timeout=60, allow_redirects=False) as upload_response:
+                if upload_response.status_code != 200:
+                    raise DocumentParserException(
+                        f"文件上传失败: HTTP {upload_response.status_code}",
+                        self.get_service_name(),
+                        "file_upload_failed",
+                    )
 
         return batch_id
 
@@ -257,28 +265,49 @@ class MinerUOfficialParser(BaseDocumentProcessor):
         start_time = time.time()
 
         while time.time() - start_time < max_wait_time:
-            response = requests.get(
-                f"{self.api_base}/extract-results/batch/{batch_id}", headers=self.headers, timeout=30
-            )
+            with self._session.get(
+                f"{self.api_base}/extract-results/batch/{batch_id}",
+                headers=self.headers,
+                timeout=30,
+                allow_redirects=False,
+            ) as response:
+                if response.status_code != 200:
+                    raise DocumentParserException(
+                        f"查询任务状态失败: HTTP {response.status_code}",
+                        self.get_service_name(),
+                        "status_query_failed",
+                    )
+                try:
+                    result = response.json()
+                except ValueError as error:
+                    raise DocumentParserException(
+                        "查询任务状态响应格式无效", self.get_service_name(), "response_parse_error"
+                    ) from error
 
-            if response.status_code != 200:
+            if not isinstance(result, dict):
                 raise DocumentParserException(
-                    f"查询任务状态失败: HTTP {response.status_code}", self.get_service_name(), "status_query_failed"
+                    "查询任务状态响应格式无效", self.get_service_name(), "response_parse_error"
                 )
-
-            result = response.json()
             if result.get("code") != 0:
-                error_msg = result.get("msg", "未知错误")
                 raise DocumentParserException(
-                    f"查询任务状态失败: {error_msg}",
+                    "查询任务状态失败",
                     self.get_service_name(),
                     f"api_error_{result.get('code', 'unknown')}",
                 )
 
-            extract_results = result["data"].get("extract_result", [])
+            result_data = result.get("data")
+            if not isinstance(result_data, dict):
+                raise DocumentParserException(
+                    "查询任务状态响应格式无效", self.get_service_name(), "response_parse_error"
+                )
+            extract_results = result_data.get("extract_result", [])
             if not extract_results:
                 time.sleep(5)
                 continue
+            if not isinstance(extract_results, list) or not isinstance(extract_results[0], dict):
+                raise DocumentParserException(
+                    "查询任务状态响应格式无效", self.get_service_name(), "response_parse_error"
+                )
 
             # 检查第一个文件的状态
             file_result = extract_results[0]
@@ -287,79 +316,84 @@ class MinerUOfficialParser(BaseDocumentProcessor):
             if state == "done":
                 return file_result
             elif state == "failed":
-                err_msg = file_result.get("err_msg", "未知错误")
-                raise DocumentParserException(f"文档解析失败: {err_msg}", self.get_service_name(), "parsing_failed")
+                raise DocumentParserException("文档解析失败", self.get_service_name(), "parsing_failed")
 
             # 继续等待
             time.sleep(5)
 
         raise DocumentParserException("任务处理超时", self.get_service_name(), "timeout")
 
-    def _download_and_extract(self, zip_url: str) -> str:
-        """下载并解压结果文件"""
-        if not zip_url:
-            raise DocumentParserException("未获取到结果下载链接", self.get_service_name(), "no_download_url")
-
-        # 下载文件
-        response = requests.get(zip_url, timeout=60)
-        if response.status_code != 200:
-            raise DocumentParserException(
-                f"下载结果失败: HTTP {response.status_code}", self.get_service_name(), "download_failed"
-            )
-
-        # 解压到临时目录
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp_file:
-            tmp_file.write(response.content)
-            tmp_file.flush()
-
-            try:
-                with tempfile.TemporaryDirectory() as tmp_dir:
-                    with zipfile.ZipFile(tmp_file.name, "r") as zip_ref:
-                        zip_ref.extractall(tmp_dir)
-
-                    # 查找 markdown 文件
-                    md_files = list(Path(tmp_dir).glob("*.md"))
-                    if md_files:
-                        with open(md_files[0], encoding="utf-8") as f:
-                            return f.read()
-
-                    # 如果没有 markdown 文件，查找 json 文件
-                    json_files = list(Path(tmp_dir).glob("*.json"))
-                    if json_files:
-                        import json
-
-                        with open(json_files[0], encoding="utf-8") as f:
-                            data = json.load(f)
-                            # 尝试提取文本内容
-                            if isinstance(data, dict) and "content" in data:
-                                return str(data["content"])
-                            return str(data)
-
-                    # 如果都没有，返回第一个文本文件的内容
-                    text_files = list(Path(tmp_dir).glob("*"))
-                    if text_files:
-                        with open(text_files[0], encoding="utf-8") as f:
-                            return f.read()
-
-                    raise DocumentParserException(
-                        "无法从结果中提取文本内容", self.get_service_name(), "extract_content_failed"
-                    )
-
-            finally:
-                os.unlink(tmp_file.name)
-
     def _download_zip(self, zip_url: str) -> str:
         """下载结果ZIP到临时文件并返回路径"""
         if not zip_url:
             raise DocumentParserException("未获取到结果下载链接", self.get_service_name(), "no_download_url")
-        response = requests.get(zip_url, timeout=60)
-        if response.status_code != 200:
-            raise DocumentParserException(
-                f"下载结果失败: HTTP {response.status_code}", self.get_service_name(), "download_failed"
-            )
-        import tempfile
+        self._validate_provider_url(zip_url)
+        temp_path: str | None = None
+        try:
+            with self._session.get(zip_url, timeout=60, stream=True, allow_redirects=False) as response:
+                if response.status_code != 200:
+                    raise DocumentParserException(
+                        f"下载结果失败: HTTP {response.status_code}", self.get_service_name(), "download_failed"
+                    )
+                content_length = response.headers.get("content-length")
+                if content_length is not None:
+                    try:
+                        declared_size = int(content_length)
+                    except ValueError as error:
+                        raise DocumentParserException(
+                            "下载结果大小无效", self.get_service_name(), "download_failed"
+                        ) from error
+                    if declared_size < 0 or declared_size > MAX_MINERU_OFFICIAL_DOWNLOAD_BYTES:
+                        raise DocumentParserException(
+                            "下载结果超过大小限制", self.get_service_name(), "download_too_large"
+                        )
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp_file:
-            tmp_file.write(response.content)
-            tmp_file.flush()
-            return tmp_file.name
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp_file:
+                    temp_path = tmp_file.name
+                    downloaded_size = 0
+                    for chunk in response.iter_content(chunk_size=MINERU_OFFICIAL_DOWNLOAD_CHUNK_SIZE):
+                        if not chunk:
+                            continue
+                        downloaded_size += len(chunk)
+                        if downloaded_size > MAX_MINERU_OFFICIAL_DOWNLOAD_BYTES:
+                            raise DocumentParserException(
+                                "下载结果超过大小限制", self.get_service_name(), "download_too_large"
+                            )
+                        tmp_file.write(chunk)
+            return temp_path
+        except Exception:
+            if temp_path and os.path.exists(temp_path):
+                os.unlink(temp_path)
+            raise
+
+    @staticmethod
+    def _validate_provider_url(url: Any) -> None:
+        if not isinstance(url, str):
+            raise DocumentParserException("供应商返回的 URL 无效", "mineru_official", "invalid_url")
+        try:
+            parsed = urlparse(url)
+        except ValueError as error:
+            raise DocumentParserException(
+                "供应商返回的 URL 无效", "mineru_official", "invalid_url"
+            ) from error
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
+            raise DocumentParserException("供应商返回的 URL 无效", "mineru_official", "invalid_url")
+        try:
+            addresses = socket.getaddrinfo(parsed.hostname, parsed.port or 443)
+        except OSError as error:
+            raise DocumentParserException(
+                "供应商返回的 URL 无法解析", "mineru_official", "invalid_url"
+            ) from error
+        has_non_public_address = any(
+            not ipaddress.ip_address(address[4][0].split("%", 1)[0]).is_global for address in addresses
+        )
+        if not addresses or has_non_public_address:
+            raise DocumentParserException("供应商返回的 URL 无效", "mineru_official", "invalid_url")
+
+    def close(self) -> None:
+        self._session.close()

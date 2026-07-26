@@ -15,10 +15,16 @@ from yuxi.repositories.knowledge_base_repository import KnowledgeBaseRepository
 from yuxi.repositories.knowledge_chunk_repository import KnowledgeChunkRepository
 from yuxi.repositories.knowledge_file_repository import KnowledgeFileRepository
 from yuxi.repositories.user_repository import UserRepository
-from yuxi.services.task_service import TaskContext, tasker
+from yuxi.services.task_service import PublicTaskError, TaskContext, tasker
 from yuxi.storage.postgres.manager import pg_manager
 from yuxi.storage.postgres.models_business import User
 from yuxi.utils import logger
+
+
+class ResearchPaperReindexError(PublicTaskError):
+    def __init__(self, error_type: str, message: str):
+        super().__init__(message)
+        self.error_type = error_type
 
 
 def _serialize_paper(paper) -> dict[str, Any]:
@@ -258,13 +264,14 @@ async def update_paper_view(
             revision=revision,
         )
     except Exception as exc:
+        error_message = "论文元数据同步任务提交失败"
         await paper_repo.fail_reindex(
             kb_id=kb_id,
             paper_id=paper_id,
             revision=revision,
-            error=str(exc),
+            error=error_message,
         )
-        raise HTTPException(status_code=500, detail=f"论文元数据同步任务提交失败: {exc}") from exc
+        raise HTTPException(status_code=500, detail=error_message) from exc
 
     return {
         "paper": _serialize_paper(paper),
@@ -296,21 +303,23 @@ async def _run_paper_reindex(
     async with _paper_reindex_lock(kb_id, paper_id):
         while True:
             await context.raise_if_cancelled()
-            paper = await paper_repo.get_by_paper_id(kb_id=kb_id, paper_id=paper_id)
-            if paper is None:
-                raise ValueError("论文不存在，无法同步检索索引")
-            current_revision = int(paper.metadata_revision or 1)
-            indexed_revision = int(paper.indexed_revision or 0)
-            if indexed_revision >= target_revision and paper.metadata_status == "verified":
-                return {
-                    "paper_id": paper_id,
-                    "file_id": file_id,
-                    "revision": current_revision,
-                    "skipped": True,
-                }
-
-            await context.set_progress(10.0, f"正在同步论文元数据版本 {current_revision}")
+            current_revision = target_revision
             try:
+                await _ensure_reindex_owner_can_write(operator_id, kb_id)
+                paper = await paper_repo.get_by_paper_id(kb_id=kb_id, paper_id=paper_id)
+                if paper is None:
+                    raise ResearchPaperReindexError("paper_not_found", "论文不存在，无法同步检索索引")
+                current_revision = int(paper.metadata_revision or 1)
+                indexed_revision = int(paper.indexed_revision or 0)
+                if indexed_revision >= target_revision and paper.metadata_status == "verified":
+                    return {
+                        "paper_id": paper_id,
+                        "file_id": file_id,
+                        "revision": current_revision,
+                        "skipped": True,
+                    }
+
+                await context.set_progress(10.0, f"正在同步论文元数据版本 {current_revision}")
                 result = await knowledge_base.index_file(
                     kb_id,
                     file_id,
@@ -321,6 +330,7 @@ async def _run_paper_reindex(
                     },
                 )
                 await context.raise_if_cancelled()
+                await _ensure_reindex_owner_can_write(operator_id, kb_id)
                 completed = await paper_repo.complete_reindex(
                     kb_id=kb_id,
                     paper_id=paper_id,
@@ -337,14 +347,25 @@ async def _run_paper_reindex(
                     await context.set_progress(100.0, "论文元数据与检索索引同步完成")
                     return payload
                 await context.set_progress(65.0, "检测到更新版本，继续同步最新论文元数据")
-            except Exception as exc:
+            except ResearchPaperReindexError as exc:
                 await paper_repo.fail_reindex(
                     kb_id=kb_id,
                     paper_id=paper_id,
                     revision=current_revision,
-                    error=str(exc),
+                    error=exc.message,
                 )
                 raise
+            except Exception as exc:
+                failure = ResearchPaperReindexError(
+                    "paper_reindex_failed", "论文元数据与检索索引同步失败"
+                )
+                await paper_repo.fail_reindex(
+                    kb_id=kb_id,
+                    paper_id=paper_id,
+                    revision=current_revision,
+                    error=failure.message,
+                )
+                raise failure from exc
 
 
 async def _enqueue_paper_reindex(
@@ -357,14 +378,7 @@ async def _enqueue_paper_reindex(
     revision: int,
 ):
     async def reindex(context: TaskContext) -> dict[str, Any]:
-        return await _run_paper_reindex(
-            context,
-            kb_id=kb_id,
-            paper_id=paper_id,
-            file_id=file_id,
-            operator_id=operator_id,
-            target_revision=revision,
-        )
+        return await _resume_paper_reindex_task(context)
 
     payload = {
         "kb_id": kb_id,
@@ -383,6 +397,22 @@ async def _enqueue_paper_reindex(
     )
 
 
+async def _ensure_reindex_owner_can_write(operator_id: str | None, kb_id: str) -> User:
+    normalized_operator_id = str(operator_id or "").strip()
+    if not normalized_operator_id:
+        raise ResearchPaperReindexError("forbidden", "论文元数据同步任务缺少所有者")
+    user = await UserRepository().get_by_uid(normalized_operator_id)
+    if user is None or bool(user.is_deleted):
+        raise ResearchPaperReindexError("forbidden", "论文元数据同步任务所有者不存在或已删除")
+    try:
+        await _ensure_access(user, kb_id, write=True)
+    except HTTPException as exc:
+        raise ResearchPaperReindexError(
+            "forbidden", "论文元数据同步任务所有者已失去知识库写入权限"
+        ) from exc
+    return user
+
+
 async def _resume_paper_reindex_task(context: TaskContext) -> dict[str, Any]:
     """Resume a persisted reindex with the original writer still authorized."""
     payload = context.payload
@@ -395,28 +425,16 @@ async def _resume_paper_reindex_task(context: TaskContext) -> dict[str, Any]:
         raise ValueError("论文元数据同步恢复参数无效") from exc
 
     operator_id = str(payload.get("operator_id") or "").strip() or None
-    if operator_id is not None:
-        user = await UserRepository().get_by_uid(operator_id)
-        if user is None or bool(user.is_deleted):
-            error = "论文元数据同步任务所有者不存在或已删除"
-            await AcademicPaperRepository().fail_reindex(
-                kb_id=kb_id,
-                paper_id=paper_id,
-                revision=revision,
-                error=error,
-            )
-            raise RuntimeError(error)
-        try:
-            await _ensure_access(user, kb_id, write=True)
-        except HTTPException as exc:
-            error = "论文元数据同步任务所有者已失去知识库写入权限"
-            await AcademicPaperRepository().fail_reindex(
-                kb_id=kb_id,
-                paper_id=paper_id,
-                revision=revision,
-                error=error,
-            )
-            raise RuntimeError(error) from exc
+    try:
+        await _ensure_reindex_owner_can_write(operator_id, kb_id)
+    except ResearchPaperReindexError as exc:
+        await AcademicPaperRepository().fail_reindex(
+            kb_id=kb_id,
+            paper_id=paper_id,
+            revision=revision,
+            error=str(exc),
+        )
+        raise
 
     return await _run_paper_reindex(
         context,
@@ -433,26 +451,44 @@ async def recover_pending_paper_reindexes() -> int:
     paper_repo = AcademicPaperRepository()
     for paper in await paper_repo.list_pending_reindex():
         revision = int(paper.metadata_revision or 1)
+        previous_task = await tasker.find_task_by_payload(
+            task_type="research_paper_reindex",
+            payload_match={
+                "kb_id": str(paper.kb_id),
+                "paper_id": str(paper.paper_id),
+                "revision": revision,
+            },
+        )
+        operator_id = str((previous_task.payload if previous_task else {}).get("operator_id") or "").strip()
+        if not operator_id:
+            await paper_repo.fail_reindex(
+                kb_id=str(paper.kb_id),
+                paper_id=str(paper.paper_id),
+                revision=revision,
+                error="论文元数据同步恢复任务缺少可验证的所有者",
+            )
+            continue
         try:
             _, created = await _enqueue_paper_reindex(
                 kb_id=str(paper.kb_id),
                 paper_id=str(paper.paper_id),
                 file_id=str(paper.file_id),
                 paper_title=str(paper.title),
-                operator_id=None,
+                operator_id=operator_id,
                 revision=revision,
             )
         except Exception as exc:
-            logger.exception(
-                "恢复论文元数据同步任务入队失败: kb_id=%s paper_id=%s",
+            logger.error(
+                "恢复论文元数据同步任务入队失败: kb_id=%s paper_id=%s exception_type=%s",
                 paper.kb_id,
                 paper.paper_id,
+                type(exc).__name__,
             )
             await paper_repo.fail_reindex(
                 kb_id=str(paper.kb_id),
                 paper_id=str(paper.paper_id),
                 revision=revision,
-                error=f"恢复任务入队失败: {exc}",
+                error="论文元数据同步恢复任务提交失败",
             )
             continue
         recovered += int(created)

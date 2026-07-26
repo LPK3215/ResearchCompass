@@ -27,7 +27,7 @@ async def health_check():
 async def discovery():
     """系统能力发现接口（公开接口）"""
     return {
-        "name": "Yuxi",
+        "name": "ResearchCompass",
         "version": get_version(),
         "api_prefix": "/api",
         "capabilities": {
@@ -73,9 +73,14 @@ async def update_config_single(key=Body(...), value=Body(...), current_user: Use
         raise HTTPException(status_code=400, detail=f"配置项不可修改: {key}")
     try:
         config.set_value(key, value)
+        runtime_synced = config.save()
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    config.save()
+    except Exception as exc:
+        logger.error("Failed to update config: exception_type={}", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="保存系统配置失败") from exc
+    if not runtime_synced:
+        raise HTTPException(status_code=503, detail="配置已保存，但运行时同步失败")
     return config.dump_config()
 
 
@@ -84,9 +89,14 @@ async def update_config_batch(items: dict = Body(...), current_user: User = Depe
     """批量更新配置项"""
     try:
         config.update(items)
+        runtime_synced = config.save()
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    config.save()
+    except Exception as exc:
+        logger.error("Failed to update config batch: exception_type={}", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="保存系统配置失败") from exc
+    if not runtime_synced:
+        raise HTTPException(status_code=503, detail="配置已保存，但运行时同步失败")
     return config.dump_config()
 
 
@@ -128,9 +138,9 @@ async def get_system_logs(levels: str | None = None, current_user: User = Depend
 
         log = "".join(lines)
         return {"log": log, "message": "success", "log_file": LOG_FILE}
-    except Exception as e:
-        logger.error(f"获取系统日志失败: {e}")
-        raise HTTPException(status_code=500, detail=f"获取系统日志失败: {str(e)}")
+    except Exception as exc:
+        logger.error("获取系统日志失败: exception_type={}", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="获取系统日志失败") from exc
 
 
 # =============================================================================
@@ -161,8 +171,8 @@ async def load_info_config():
 
         return config
 
-    except Exception as e:
-        logger.error(f"Failed to load info config: {e}")
+    except Exception as exc:
+        logger.error("Failed to load info config: exception_type={}", type(exc).__name__)
         return {}
 
 
@@ -172,9 +182,9 @@ async def get_info_config():
     try:
         config = await load_info_config()
         return {"success": True, "data": config}
-    except Exception as e:
-        logger.error(f"获取信息配置失败: {e}")
-        raise HTTPException(status_code=500, detail="获取信息配置失败")
+    except Exception as exc:
+        logger.error("获取信息配置失败: exception_type={}", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="获取信息配置失败") from exc
 
 
 @system.post("/info/reload")
@@ -183,9 +193,9 @@ async def reload_info_config(current_user: User = Depends(get_admin_user)):
     try:
         config = await load_info_config()
         return {"success": True, "message": "配置重新加载成功", "data": config}
-    except Exception as e:
-        logger.error(f"重新加载信息配置失败: {e}")
-        raise HTTPException(status_code=500, detail="重新加载信息配置失败")
+    except Exception as exc:
+        logger.error("重新加载信息配置失败: exception_type={}", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="重新加载信息配置失败") from exc
 
 
 # =============================================================================
@@ -225,10 +235,10 @@ async def check_ocr_services_health(current_user: User = Depends(get_admin_user)
             "message": "OCR服务健康检查完成",
         }
 
-    except Exception as e:
-        logger.error(f"OCR健康检查失败: {str(e)}")
+    except Exception as exc:
+        logger.error("OCR健康检查失败: exception_type={}", type(exc).__name__)
         return {
             "overall_status": "error",
             "services": {},
-            "message": f"OCR健康检查失败: {str(e)}",
+            "message": "OCR健康检查失败",
         }

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from yuxi.knowledge.implementations.dify import DifyKB
+from yuxi.knowledge.implementations.dify import DifyAPIError, DifyKB
 
 
 class _FakeResponse:
@@ -17,9 +17,11 @@ class _FakeResponse:
 
 
 class _FakeAsyncClient:
-    def __init__(self, response_payload: dict | None = None, raises: Exception | None = None, **kwargs):
-        del kwargs
-        self._response_payload = response_payload or {}
+    last_init_kwargs: dict = {}
+
+    def __init__(self, response_payload: object | None = None, raises: Exception | None = None, **kwargs):
+        type(self).last_init_kwargs = kwargs
+        self._response_payload = {} if response_payload is None else response_payload
         self._raises = raises
 
     async def __aenter__(self):
@@ -33,11 +35,12 @@ class _FakeAsyncClient:
         assert headers.get("Authorization", "").startswith("Bearer ")
         if self._raises:
             raise self._raises
-        assert json["retrieval_model"]["search_method"] == "semantic_search"
-        assert json["retrieval_model"]["top_k"] == 5
-        assert json["retrieval_model"]["reranking_enable"] is False
-        assert json["retrieval_model"]["score_threshold_enabled"] is True
-        assert json["retrieval_model"]["score_threshold"] == 0.3
+        if "retrieval_model" in json:
+            assert json["retrieval_model"]["search_method"] == "semantic_search"
+            assert json["retrieval_model"]["top_k"] == 5
+            assert json["retrieval_model"]["reranking_enable"] is False
+            assert json["retrieval_model"]["score_threshold_enabled"] is True
+            assert json["retrieval_model"]["score_threshold"] == 0.3
         return _FakeResponse(self._response_payload)
 
 
@@ -119,6 +122,7 @@ async def test_dify_kb_aquery_maps_records(monkeypatch, tmp_path):
     )
 
     result = await kb.aquery("hello", slug)
+    assert _FakeAsyncClient.last_init_kwargs["trust_env"] is False
     assert len(result) == 1
     assert result[0]["content"] == "hello world"
     assert result[0]["score"] == 0.98
@@ -129,7 +133,7 @@ async def test_dify_kb_aquery_maps_records(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_dify_kb_aquery_error_returns_empty(monkeypatch, tmp_path):
+async def test_dify_kb_aquery_error_is_explicit_and_sanitized(monkeypatch, tmp_path):
     kb = DifyKB(str(tmp_path))
     slug = "kb_test_dify_error"
     kb.databases_meta[slug] = {
@@ -144,10 +148,73 @@ async def test_dify_kb_aquery_error_returns_empty(monkeypatch, tmp_path):
         },
     }
 
+    secret = "Authorization=secret-api-key provider-body=<private>"
+    messages: list[str] = []
+
+    class _CapturedLogger:
+        def error(self, message: str) -> None:
+            messages.append(message)
+
+        def warning(self, message: str) -> None:
+            messages.append(message)
+
+    monkeypatch.setattr("yuxi.knowledge.implementations.dify.logger", _CapturedLogger())
     monkeypatch.setattr(
         "yuxi.knowledge.implementations.dify.httpx.AsyncClient",
-        lambda **kwargs: _FakeAsyncClient(raises=RuntimeError("boom"), **kwargs),
+        lambda **kwargs: _FakeAsyncClient(raises=RuntimeError(secret), **kwargs),
     )
 
-    result = await kb.aquery("hello", slug)
-    assert result == []
+    with pytest.raises(DifyAPIError, match="^Dify 知识库查询失败$") as exc_info:
+        await kb.aquery("hello", slug)
+
+    assert secret not in str(exc_info.value)
+    assert secret not in " ".join(messages)
+
+
+@pytest.mark.asyncio
+async def test_dify_kb_retries_with_query_only_payload(monkeypatch, tmp_path):
+    kb = DifyKB(str(tmp_path))
+    slug = "kb_test_dify_fallback"
+    kb.databases_meta[slug] = {
+        "query_params": {"options": {}},
+        "metadata": {
+            "dify_api_url": "https://api.dify.ai/v1",
+            "dify_token": "token",
+            "dify_dataset_id": "dataset-123",
+        },
+    }
+    payloads: list[dict] = []
+
+    class _FallbackClient(_FakeAsyncClient):
+        async def post(self, url: str, json: dict, headers: dict):
+            del url, headers
+            payloads.append(json)
+            if len(payloads) == 1:
+                raise RuntimeError("unsupported retrieval model")
+            return _FakeResponse({"records": []})
+
+    monkeypatch.setattr(
+        "yuxi.knowledge.implementations.dify.httpx.AsyncClient",
+        lambda **kwargs: _FallbackClient(**kwargs),
+    )
+
+    assert await kb.aquery("hello", slug) == []
+    assert "retrieval_model" in payloads[0]
+    assert payloads[1] == {"query": "hello"}
+    assert _FallbackClient.last_init_kwargs["trust_env"] is False
+
+
+@pytest.mark.asyncio
+async def test_dify_request_rejects_non_object_json(monkeypatch, tmp_path):
+    kb = DifyKB(str(tmp_path))
+    monkeypatch.setattr(
+        "yuxi.knowledge.implementations.dify.httpx.AsyncClient",
+        lambda **kwargs: _FakeAsyncClient(response_payload=[], **kwargs),
+    )
+
+    with pytest.raises(DifyAPIError, match="^Dify 知识库响应格式无效$"):
+        await kb._request_dify(
+            client_payload={"query": "hello"},
+            request_url="https://api.dify.ai/v1/datasets/dataset-123/retrieve",
+            headers={"Authorization": "Bearer token"},
+        )

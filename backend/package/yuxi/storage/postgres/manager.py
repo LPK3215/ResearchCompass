@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 
 from psycopg_pool import AsyncConnectionPool
 from sqlalchemy import text
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import declarative_base
 from yuxi.storage.postgres.models_business import AGENT_RUN_TERMINAL_STATUSES
@@ -17,6 +18,14 @@ from yuxi.utils.singleton import SingletonMeta
 # 合并两个 Base
 CombinedBase = declarative_base()
 AGENT_RUN_TERMINAL_STATUS_SQL = ", ".join(f"'{status}'" for status in AGENT_RUN_TERMINAL_STATUSES)
+
+
+def _redact_database_url(database_url: str) -> str:
+    """返回可安全写入日志的数据库 URL。"""
+    try:
+        return make_url(database_url).render_as_string(hide_password=True)
+    except Exception:
+        return "<invalid database URL>"
 
 
 def _log_async_session_rollback(error: Exception) -> None:
@@ -98,7 +107,7 @@ class PostgresManager(metaclass=SingletonMeta):
             )
 
             self._initialized = True
-            logger.info(f"PostgreSQL manager initialized for knowledge base: {db_url.split('@')[0]}://***")
+            logger.info(f"PostgreSQL manager initialized for knowledge base: {_redact_database_url(db_url)}")
         except Exception as e:
             logger.error(f"Failed to initialize PostgreSQL manager: {e}")
             # 不抛出异常，允许应用启动，但在使用时会报错

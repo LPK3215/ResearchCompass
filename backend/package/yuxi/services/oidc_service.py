@@ -28,6 +28,8 @@ from yuxi.utils.logging_config import logger
 FRONTEND_CALLBACK_PATH = "/auth/oidc/callback"
 # 登录页路径
 FRONTEND_LOGIN_PATH = "/login"
+OIDC_MAX_PENDING_STATES = 5000
+OIDC_MAX_PENDING_LOGIN_CODES = 5000
 
 
 class OIDCConfig(BaseModel):
@@ -127,10 +129,12 @@ class OIDCProviderMetadata:
 
         discovery_url = f"{issuer_url.rstrip('/')}/.well-known/openid-configuration"
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(trust_env=False) as client:
                 response = await client.get(discovery_url, timeout=30.0)
                 response.raise_for_status()
                 metadata = response.json()
+            if not isinstance(metadata, dict):
+                raise ValueError("OIDC discovery response must be an object")
 
             self.authorization_endpoint = metadata.get("authorization_endpoint")
             self.token_endpoint = metadata.get("token_endpoint")
@@ -140,17 +144,17 @@ class OIDCProviderMetadata:
             # 登录 URL 生成至少需要 authorization_endpoint。
             if not self.authorization_endpoint:
                 self.last_error = "discovery 响应缺少 authorization_endpoint"
-                logger.error(f"Failed to load OIDC discovery: {self.last_error}, url={discovery_url}")
+                logger.error("Failed to load OIDC discovery: missing authorization endpoint")
                 return False
 
             self._loaded = True
             self.last_error = None
-            logger.info(f"OIDC discovery loaded from {discovery_url}")
+            logger.info("OIDC discovery loaded")
             return True
 
-        except Exception as e:
-            self.last_error = f"{type(e).__name__}: {repr(e)}"
-            logger.error(f"Failed to load OIDC discovery: {self.last_error}, url={discovery_url}")
+        except Exception as exc:
+            self.last_error = "OIDC discovery 加载失败"
+            logger.error("Failed to load OIDC discovery: exception_type={}", type(exc).__name__)
             return False
 
 
@@ -218,6 +222,9 @@ class OIDCUtils:
     def generate_state(cls, redirect_path: str = "/") -> str:
         """生成 state 参数并存储"""
         cls._cleanup_expired_state()
+        if len(cls._state_store) >= OIDC_MAX_PENDING_STATES:
+            oldest = min(cls._state_store, key=lambda key: cls._state_store[key]["expires_at"])
+            cls._state_store.pop(oldest, None)
         state = secrets.token_urlsafe(32)
         cls._state_store[state] = {
             "redirect_path": redirect_path,
@@ -239,6 +246,9 @@ class OIDCUtils:
     def generate_login_code(cls, payload: dict[str, Any]) -> str:
         """生成一次性短期登录 code"""
         cls._cleanup_expired_login_code()
+        if len(cls._login_code_store) >= OIDC_MAX_PENDING_LOGIN_CODES:
+            oldest = min(cls._login_code_store, key=lambda key: cls._login_code_store[key]["expires_at"])
+            cls._login_code_store.pop(oldest, None)
         code = secrets.token_urlsafe(32)
         cls._login_code_store[code] = {
             "payload": payload,
@@ -309,7 +319,7 @@ class OIDCUtils:
         }
 
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(trust_env=False) as client:
                 response = await client.post(
                     metadata.token_endpoint,
                     data=data,
@@ -317,10 +327,11 @@ class OIDCUtils:
                     timeout=30.0,
                 )
                 response.raise_for_status()
-                return response.json()
+                payload = response.json()
+                return payload if isinstance(payload, dict) else None
 
-        except Exception as e:
-            logger.error(f"Failed to exchange code for token: {e}")
+        except Exception as exc:
+            logger.error("Failed to exchange code for token: exception_type={}", type(exc).__name__)
             return None
 
     @classmethod
@@ -331,17 +342,18 @@ class OIDCUtils:
             return None
 
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(trust_env=False) as client:
                 response = await client.get(
                     metadata.userinfo_endpoint,
                     headers={"Authorization": f"Bearer {access_token}"},
                     timeout=30.0,
                 )
                 response.raise_for_status()
-                return response.json()
+                payload = response.json()
+                return payload if isinstance(payload, dict) else None
 
-        except Exception as e:
-            logger.error(f"Failed to get userinfo: {e}")
+        except Exception as exc:
+            logger.error("Failed to get userinfo: exception_type={}", type(exc).__name__)
             return None
 
     @classmethod
@@ -887,12 +899,6 @@ async def oidc_login_url_handler(redirect_path: str = "/"):
 
     login_url = await OIDCUtils.build_authorization_url(redirect_path)
     if not login_url:
-        metadata_error = OIDCUtils.get_last_metadata_error()
-        if metadata_error:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"生成登录链接失败：{metadata_error}",
-            )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="生成登录链接失败，请稍后重试或联系管理员",

@@ -9,12 +9,35 @@ from yuxi.knowledge.eval.benchmark_generation import (
     DEFAULT_BENCHMARK_GENERATION_CONCURRENCY,
     MAX_BENCHMARK_GENERATION_CONCURRENCY,
 )
-from yuxi.knowledge.eval.service import EvaluationService
+from yuxi.knowledge.eval.service import EvaluationService, EvaluationTaskError
+from yuxi.services.research_paper_service import _ensure_access
 from yuxi.storage.postgres.models_business import User
 from yuxi.utils import logger
 
 
 evaluation = APIRouter(prefix="/evaluation", tags=["evaluation"])
+
+
+def _internal_http_error(action: str, detail: str, exc: Exception) -> HTTPException:
+    error_type = getattr(exc, "error_type", "internal_error")
+    logger.error(
+        "{}: exception_type={} error_type={}",
+        action,
+        type(exc).__name__,
+        error_type,
+    )
+    if isinstance(exc, EvaluationTaskError):
+        detail = exc.message
+    return HTTPException(status_code=500, detail=detail)
+
+
+async def _ensure_dataset_access(
+    service: EvaluationService, current_user: User, dataset_id: str, *, write: bool = False
+) -> None:
+    dataset = await service.eval_repo.get_dataset(dataset_id)
+    if dataset is None:
+        raise ValueError("Dataset not found")
+    await _ensure_access(current_user, str(dataset.kb_id), write=write)
 
 
 class GenerateDatasetRequest(BaseModel):
@@ -88,6 +111,7 @@ async def upload_evaluation_dataset(
 ):
     """上传评估数据集"""
     try:
+        await _ensure_access(current_user, kb_id, write=True)
         if not file.filename.endswith(".jsonl"):
             raise HTTPException(status_code=400, detail="仅支持JSONL格式文件")
 
@@ -103,21 +127,22 @@ async def upload_evaluation_dataset(
         return {"message": "success", "data": result}
     except HTTPException:
         raise
-    except Exception as e:
-        logger.exception(f"上传评估数据集失败: {e}")
-        raise HTTPException(status_code=500, detail=f"上传评估数据集失败: {str(e)}")
+    except Exception as exc:
+        raise _internal_http_error("上传评估数据集失败", "上传评估数据集失败", exc) from exc
 
 
 @evaluation.get("/databases/{kb_id}/datasets")
 async def list_evaluation_datasets(kb_id: str, current_user: User = Depends(get_admin_user)):
     """获取知识库的评估数据集列表"""
     try:
+        await _ensure_access(current_user, kb_id)
         service = EvaluationService()
         datasets = await service.list_datasets(kb_id)
         return {"message": "success", "data": datasets}
-    except Exception as e:
-        logger.exception(f"获取评估数据集列表失败: {e}")
-        raise HTTPException(status_code=500, detail=f"获取评估数据集列表失败: {str(e)}")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _internal_http_error("获取评估数据集列表失败", "获取评估数据集列表失败", exc) from exc
 
 
 @evaluation.get("/databases/{kb_id}/datasets/{dataset_id}")
@@ -131,6 +156,7 @@ async def get_evaluation_dataset(
         if page_size < 1 or page_size > 100:
             raise HTTPException(status_code=400, detail="每页大小必须在1-100之间")
 
+        await _ensure_access(current_user, kb_id)
         service = EvaluationService()
         dataset = await service.get_dataset_detail(kb_id, dataset_id, page, page_size)
         return {"message": "success", "data": dataset}
@@ -140,9 +166,8 @@ async def get_evaluation_dataset(
         if "not found" in str(e).lower():
             raise HTTPException(status_code=404, detail=str(e))
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.exception(f"获取评估数据集详情失败: {e}")
-        raise HTTPException(status_code=500, detail=f"获取评估数据集详情失败: {str(e)}")
+    except Exception as exc:
+        raise _internal_http_error("获取评估数据集详情失败", "获取评估数据集详情失败", exc) from exc
 
 
 @evaluation.get("/datasets/{dataset_id}/download")
@@ -150,6 +175,7 @@ async def download_evaluation_dataset(dataset_id: str, current_user: User = Depe
     """导出评估数据集 JSONL"""
     try:
         service = EvaluationService()
+        await _ensure_dataset_access(service, current_user, dataset_id)
         export_info = await service.export_dataset_jsonl(dataset_id)
         filename = export_info["filename"]
         return Response(
@@ -157,13 +183,14 @@ async def download_evaluation_dataset(dataset_id: str, current_user: User = Depe
             media_type="application/x-ndjson",
             headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
         )
+    except HTTPException:
+        raise
     except ValueError as e:
         if "not found" in str(e).lower():
             raise HTTPException(status_code=404, detail=str(e))
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.exception(f"导出评估数据集失败: {e}")
-        raise HTTPException(status_code=500, detail=f"导出评估数据集失败: {str(e)}")
+    except Exception as exc:
+        raise _internal_http_error("导出评估数据集失败", "导出评估数据集失败", exc) from exc
 
 
 @evaluation.get("/databases/{kb_id}/datasets/{dataset_id}/baseline-template")
@@ -172,19 +199,21 @@ async def download_external_baseline_template(
 ):
     """导出带数据集和语料指纹的外部基线结果模板。"""
     try:
+        await _ensure_access(current_user, kb_id)
         export_info = await EvaluationService().export_external_baseline_template(kb_id, dataset_id)
         return Response(
             content=export_info["content"].encode("utf-8"),
             media_type="application/x-ndjson",
             headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(export_info['filename'])}"},
         )
+    except HTTPException:
+        raise
     except ValueError as e:
         if "not found" in str(e).lower():
             raise HTTPException(status_code=404, detail=str(e))
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.exception(f"导出外部基线模板失败: {e}")
-        raise HTTPException(status_code=500, detail=f"导出外部基线模板失败: {str(e)}")
+    except Exception as exc:
+        raise _internal_http_error("导出外部基线模板失败", "导出外部基线模板失败", exc) from exc
 
 
 @evaluation.delete("/datasets/{dataset_id}")
@@ -192,15 +221,17 @@ async def delete_evaluation_dataset(dataset_id: str, current_user: User = Depend
     """删除评估数据集"""
     try:
         service = EvaluationService()
+        await _ensure_dataset_access(service, current_user, dataset_id, write=True)
         await service.delete_dataset(dataset_id)
         return {"message": "success", "data": None}
+    except HTTPException:
+        raise
     except ValueError as e:
         if "not found" in str(e).lower():
             raise HTTPException(status_code=404, detail=str(e))
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.exception(f"删除评估数据集失败: {e}")
-        raise HTTPException(status_code=500, detail=f"删除评估数据集失败: {str(e)}")
+    except Exception as exc:
+        raise _internal_http_error("删除评估数据集失败", "删除评估数据集失败", exc) from exc
 
 
 @evaluation.post("/databases/{kb_id}/datasets/generate")
@@ -209,6 +240,7 @@ async def generate_evaluation_dataset(
 ):
     """自动生成评估数据集"""
     try:
+        await _ensure_access(current_user, kb_id, write=True)
         service = EvaluationService()
         result = await service.generate_dataset(
             kb_id=kb_id,
@@ -223,17 +255,19 @@ async def generate_evaluation_dataset(
             created_by=current_user.uid,
         )
         return {"message": "success", "data": result}
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.exception(f"生成评估数据集失败: {e}")
-        raise HTTPException(status_code=500, detail=f"生成评估数据集失败: {str(e)}")
+    except Exception as exc:
+        raise _internal_http_error("生成评估数据集失败", "生成评估数据集失败", exc) from exc
 
 
 @evaluation.post("/databases/{kb_id}/runs")
 async def run_evaluation(kb_id: str, request: RunEvaluationRequest, current_user: User = Depends(get_admin_user)):
     """运行RAG评估"""
     try:
+        await _ensure_access(current_user, kb_id, write=True)
         service = EvaluationService()
         run_id = await service.run_evaluation(
             kb_id=kb_id,
@@ -243,25 +277,28 @@ async def run_evaluation(kb_id: str, request: RunEvaluationRequest, current_user
             created_by=current_user.uid,
         )
         return {"message": "success", "data": {"run_id": run_id}}
+    except HTTPException:
+        raise
     except ValueError as e:
         if "not found" in str(e).lower():
             raise HTTPException(status_code=404, detail=str(e))
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.exception(f"启动评估失败: {e}")
-        raise HTTPException(status_code=500, detail=f"启动评估失败: {str(e)}")
+    except Exception as exc:
+        raise _internal_http_error("启动评估失败", "启动评估失败", exc) from exc
 
 
 @evaluation.get("/databases/{kb_id}/runs")
 async def list_evaluation_runs(kb_id: str, current_user: User = Depends(get_admin_user)):
     """获取知识库评估运行历史"""
     try:
+        await _ensure_access(current_user, kb_id)
         service = EvaluationService()
         runs = await service.list_runs(kb_id)
         return {"message": "success", "data": runs}
-    except Exception as e:
-        logger.exception(f"获取评估运行历史失败: {e}")
-        raise HTTPException(status_code=500, detail=f"获取评估运行历史失败: {str(e)}")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _internal_http_error("获取评估运行历史失败", "获取评估运行历史失败", exc) from exc
 
 
 @evaluation.get("/databases/{kb_id}/runs/{run_id}")
@@ -280,6 +317,7 @@ async def get_evaluation_run_results(
         if page_size < 1 or page_size > 100:
             raise HTTPException(status_code=400, detail="每页大小必须在1-100之间")
 
+        await _ensure_access(current_user, kb_id)
         service = EvaluationService()
         results = await service.get_run_results(kb_id, run_id, page=page, page_size=page_size, error_only=error_only)
         return {"message": "success", "data": results}
@@ -289,25 +327,26 @@ async def get_evaluation_run_results(
         if "not found" in str(e).lower():
             raise HTTPException(status_code=404, detail=str(e))
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.exception(f"获取评估运行结果失败: {e}")
-        raise HTTPException(status_code=500, detail=f"获取评估运行结果失败: {str(e)}")
+    except Exception as exc:
+        raise _internal_http_error("获取评估运行结果失败", "获取评估运行结果失败", exc) from exc
 
 
 @evaluation.delete("/databases/{kb_id}/runs/{run_id}")
 async def delete_evaluation_run(kb_id: str, run_id: str, current_user: User = Depends(get_admin_user)):
     """删除评估运行"""
     try:
+        await _ensure_access(current_user, kb_id, write=True)
         service = EvaluationService()
         await service.delete_run(kb_id, run_id)
         return {"message": "success", "data": None}
+    except HTTPException:
+        raise
     except ValueError as e:
         if "not found" in str(e).lower():
             raise HTTPException(status_code=404, detail=str(e))
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.exception(f"删除评估运行失败: {e}")
-        raise HTTPException(status_code=500, detail=f"删除评估运行失败: {str(e)}")
+    except Exception as exc:
+        raise _internal_http_error("删除评估运行失败", "删除评估运行失败", exc) from exc
 
 
 @evaluation.post("/databases/{kb_id}/experiments")
@@ -316,6 +355,7 @@ async def create_evaluation_experiment(
 ):
     """以同一评估基准和共享模型条件运行一组检索消融实验。"""
     try:
+        await _ensure_access(current_user, kb_id, write=True)
         result = await EvaluationService().create_experiment(
             kb_id=kb_id,
             dataset_id=request.dataset_id,
@@ -327,44 +367,51 @@ async def create_evaluation_experiment(
             created_by=str(current_user.uid),
         )
         return {"message": "success", "data": result}
+    except HTTPException:
+        raise
     except ValueError as e:
         if "not found" in str(e).lower():
             raise HTTPException(status_code=404, detail=str(e))
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.exception(f"创建消融实验失败: {e}")
-        raise HTTPException(status_code=500, detail=f"创建消融实验失败: {str(e)}")
+    except Exception as exc:
+        raise _internal_http_error("创建消融实验失败", "创建消融实验失败", exc) from exc
 
 
 @evaluation.get("/databases/{kb_id}/experiments")
 async def list_evaluation_experiments(kb_id: str, current_user: User = Depends(get_admin_user)):
     try:
+        await _ensure_access(current_user, kb_id)
         return {"message": "success", "data": await EvaluationService().list_experiments(kb_id)}
-    except Exception as e:
-        logger.exception(f"获取消融实验列表失败: {e}")
-        raise HTTPException(status_code=500, detail=f"获取消融实验列表失败: {str(e)}")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _internal_http_error("获取消融实验列表失败", "获取消融实验列表失败", exc) from exc
 
 
 @evaluation.get("/databases/{kb_id}/experiments/{experiment_id}")
 async def get_evaluation_experiment(kb_id: str, experiment_id: str, current_user: User = Depends(get_admin_user)):
     try:
+        await _ensure_access(current_user, kb_id)
         return {"message": "success", "data": await EvaluationService().get_experiment(kb_id, experiment_id)}
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        logger.exception(f"获取消融实验失败: {e}")
-        raise HTTPException(status_code=500, detail=f"获取消融实验失败: {str(e)}")
+    except Exception as exc:
+        raise _internal_http_error("获取消融实验失败", "获取消融实验失败", exc) from exc
 
 
 @evaluation.delete("/databases/{kb_id}/experiments/{experiment_id}")
 async def delete_evaluation_experiment(kb_id: str, experiment_id: str, current_user: User = Depends(get_admin_user)):
     try:
+        await _ensure_access(current_user, kb_id, write=True)
         await EvaluationService().delete_experiment(kb_id, experiment_id)
         return {"message": "success", "data": None}
+    except HTTPException:
+        raise
     except ValueError as e:
         if "not found" in str(e).lower():
             raise HTTPException(status_code=404, detail=str(e))
         raise HTTPException(status_code=409, detail=str(e))
-    except Exception as e:
-        logger.exception(f"删除消融实验失败: {e}")
-        raise HTTPException(status_code=500, detail=f"删除消融实验失败: {str(e)}")
+    except Exception as exc:
+        raise _internal_http_error("删除消融实验失败", "删除消融实验失败", exc) from exc

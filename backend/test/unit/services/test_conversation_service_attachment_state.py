@@ -131,6 +131,7 @@ async def test_convert_upload_to_markdown_returns_conversion_result(
     assert result.file_size == len(payload)
     assert result.markdown == "converted markdown"
     assert result.truncated is False
+    assert list(tmp_path.iterdir()) == []
 
 
 @pytest.mark.asyncio
@@ -159,6 +160,29 @@ async def test_convert_upload_to_markdown_rejects_unsupported_extension(monkeypa
 
     with pytest.raises(ValueError, match="不支持的文件类型"):
         await svc._convert_upload_to_markdown(upload)
+
+
+@pytest.mark.asyncio
+async def test_convert_upload_to_markdown_cleans_temp_file_and_sanitizes_log_on_failure(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    secret = "Authorization=secret-api-key provider-body=<private>"
+    messages: list[str] = []
+
+    async def _failing_aparse(source: str, params=None) -> str:
+        raise RuntimeError(secret)
+
+    monkeypatch.setattr(svc, "_ensure_workdir", lambda: tmp_path)
+    monkeypatch.setattr(svc.Parser, "aparse", _failing_aparse)
+    monkeypatch.setattr(svc.logger, "error", messages.append)
+    upload = _DummyUpload(filename="note.txt", content_type="text/plain", data=b"hello")
+
+    with pytest.raises(RuntimeError, match="secret-api-key"):
+        await svc._convert_upload_to_markdown(upload)
+
+    assert list(tmp_path.iterdir()) == []
+    assert secret not in " ".join(messages)
 
 
 def test_normalize_parse_method_uses_default_ocr_engine_for_images(monkeypatch: pytest.MonkeyPatch):

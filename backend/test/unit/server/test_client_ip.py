@@ -50,6 +50,16 @@ def test_extract_client_ip_keeps_the_proxy_peer_for_an_invalid_forwarded_chain(m
     assert result == "10.0.0.20"
 
 
+def test_extract_client_ip_canonicalizes_forwarded_ipv6_for_rate_limit_keys(monkeypatch):
+    monkeypatch.setenv("TRUSTED_PROXY_CIDRS", "10.0.0.0/8")
+
+    result = extract_client_ip(
+        _request(peer="10.0.0.20", forwarded_for="2001:4860:4860:0000:0000:0000:0000:8888")
+    )
+
+    assert result == "2001:4860:4860::8888"
+
+
 def test_validate_trusted_proxy_cidrs_rejects_invalid_configuration(monkeypatch):
     monkeypatch.setenv("TRUSTED_PROXY_CIDRS", "10.0.0.0/8,not-a-cidr")
 

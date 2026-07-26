@@ -1,9 +1,9 @@
-import traceback
+import asyncio
 import uuid
 from typing import Any
 
 import aiofiles
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -68,10 +68,16 @@ async def call(query: str = Body(...), meta: dict = Body(None), current_user: Us
     if "request_id" not in meta or not meta.get("request_id"):
         meta["request_id"] = str(uuid.uuid4())
 
-    model = select_model(model_spec=meta.get("model_spec") or meta.get("model") or conf.default_model)
+    try:
+        model = select_model(model_spec=meta.get("model_spec") or meta.get("model") or conf.default_model)
+        response = await model.call(query)
+    except Exception as exc:
+        logger.error(
+            f"Chat call failed for request_id={meta['request_id']} (error_type={type(exc).__name__})"
+        )
+        raise HTTPException(status_code=500, detail="模型调用失败，请稍后重试") from exc
 
-    response = await model.call(query)
-    logger.debug({"query": query, "response": response.content})
+    logger.debug("Chat call completed for request_id={}", meta["request_id"])
 
     return {"response": response.content, "request_id": meta["request_id"]}
 
@@ -88,9 +94,11 @@ async def get_thread_history(
             db=db,
         )
 
-    except Exception as e:
-        logger.error(f"获取对话历史消息出错: {e}, {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"获取对话历史消息出错: {str(e)}")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"获取对话历史消息失败 (error_type={type(exc).__name__})")
+        raise HTTPException(status_code=500, detail="获取对话历史消息失败") from exc
 
 
 @chat.get("/thread/{thread_id}/state")
@@ -110,9 +118,9 @@ async def get_thread_state(
         )
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"获取对话状态出错: {e}, {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"获取对话状态出错: {str(e)}")
+    except Exception as exc:
+        logger.error(f"获取对话状态失败 (error_type={type(exc).__name__})")
+        raise HTTPException(status_code=500, detail="获取对话状态失败") from exc
 
 
 # ==================== 线程管理 API ====================
@@ -585,22 +593,21 @@ async def upload_image(file: UploadFile = File(...), current_user: User = Depend
             raise HTTPException(status_code=400, detail="图片文件过大，请上传小于10MB的图片")
 
         # 处理图片
-        result = process_uploaded_image(image_data, file.filename)
+        result = await asyncio.to_thread(process_uploaded_image, image_data, file.filename)
 
         if not result["success"]:
-            raise HTTPException(status_code=400, detail=f"图片处理失败: {result['error']}")
+            raise HTTPException(status_code=400, detail="图片处理失败，请检查文件格式")
 
         logger.info(
-            f"用户 {current_user.id} 成功上传图片: {file.filename}, "
-            f"尺寸: {result['width']}x{result['height']}, "
-            f"格式: {result['format']}, "
-            f"大小: {result['size_bytes']} bytes"
+            f"用户 {current_user.id} 成功上传图片: "
+            f"尺寸={result['width']}x{result['height']}, "
+            f"格式={result['format']}, 大小={result['size_bytes']} bytes"
         )
 
         return ImageUploadResponse(**result)
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"图片上传处理失败: {str(e)}, {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"图片处理失败: {str(e)}")
+    except Exception as exc:
+        logger.error(f"图片上传处理失败 (error_type={type(exc).__name__})")
+        raise HTTPException(status_code=500, detail="图片处理失败，请稍后重试") from exc

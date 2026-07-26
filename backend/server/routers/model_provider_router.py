@@ -25,6 +25,10 @@ from yuxi.utils import logger
 model_providers = APIRouter(prefix="/system/model-providers", tags=["model-providers"])
 
 
+class ModelCacheRefreshError(RuntimeError):
+    pass
+
+
 async def _refresh_model_cache() -> None:
     """刷新模型缓存（CRUD 操作后调用）。"""
     from yuxi.models.providers.cache import model_cache
@@ -34,8 +38,9 @@ async def _refresh_model_cache() -> None:
             providers = await get_all_model_providers(session)
             model_cache.rebuild(providers)
             logger.info(f"Model cache refreshed: {len(model_cache.get_all_specs())} models loaded")
-    except Exception as e:
-        logger.error(f"Failed to refresh model cache: {e}")
+    except Exception as exc:
+        logger.error("Failed to refresh model cache: exception_type={}", type(exc).__name__)
+        raise ModelCacheRefreshError("模型缓存刷新失败") from exc
 
 
 class ModelProviderPayload(BaseModel):
@@ -90,11 +95,13 @@ async def create_provider(
         await db.commit()
         await _refresh_model_cache()
         return {"success": True, "data": provider.to_dict()}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"创建模型供应商失败: {e}")
-        raise HTTPException(status_code=500, detail="创建模型供应商失败")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ModelCacheRefreshError as exc:
+        raise HTTPException(status_code=503, detail="模型供应商已保存，但模型缓存刷新失败") from exc
+    except Exception as exc:
+        logger.error("创建模型供应商失败: exception_type={}", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="创建模型供应商失败") from exc
 
 
 @model_providers.get("/{provider_id}")
@@ -144,11 +151,13 @@ async def update_provider(
         return {"success": True, "data": provider.to_dict()}
     except HTTPException:
         raise
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"更新模型供应商失败 {provider_id}: {e}")
-        raise HTTPException(status_code=500, detail="更新模型供应商失败")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ModelCacheRefreshError as exc:
+        raise HTTPException(status_code=503, detail="模型供应商已更新，但模型缓存刷新失败") from exc
+    except Exception as exc:
+        logger.error("更新模型供应商失败: exception_type={}", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="更新模型供应商失败") from exc
 
 
 @model_providers.delete("/{provider_id}")
@@ -158,12 +167,20 @@ async def delete_provider(
     db: AsyncSession = Depends(get_db),
 ):
     """删除独立模型供应商配置。"""
-    deleted = await delete_provider_config(db, provider_id)
-    if not deleted:
-        raise HTTPException(status_code=404, detail=f"供应商 {provider_id} 不存在")
-    await db.commit()
-    await _refresh_model_cache()
-    return {"success": True}
+    try:
+        deleted = await delete_provider_config(db, provider_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail=f"供应商 {provider_id} 不存在")
+        await db.commit()
+        await _refresh_model_cache()
+        return {"success": True}
+    except HTTPException:
+        raise
+    except ModelCacheRefreshError as exc:
+        raise HTTPException(status_code=503, detail="模型供应商已删除，但模型缓存刷新失败") from exc
+    except Exception as exc:
+        logger.error("删除模型供应商失败: exception_type={}", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="删除模型供应商失败") from exc
 
 
 @model_providers.get("/{provider_id}/remote-models")
@@ -179,15 +196,17 @@ async def get_remote_models(
     try:
         models = await fetch_remote_models(provider)
         return {"success": True, "data": models}
-    except httpx.HTTPStatusError as e:
+    except httpx.HTTPStatusError as exc:
         # 远程 API 返回的错误，不透传状态码避免前端误判为系统认证失败
-        detail = e.response.text
-        if e.response.status_code == 401:
-            raise HTTPException(status_code=502, detail="远端 API 认证失败，请检查 API Key 配置")
-        raise HTTPException(status_code=e.response.status_code, detail=f"Models 请求失败: {detail}")
-    except Exception as e:
-        logger.error(f"拉取远端模型失败 {provider_id}: {e}")
-        raise HTTPException(status_code=400, detail=f"拉取远端模型失败: {e}")
+        if exc.response.status_code == 401:
+            raise HTTPException(status_code=502, detail="远端 API 认证失败，请检查 API Key 配置") from exc
+        raise HTTPException(
+            status_code=502,
+            detail=f"远端 Models API 返回 HTTP {exc.response.status_code}",
+        ) from exc
+    except Exception as exc:
+        logger.error("拉取远端模型失败: exception_type={}", type(exc).__name__)
+        raise HTTPException(status_code=502, detail="拉取远端模型失败") from exc
 
 
 @model_providers.post("/models/cache/refresh")
@@ -195,7 +214,10 @@ async def refresh_model_cache(
     current_user: User = Depends(get_admin_user),
 ):
     """强制刷新模型缓存，从数据库重新加载所有供应商配置到 Redis。"""
-    await _refresh_model_cache()
+    try:
+        await _refresh_model_cache()
+    except ModelCacheRefreshError as exc:
+        raise HTTPException(status_code=503, detail="模型缓存刷新失败") from exc
     from yuxi.models.providers.cache import model_cache
 
     return {"success": True, "message": "缓存已刷新", "model_count": len(model_cache.get_all_specs())}
@@ -249,6 +271,9 @@ async def get_model_status_by_spec(
     try:
         result = await test_model_status_by_spec(spec)
         return {"success": True, "data": result}
-    except Exception as e:
-        logger.error(f"测试模型状态失败 {spec}: {e}")
-        return {"success": False, "data": {"spec": spec, "status": "error", "message": str(e)}}
+    except Exception as exc:
+        logger.error("测试模型状态失败: exception_type={}", type(exc).__name__)
+        return {
+            "success": False,
+            "data": {"spec": spec, "status": "error", "message": "模型状态检查失败"},
+        }

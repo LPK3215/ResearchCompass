@@ -73,10 +73,7 @@ class KnowledgeBaseManager:
                     await kb_instance._load_metadata()
                     logger.info(f"[InitializeKB] {kb_type} 实例已初始化")
                 except Exception as e:
-                    logger.error(f"Failed to initialize {kb_type} knowledge base: {e}")
-                    import traceback
-
-                    logger.error(traceback.format_exc())
+                    logger.error(f"Failed to initialize {kb_type} knowledge base (error_type={type(e).__name__})")
 
         # 在事件循环中运行异步初始化
         try:
@@ -192,7 +189,7 @@ class KnowledgeBaseManager:
                     await kb_instance._load_metadata()
                     metadata_reloaded_types.add(kb_type)
                 except Exception as e:
-                    logger.warning(f"Failed to reload metadata for kb_type={kb_type}: {e}")
+                    logger.warning(f"Failed to reload metadata for kb_type={kb_type} (error_type={type(e).__name__})")
                 db_info = kb_instance.get_database_info(row.kb_id, include_files=False)
 
             if not db_info:
@@ -298,7 +295,7 @@ class KnowledgeBaseManager:
         user_repo = UserRepository()
         user: User | None = await user_repo.get_by_uid(uid)
         if not user:
-            logger.warning(f"User not found: {uid}")
+            logger.warning("User not found while listing knowledge bases")
             return {"databases": []}
         return await self.get_databases_by_user(user)
 
@@ -425,7 +422,7 @@ class KnowledgeBaseManager:
                 }
             )
 
-        logger.info(f"Created {kb_type} database: {database_name} ({kb_id}) with {kwargs}")
+        logger.info(f"Created {kb_type} database ({kb_id})")
         db_info["share_config"] = share_config
         return db_info
 
@@ -443,7 +440,7 @@ class KnowledgeBaseManager:
 
             return result
         except KBNotFoundError as e:
-            logger.warning(f"Database {kb_id} not found during deletion: {e}")
+            logger.warning(f"Database {kb_id} not found during deletion (error_type={type(e).__name__})")
             return {"message": "删除成功"}
 
     async def add_file_record(
@@ -1105,7 +1102,7 @@ class KnowledgeBaseManager:
                 inconsistencies["total_missing_collections"] += len(milvus_inconsistencies["missing_collections"])
                 inconsistencies["total_missing_files"] += len(milvus_inconsistencies["missing_files"])
             except Exception as e:
-                logger.error(f"检测 Milvus 数据不一致时出错: {e}")
+                logger.error(f"检测 Milvus 数据不一致时出错 (error_type={type(e).__name__})")
 
         # 输出检测结果到日志
         self._log_inconsistencies(inconsistencies)
@@ -1159,7 +1156,9 @@ class KnowledgeBaseManager:
                     collection_info["count"] = collection.num_entities
                     collection_info["description"] = collection.description
                 except Exception as e:
-                    logger.warning(f"无法获取集合 {collection_name} 的详细信息: {e}")
+                    logger.warning(
+                        f"无法获取集合 {collection_name} 的详细信息 (error_type={type(e).__name__})"
+                    )
                     collection_info["count"] = "unknown"
 
                 inconsistencies["missing_collections"].append(collection_info)
@@ -1201,10 +1200,10 @@ class KnowledgeBaseManager:
                             )
 
                 except Exception as e:
-                    logger.debug(f"检查数据库 {kb_id} 的文件一致性时出错: {e}")
+                    logger.debug(f"检查数据库 {kb_id} 的文件一致性时出错 (error_type={type(e).__name__})")
 
         except Exception as e:
-            logger.error(f"检测 Milvus 数据不一致时出错: {e}")
+            logger.error(f"检测 Milvus 数据不一致时出错 (error_type={type(e).__name__})")
 
         return inconsistencies
 

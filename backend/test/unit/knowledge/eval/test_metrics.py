@@ -4,7 +4,12 @@ import pytest
 
 os.environ.setdefault("OPENAI_API_KEY", "test-key")
 
-from yuxi.knowledge.eval.metrics import EvaluationMetricsCalculator, RetrievalMetrics
+from yuxi.knowledge.eval.metrics import (
+    AnswerMetrics,
+    EvaluationJudgeError,
+    EvaluationMetricsCalculator,
+    RetrievalMetrics,
+)
 
 
 def test_retrieval_metrics_use_metadata_chunk_id():
@@ -48,3 +53,17 @@ def test_overall_score_returns_none_without_any_metrics():
     score = EvaluationMetricsCalculator.calculate_overall_score([], [])
 
     assert score is None
+
+
+@pytest.mark.asyncio
+async def test_judge_failure_does_not_return_provider_secret_as_reasoning():
+    secret = "Authorization=secret-api-key provider-body=<private>"
+
+    class Judge:
+        async def call(self, *args, **kwargs):
+            raise RuntimeError(secret)
+
+    with pytest.raises(EvaluationJudgeError, match="评估裁判模型调用失败") as exc_info:
+        await AnswerMetrics.judge_correctness("question", "answer", "gold", Judge())
+
+    assert secret not in str(exc_info.value)

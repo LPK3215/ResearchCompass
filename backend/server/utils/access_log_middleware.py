@@ -47,7 +47,7 @@ class AccessLogMiddleware(BaseHTTPMiddleware):
         # 格式化日志消息，添加处理时间
         log_message = (
             f"{client_ip}:{request.client.port if request.client else 'unknown'} - "
-            f'"{request.method} {request.url.path}{"?" + request.url.query if request.url.query else ""} '
+            f'"{request.method} {request.url.path} '
             f'HTTP/{request.scope["http_version"]}" '
             f"{response.status_code} - {process_time_ms}ms"
         )

@@ -78,6 +78,44 @@ class TaskRepository:
                     return record
         return None
 
+    async def find_any_by_payload(
+        self,
+        *,
+        payload_match: dict[str, Any],
+        statuses: set[str] | None = None,
+    ) -> TaskRecord | None:
+        async with pg_manager.get_async_session_context() as session:
+            statement = select(TaskRecord)
+            if statuses is not None:
+                statement = statement.where(TaskRecord.status.in_(statuses))
+            result = await session.execute(statement.order_by(TaskRecord.created_at.desc(), TaskRecord.id.desc()))
+            for record in result.scalars():
+                payload = record.payload if isinstance(record.payload, dict) else {}
+                if all(payload.get(key) == value for key, value in payload_match.items()):
+                    return record
+        return None
+
+    async def delete_by_payload(
+        self,
+        *,
+        payload_match: dict[str, Any],
+        statuses: set[str],
+    ) -> list[str]:
+        if not payload_match:
+            raise ValueError("Task payload match must not be empty")
+
+        async with pg_manager.get_async_session_context() as session:
+            result = await session.execute(select(TaskRecord).where(TaskRecord.status.in_(statuses)))
+            matching_ids = [
+                record.id
+                for record in result.scalars()
+                if isinstance(record.payload, dict)
+                and all(record.payload.get(key) == value for key, value in payload_match.items())
+            ]
+            if matching_ids:
+                await session.execute(delete(TaskRecord).where(TaskRecord.id.in_(matching_ids)))
+            return matching_ids
+
     async def upsert(self, task_id: str, data: dict[str, Any]) -> TaskRecord:
         async with pg_manager.get_async_session_context() as session:
             result = await session.execute(select(TaskRecord).where(TaskRecord.id == task_id))

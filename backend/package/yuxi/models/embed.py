@@ -1,4 +1,5 @@
 import asyncio
+import math
 import os
 import time
 from abc import ABC, abstractmethod
@@ -62,18 +63,18 @@ class BaseEmbeddingModel(ABC):
             task_id = hashstr(messages)
             self.embed_state[task_id] = {"status": "in-progress", "total": len(messages), "progress": 0}
 
-        for i in range(0, len(messages), batch_size):
-            group_msg = messages[i : i + batch_size]
-            logger.info(f"Encoding [{i}/{len(messages)}] messages (bsz={batch_size})")
-            response = self.encode(group_msg)
-            data.extend(response)
+        try:
+            for i in range(0, len(messages), batch_size):
+                group_msg = messages[i : i + batch_size]
+                logger.info(f"Encoding [{i}/{len(messages)}] messages (bsz={batch_size})")
+                response = self.encode(group_msg)
+                data.extend(response)
+                if task_id:
+                    self.embed_state[task_id]["progress"] = i + len(group_msg)
+            return data
+        finally:
             if task_id:
-                self.embed_state[task_id]["progress"] = i + len(group_msg)
-
-        if task_id:
-            self.embed_state[task_id]["status"] = "completed"
-
-        return data
+                self.embed_state.pop(task_id, None)
 
     async def abatch_encode(self, messages: list[str], batch_size: int | None = None) -> list[list[float]]:
         batch_size = batch_size or self.batch_size
@@ -83,18 +84,18 @@ class BaseEmbeddingModel(ABC):
             task_id = hashstr(messages)
             self.embed_state[task_id] = {"status": "in-progress", "total": len(messages), "progress": 0}
 
-        for i in range(0, len(messages), batch_size):
-            group_msg = messages[i : i + batch_size]
-            logger.info(f"Async encoding [{i}/{len(messages)}] messages (bsz={batch_size})")
-            res = await self.aencode(group_msg)
-            data.extend(res)
+        try:
+            for i in range(0, len(messages), batch_size):
+                group_msg = messages[i : i + batch_size]
+                logger.info(f"Async encoding [{i}/{len(messages)}] messages (bsz={batch_size})")
+                res = await self.aencode(group_msg)
+                data.extend(res)
+                if task_id:
+                    self.embed_state[task_id]["progress"] = i + len(group_msg)
+            return data
+        finally:
             if task_id:
-                self.embed_state[task_id]["progress"] = i + len(group_msg)
-
-        if task_id:
-            self.embed_state[task_id]["status"] = "completed"
-
-        return data
+                self.embed_state.pop(task_id, None)
 
     async def test_connection(self) -> tuple[bool, str]:
         try:
@@ -105,11 +106,9 @@ class BaseEmbeddingModel(ABC):
                 if actual_dimension != expected_dimension:
                     return False, f"Embedding 维度不一致：配置 {expected_dimension}，实际 {actual_dimension}"
             return True, "连接正常"
-        except Exception as e:
-            error_msg = str(e)
-            error_msg += f", maybe you can check the `{self.base_url}` end with /embeddings as examples."
-            logger.error(error_msg)
-            return False, error_msg
+        except Exception as exc:
+            logger.error("Embedding connection test failed: exception_type={}", type(exc).__name__)
+            return False, "连接失败"
 
 
 class OtherEmbedding(BaseEmbeddingModel):
@@ -124,8 +123,10 @@ class OtherEmbedding(BaseEmbeddingModel):
     def _retry_delay_seconds(retry_index: int, retry_after: str | None = None) -> float:
         if retry_after:
             try:
-                return min(float(retry_after), EMBEDDING_RETRY_MAX_DELAY_SECONDS)
-            except ValueError:
+                delay = float(retry_after)
+                if math.isfinite(delay) and delay > 0:
+                    return min(delay, EMBEDDING_RETRY_MAX_DELAY_SECONDS)
+            except (TypeError, ValueError):
                 pass
         return min(float(2 ** (retry_index - 1)), EMBEDDING_RETRY_MAX_DELAY_SECONDS)
 
@@ -138,14 +139,13 @@ class OtherEmbedding(BaseEmbeddingModel):
         error: Exception | None = None,
     ) -> tuple[int, float] | None:
         status_code = getattr(response, "status_code", None)
-        response_text = str(getattr(response, "text", "") or "")
         messages = [message] if isinstance(message, str) else message
 
         if status_code == 400 and response is not None:
             logger.warning(
                 "Embedding request returned 400 Bad Request: "
-                f"model={self.model}, base_url={self.base_url}, input_count={len(messages)}, "
-                f"input_lengths={[len(item) for item in messages]}, body={response_text[:2000]}"
+                f"model={self.model}, input_count={len(messages)}, "
+                f"input_lengths={[len(item) for item in messages]}"
             )
 
         if status_code == 429:
@@ -163,69 +163,84 @@ class OtherEmbedding(BaseEmbeddingModel):
         reason = f"status={status_code}" if status_code is not None else f"error={type(error).__name__}"
         logger.warning(
             "Retrying embedding request: "
-            f"{reason}, model={self.model}, base_url={self.base_url}, "
+            f"{reason}, model={self.model}, "
             f"retry={next_retry_index}/{max_retries}, delay={delay:.1f}s, "
-            f"input_count={len(messages)}, body={response_text[:1000]}"
+            f"input_count={len(messages)}"
         )
         return next_retry_index, delay
 
     @staticmethod
     def _extract_embeddings(result: dict) -> list[list[float]]:
-        if not isinstance(result, dict) or "data" not in result:
-            raise ValueError(f"Embedding failed: Invalid response format {result}")
-        return [item["embedding"] for item in result["data"]]
+        data = result.get("data") if isinstance(result, dict) else None
+        if not isinstance(data, list):
+            raise ValueError("Embedding response must contain a data list")
+        embeddings = []
+        for item in data:
+            embedding = item.get("embedding") if isinstance(item, dict) else None
+            if not isinstance(embedding, list):
+                raise ValueError("Embedding response item is invalid")
+            embeddings.append(embedding)
+        return embeddings
 
     def encode(self, message: list[str] | str) -> list[list[float]]:
         payload = self.build_payload(message)
         retry_index = 0
-        while True:
-            try:
-                response = requests.post(self.base_url, json=payload, headers=self.headers, timeout=60)
-                response.raise_for_status()
-                return self._extract_embeddings(response.json())
-            except requests.RequestException as e:
-                retry = self._prepare_retry(
-                    message,
-                    retry_index=retry_index,
-                    response=getattr(e, "response", None),
-                    error=e,
-                )
-                if retry:
-                    retry_index, delay = retry
-                    time.sleep(delay)
-                    continue
+        with requests.Session() as session:
+            session.trust_env = False
+            while True:
+                try:
+                    response = session.post(self.base_url, json=payload, headers=self.headers, timeout=60)
+                    response.raise_for_status()
+                    return self._extract_embeddings(response.json())
+                except requests.RequestException as exc:
+                    retry = self._prepare_retry(
+                        message,
+                        retry_index=retry_index,
+                        response=getattr(exc, "response", None),
+                        error=exc,
+                    )
+                    if retry:
+                        retry_index, delay = retry
+                        time.sleep(delay)
+                        continue
 
-                logger.error(f"Embedding request failed: {e}, {payload}")
-                raise ValueError(f"Embedding request failed: {e}")
+                    messages = [message] if isinstance(message, str) else message
+                    logger.error(
+                        "Embedding request failed: {}, model={}, input_count={}",
+                        type(exc).__name__,
+                        self.model,
+                        len(messages),
+                    )
+                    raise ValueError("Embedding request failed") from exc
 
     async def aencode(self, message: list[str] | str) -> list[list[float]]:
         payload = self.build_payload(message)
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(trust_env=False) as client:
             retry_index = 0
             while True:
                 try:
                     response = await client.post(self.base_url, json=payload, headers=self.headers, timeout=60)
                     response.raise_for_status()
                     return self._extract_embeddings(response.json())
-                except httpx.HTTPStatusError as e:
+                except httpx.HTTPStatusError as exc:
                     retry = self._prepare_retry(
                         message,
                         retry_index=retry_index,
-                        response=e.response,
-                        error=e,
+                        response=exc.response,
+                        error=exc,
                     )
                     if retry:
                         retry_index, delay = retry
                         await asyncio.sleep(delay)
                         continue
-                    raise
-                except httpx.RequestError as e:
-                    retry = self._prepare_retry(message, retry_index=retry_index, error=e)
+                    raise ValueError("Embedding request failed") from exc
+                except httpx.RequestError as exc:
+                    retry = self._prepare_retry(message, retry_index=retry_index, error=exc)
                     if retry:
                         retry_index, delay = retry
                         await asyncio.sleep(delay)
                         continue
-                    raise ValueError(f"Embedding async request failed: {e}, {payload}, {self.base_url=}")
+                    raise ValueError("Embedding request failed") from exc
 
 
 def get_embedding_model_info_by_id(model_id: str) -> dict:

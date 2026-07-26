@@ -1441,6 +1441,7 @@ let keywordTrendChart = null
 let graphSyncTimer = null
 let synthesisPollTimer = null
 let synthesisRequestGeneration = 0
+let workspaceRequestGeneration = 0
 let evidencePdfLoadingTask = null
 let evidencePdfRenderTask = null
 let evidencePdfRequestId = 0
@@ -1683,10 +1684,12 @@ const loadPapers = async () => {
     return
   }
 
+  const kbId = selectedKbId.value
+  const requestGeneration = workspaceRequestGeneration
   loading.value = true
   papersError.value = ''
   try {
-    const result = await researchApi.listPapers(selectedKbId.value, {
+    const result = await researchApi.listPapers(kbId, {
       query: filters.query.trim(),
       year_from: filters.yearFrom,
       year_to: filters.yearTo,
@@ -1695,6 +1698,7 @@ const loadPapers = async () => {
       page: page.value,
       page_size: pageSize.value
     })
+    if (requestGeneration !== workspaceRequestGeneration || kbId !== selectedKbId.value) return
     papers.value = result.items || []
     total.value = result.total || 0
     if (page.value > 1 && papers.value.length === 0 && total.value > 0) {
@@ -1702,16 +1706,18 @@ const loadPapers = async () => {
       await loadPapers()
     }
   } catch (error) {
+    if (requestGeneration !== workspaceRequestGeneration) return
     papersError.value = error.message || '无法加载论文列表'
   } finally {
-    loading.value = false
+    if (requestGeneration === workspaceRequestGeneration) loading.value = false
   }
 }
 
-const renderTrendCharts = async () => {
+const renderTrendCharts = async (requestGeneration = workspaceRequestGeneration) => {
   await nextTick()
-  if (!trendData.value) return
+  if (requestGeneration !== workspaceRequestGeneration || !trendData.value) return
   const echarts = await loadEcharts()
+  if (requestGeneration !== workspaceRequestGeneration) return
   if (publicationTrendChart) publicationTrendChart.dispose()
   if (keywordTrendChart) keywordTrendChart.dispose()
   if (publicationTrendChartRef.value) {
@@ -1748,21 +1754,26 @@ const loadTrends = async () => {
     trendError.value = '起始年份不能大于结束年份'
     return
   }
+  const kbId = selectedKbId.value
+  const requestGeneration = workspaceRequestGeneration
   trendLoading.value = true
   trendError.value = ''
   try {
-    trendData.value = await researchApi.getAcademicTrends(selectedKbId.value, {
+    const result = await researchApi.getAcademicTrends(kbId, {
       year_from: trendFilters.yearFrom,
       year_to: trendFilters.yearTo,
       top_keywords: 20,
       limit: 50000
     })
+    if (requestGeneration !== workspaceRequestGeneration || kbId !== selectedKbId.value) return
+    trendData.value = result
     selectedTrendKeyword.value = trendData.value.keyword_trends?.[0]?.keyword || ''
-    await renderTrendCharts()
+    await renderTrendCharts(requestGeneration)
   } catch (error) {
+    if (requestGeneration !== workspaceRequestGeneration) return
     trendError.value = error.message || '研究趋势加载失败'
   } finally {
-    trendLoading.value = false
+    if (requestGeneration === workspaceRequestGeneration) trendLoading.value = false
   }
 }
 
@@ -1776,18 +1787,23 @@ const loadOpportunities = async () => {
     opportunityError.value = '起始年份不能大于结束年份'
     return
   }
+  const kbId = selectedKbId.value
+  const requestGeneration = workspaceRequestGeneration
   opportunityLoading.value = true
   opportunityError.value = ''
   try {
-    opportunityData.value = await researchApi.getAcademicOpportunities(selectedKbId.value, {
+    const result = await researchApi.getAcademicOpportunities(kbId, {
       year_from: opportunityFilters.yearFrom,
       year_to: opportunityFilters.yearTo,
       limit: 12
     })
+    if (requestGeneration !== workspaceRequestGeneration || kbId !== selectedKbId.value) return
+    opportunityData.value = result
   } catch (error) {
+    if (requestGeneration !== workspaceRequestGeneration) return
     opportunityError.value = error.message || '研究机会加载失败'
   } finally {
-    opportunityLoading.value = false
+    if (requestGeneration === workspaceRequestGeneration) opportunityLoading.value = false
   }
 }
 
@@ -1810,10 +1826,12 @@ const runResearchSearch = async () => {
     searchError.value = '候选证据数不能小于返回论文数'
     return
   }
+  const kbId = selectedKbId.value
+  const requestGeneration = workspaceRequestGeneration
   searchLoading.value = true
   searchError.value = ''
   try {
-    searchResult.value = await researchApi.searchPapers(selectedKbId.value, {
+    const result = await researchApi.searchPapers(kbId, {
       query: searchQuery.value.trim(),
       retrieval_mode: searchFilters.retrievalMode,
       top_k: searchFilters.topK,
@@ -1821,10 +1839,13 @@ const runResearchSearch = async () => {
       year_from: searchFilters.yearFrom,
       year_to: searchFilters.yearTo
     })
+    if (requestGeneration !== workspaceRequestGeneration || kbId !== selectedKbId.value) return
+    searchResult.value = result
   } catch (error) {
+    if (requestGeneration !== workspaceRequestGeneration) return
     searchError.value = error.message || '科研检索失败'
   } finally {
-    searchLoading.value = false
+    if (requestGeneration === workspaceRequestGeneration) searchLoading.value = false
   }
 }
 
@@ -2059,19 +2080,23 @@ const openSynthesisEvidence = (citation) => {
 
 const openEvidence = async (paper, evidence) => {
   closeEvidence()
+  const requestId = evidencePdfRequestId
+  const kbId = selectedKbId.value
   evidenceOpen.value = true
   evidenceLoading.value = true
   evidenceError.value = ''
   selectedEvidence.value = null
   selectedEvidenceFile.value = null
   try {
-    const result = await researchApi.getPaperEvidence(selectedKbId.value, paper.paper_id, evidence.chunk_id)
+    const result = await researchApi.getPaperEvidence(kbId, paper.paper_id, evidence.chunk_id)
+    if (requestId !== evidencePdfRequestId || kbId !== selectedKbId.value) return
     selectedEvidence.value = result.evidence
     selectedEvidenceFile.value = result.file
   } catch (error) {
+    if (requestId !== evidencePdfRequestId) return
     evidenceError.value = error.message || '证据原文定位失败'
   } finally {
-    evidenceLoading.value = false
+    if (requestId === evidencePdfRequestId) evidenceLoading.value = false
   }
 }
 
@@ -2167,6 +2192,7 @@ const closeEvidence = () => {
   disposeEvidencePdf()
   evidencePdfLoading.value = false
   evidencePdfError.value = ''
+  evidenceDownloadVariant.value = ''
 }
 
 const searchExternalPaperCatalog = async () => {
@@ -2175,26 +2201,33 @@ const searchExternalPaperCatalog = async () => {
     externalImportError.value = '请输入论文标题、DOI 或 Semantic Scholar Paper ID'
     return
   }
+  const kbId = selectedKbId.value
+  const requestGeneration = workspaceRequestGeneration
   externalSearchLoading.value = true
   externalSearchPerformed.value = true
   externalImportError.value = ''
   try {
-    const result = await researchApi.searchExternalPapers(selectedKbId.value, query, 10)
+    const result = await researchApi.searchExternalPapers(kbId, query, 10)
+    if (requestGeneration !== workspaceRequestGeneration || kbId !== selectedKbId.value) return
     externalPapers.value = result.items || []
   } catch (error) {
+    if (requestGeneration !== workspaceRequestGeneration) return
     externalPapers.value = []
     externalImportError.value = error.message || '外部论文搜索失败'
   } finally {
-    externalSearchLoading.value = false
+    if (requestGeneration === workspaceRequestGeneration) externalSearchLoading.value = false
   }
 }
 
 const importExternalPaperItem = async (paper) => {
   if (!paper?.paper_id || externalImportingId.value) return
+  const kbId = selectedKbId.value
+  const requestGeneration = workspaceRequestGeneration
   externalImportingId.value = paper.paper_id
   externalImportError.value = ''
   try {
-    const result = await researchApi.importExternalPaper(selectedKbId.value, paper.paper_id)
+    const result = await researchApi.importExternalPaper(kbId, paper.paper_id)
+    if (requestGeneration !== workspaceRequestGeneration || kbId !== selectedKbId.value) return
     message.success(`已提交“${result.title}”导入任务`)
     externalImportOpen.value = false
     externalPapers.value = []
@@ -2202,18 +2235,22 @@ const importExternalPaperItem = async (paper) => {
     externalSearchPerformed.value = false
     await loadPapers()
   } catch (error) {
+    if (requestGeneration !== workspaceRequestGeneration) return
     externalImportError.value = error.message || '外部论文导入失败'
   } finally {
-    externalImportingId.value = ''
+    if (requestGeneration === workspaceRequestGeneration) externalImportingId.value = ''
   }
 }
 
 const downloadEvidenceFile = async (variant) => {
   const file = selectedEvidenceFile.value
   if (!file?.file_id || evidenceDownloadVariant.value) return
+  const requestId = evidencePdfRequestId
+  const kbId = selectedKbId.value
   evidenceDownloadVariant.value = variant
   try {
-    const response = await downloadWorkspaceKnowledgeFile(selectedKbId.value, file.file_id, variant)
+    const response = await downloadWorkspaceKnowledgeFile(kbId, file.file_id, variant)
+    if (requestId !== evidencePdfRequestId || kbId !== selectedKbId.value) return
     const blob = await response.blob()
     const url = URL.createObjectURL(blob)
     const anchor = document.createElement('a')
@@ -2225,74 +2262,93 @@ const downloadEvidenceFile = async (variant) => {
     anchor.click()
     URL.revokeObjectURL(url)
   } catch (error) {
+    if (requestId !== evidencePdfRequestId) return
     message.error(error.message || '文件下载失败')
   } finally {
-    evidenceDownloadVariant.value = ''
+    if (requestId === evidencePdfRequestId) evidenceDownloadVariant.value = ''
   }
 }
 
 const loadAcademicGraph = async () => {
   if (!selectedKbId.value) return
+  const kbId = selectedKbId.value
+  const requestGeneration = workspaceRequestGeneration
   graphLoading.value = true
   graphError.value = ''
   try {
-    graphData.value = await researchApi.getAcademicGraph(selectedKbId.value, { depth: 2, limit: 300 })
+    const result = await researchApi.getAcademicGraph(kbId, { depth: 2, limit: 300 })
+    if (requestGeneration !== workspaceRequestGeneration || kbId !== selectedKbId.value) return
+    graphData.value = result
   } catch (error) {
+    if (requestGeneration !== workspaceRequestGeneration) return
     graphError.value = error.message || '引用图谱加载失败'
   } finally {
-    graphLoading.value = false
+    if (requestGeneration === workspaceRequestGeneration) graphLoading.value = false
   }
 }
 
-const pollGraphSync = async (runId) => {
+const pollGraphSync = async (runId, requestGeneration) => {
   clearTimeout(graphSyncTimer)
+  graphSyncTimer = null
+  if (requestGeneration !== workspaceRequestGeneration) return
   try {
-    graphSyncRun.value = await researchApi.getAcademicGraphSyncRun(runId)
-    if (['pending', 'running'].includes(graphSyncRun.value.status)) {
-      graphSyncTimer = setTimeout(() => pollGraphSync(runId), 2000)
+    const result = await researchApi.getAcademicGraphSyncRun(runId)
+    if (requestGeneration !== workspaceRequestGeneration) return
+    graphSyncRun.value = result
+    if (['pending', 'running'].includes(result.status)) {
+      graphSyncTimer = setTimeout(() => pollGraphSync(runId, requestGeneration), 2000)
     } else {
       graphSyncLoading.value = false
-      if (['success', 'completed_with_conflicts'].includes(graphSyncRun.value.status)) await loadAcademicGraph()
-      if (graphSyncRun.value.conflict_count) await loadGraphConflicts()
+      if (['success', 'completed_with_conflicts'].includes(result.status)) await loadAcademicGraph()
+      if (requestGeneration === workspaceRequestGeneration && result.conflict_count) await loadGraphConflicts()
     }
   } catch (error) {
+    if (requestGeneration !== workspaceRequestGeneration) return
     graphSyncLoading.value = false
     graphError.value = error.message || '同步状态查询失败'
   }
 }
 
 const loadGraphConflicts = async () => {
-  if (!graphSyncRun.value?.run_id) return
+  const runId = graphSyncRun.value?.run_id
+  if (!runId) return
+  const requestGeneration = workspaceRequestGeneration
   graphConflictsLoading.value = true
   graphConflictsError.value = ''
   try {
-    const result = await researchApi.listAcademicGraphConflicts(graphSyncRun.value.run_id, {
+    const result = await researchApi.listAcademicGraphConflicts(runId, {
       resolution_status: 'unresolved',
       offset: (graphConflictsPage.value - 1) * graphConflictsPageSize,
       limit: graphConflictsPageSize
     })
+    if (requestGeneration !== workspaceRequestGeneration || runId !== graphSyncRun.value?.run_id) return
     graphConflicts.value = result.items || []
     graphConflictsTotal.value = result.total || 0
   } catch (error) {
+    if (requestGeneration !== workspaceRequestGeneration) return
     graphConflictsError.value = error.message || '元数据冲突明细加载失败'
   } finally {
-    graphConflictsLoading.value = false
+    if (requestGeneration === workspaceRequestGeneration) graphConflictsLoading.value = false
   }
 }
 
 const syncAcademicGraph = async () => {
   if (!selectedKbId.value) return
+  const kbId = selectedKbId.value
+  const requestGeneration = workspaceRequestGeneration
   graphSyncLoading.value = true
   graphError.value = ''
   try {
-    const result = await researchApi.syncAcademicGraph(selectedKbId.value, {
+    const result = await researchApi.syncAcademicGraph(kbId, {
       paper_ids: [],
       citation_limit: 100,
       reference_limit: 100
     })
+    if (requestGeneration !== workspaceRequestGeneration || kbId !== selectedKbId.value) return
     graphSyncRun.value = { run_id: result.run_id, status: result.status, processed_papers: 0, conflict_count: 0 }
-    await pollGraphSync(result.run_id)
+    await pollGraphSync(result.run_id, requestGeneration)
   } catch (error) {
+    if (requestGeneration !== workspaceRequestGeneration) return
     graphSyncLoading.value = false
     graphError.value = error.message || '学术图谱同步启动失败'
   }
@@ -2315,46 +2371,78 @@ const handleAcademicGraphNodeClick = (node) => {
 
 const loadGraphRelations = async (graphPaperId) => {
   if (!selectedKbId.value || !graphPaperId) return
+  const kbId = selectedKbId.value
+  const requestGeneration = workspaceRequestGeneration
   relationsLoading.value = true
   relationsError.value = ''
   try {
-    const result = await researchApi.getAcademicGraphRelations(selectedKbId.value, graphPaperId, { limit: 20 })
+    const result = await researchApi.getAcademicGraphRelations(kbId, graphPaperId, { limit: 20 })
+    if (requestGeneration !== workspaceRequestGeneration || kbId !== selectedKbId.value) return
     graphRelations.value = result.relations || []
     if (!graphRelations.value.length) relationsError.value = '当前节点没有可解释的两跳关联'
   } catch (error) {
+    if (requestGeneration !== workspaceRequestGeneration) return
     relationsError.value = error.message || '关联发现失败'
   } finally {
-    relationsLoading.value = false
+    if (requestGeneration === workspaceRequestGeneration) relationsLoading.value = false
   }
 }
 
 const exportAllBibtex = async () => {
   if (!selectedKbId.value || papers.value.length === 0) return
+  const kbId = selectedKbId.value
+  const requestGeneration = workspaceRequestGeneration
   exportLoading.value = true
   try {
-    const blob = await researchApi.exportPapersBibtex(selectedKbId.value)
+    const blob = await researchApi.exportPapersBibtex(kbId)
+    if (requestGeneration !== workspaceRequestGeneration || kbId !== selectedKbId.value) return
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `papers_${selectedKbId.value}.bib`
+    a.download = `papers_${kbId}.bib`
     a.click()
     URL.revokeObjectURL(url)
   } catch (error) {
+    if (requestGeneration !== workspaceRequestGeneration) return
     message.error(error.message || 'BibTeX 导出失败')
   } finally {
-    exportLoading.value = false
+    if (requestGeneration === workspaceRequestGeneration) exportLoading.value = false
   }
 }
 
 const handleDatabaseChange = () => {
+  workspaceRequestGeneration += 1
   page.value = 1
   synthesisRequestGeneration += 1
+  clearTimeout(graphSyncTimer)
+  graphSyncTimer = null
   clearSynthesisPolling()
   closePaper()
+  closeEvidence()
+  publicationTrendChart?.dispose()
+  keywordTrendChart?.dispose()
+  publicationTrendChart = null
+  keywordTrendChart = null
+  loading.value = false
+  searchLoading.value = false
+  graphLoading.value = false
+  graphSyncLoading.value = false
+  graphConflictsLoading.value = false
+  relationsLoading.value = false
+  trendLoading.value = false
+  opportunityLoading.value = false
+  exportLoading.value = false
+  externalSearchLoading.value = false
+  externalImportingId.value = ''
+  externalImportOpen.value = false
+  externalPapers.value = []
+  externalSearchPerformed.value = false
+  externalImportError.value = ''
   loadPapers()
   searchResult.value = null
   searchError.value = ''
   graphData.value = null
+  graphError.value = ''
   selectedGraphNode.value = null
   graphRelations.value = []
   relationsError.value = ''
@@ -2365,6 +2453,7 @@ const handleDatabaseChange = () => {
   graphConflictsError.value = ''
   trendData.value = null
   selectedTrendKeyword.value = ''
+  trendError.value = ''
   opportunityData.value = null
   opportunityError.value = ''
   synthesisRuns.value = []
@@ -2433,8 +2522,10 @@ watch(activeMode, (mode) => {
 
 onBeforeUnmount(() => {
   evidencePdfRequestId += 1
+  workspaceRequestGeneration += 1
   synthesisRequestGeneration += 1
   clearTimeout(graphSyncTimer)
+  graphSyncTimer = null
   clearSynthesisPolling()
   publicationTrendChart?.dispose()
   keywordTrendChart?.dispose()

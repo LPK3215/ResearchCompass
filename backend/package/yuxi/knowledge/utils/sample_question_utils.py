@@ -108,9 +108,9 @@ async def generate_database_sample_questions(kb_id: str, count: int = 10) -> dic
 
     try:
         questions = parse_sample_questions_content(content)
-    except (json.JSONDecodeError, ValueError) as e:
-        logger.error(f"AI返回的JSON解析失败: {e}, 原始内容: {content}")
-        raise HTTPException(status_code=500, detail=f"AI返回格式错误: {str(e)}") from e
+    except (json.JSONDecodeError, ValueError) as error:
+        logger.error(f"AI 返回的问题格式无效 (error_type={type(error).__name__})")
+        raise HTTPException(status_code=500, detail="AI返回格式错误") from error
 
     logger.info(f"成功生成{len(questions)}个问题")
 
@@ -118,7 +118,8 @@ async def generate_database_sample_questions(kb_id: str, count: int = 10) -> dic
         await KnowledgeBaseRepository().update(kb_id, {"sample_questions": questions})
         logger.info(f"成功保存 {len(questions)} 个问题到知识库 {kb_id}")
     except Exception as save_error:
-        logger.error(f"保存问题失败: {save_error}")
+        logger.error(f"保存问题失败 (error_type={type(save_error).__name__})")
+        raise HTTPException(status_code=503, detail="示例问题保存失败") from save_error
 
     return {
         "message": "success",

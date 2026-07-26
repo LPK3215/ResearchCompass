@@ -52,19 +52,37 @@ class ResearchUserStudyRepository:
             )
 
     async def create_response_and_use_invite(
-        self, *, invite_id: str, response_data: dict[str, Any]
-    ) -> ResearchUserStudyResponse | None:
+        self,
+        *,
+        study_id: str,
+        invite_id: str,
+        response_data: dict[str, Any],
+    ) -> tuple[ResearchUserStudyResponse | None, str | None]:
         async with pg_manager.get_async_session_context() as session:
+            study = await session.scalar(
+                select(ResearchUserStudy)
+                .where(ResearchUserStudy.study_id == study_id)
+                .with_for_update()
+            )
+            if study is None:
+                return None, "study_not_found"
+            if study.status != "open":
+                return None, "study_closed"
             invite = await session.scalar(
-                select(ResearchUserStudyInvite).where(ResearchUserStudyInvite.invite_id == invite_id).with_for_update()
+                select(ResearchUserStudyInvite)
+                .where(
+                    ResearchUserStudyInvite.invite_id == invite_id,
+                    ResearchUserStudyInvite.study_id == study_id,
+                )
+                .with_for_update()
             )
             if invite is None or invite.status != "pending":
-                return None
+                return None, "invite_used"
             response = ResearchUserStudyResponse(**response_data)
             session.add(response)
             invite.status = "submitted"
             invite.used_at = response.submitted_at
-            return response
+            return response, None
 
     async def list_invites(self, study_id: str) -> list[ResearchUserStudyInvite]:
         async with pg_manager.get_async_session_context() as session:

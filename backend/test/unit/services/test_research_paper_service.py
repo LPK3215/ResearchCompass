@@ -1,5 +1,6 @@
 """research_paper_service 的边界行为测试。"""
 
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 import pytest
@@ -133,11 +134,15 @@ async def test_recover_pending_reindexes_continues_after_enqueue_failure(monkeyp
         nonlocal calls
         calls += 1
         if calls == 1:
-            raise RuntimeError("queue unavailable")
+            raise RuntimeError("queue unavailable Authorization=secret-api-key")
         return SimpleNamespace(id="task-2"), True
+
+    async def find_previous_task(**kwargs):
+        return SimpleNamespace(payload={"operator_id": "admin-1"})
 
     monkeypatch.setattr(research_paper_service, "AcademicPaperRepository", FakeRepository)
     monkeypatch.setattr(research_paper_service, "_enqueue_paper_reindex", enqueue)
+    monkeypatch.setattr(research_paper_service.tasker, "find_task_by_payload", find_previous_task)
 
     assert await research_paper_service.recover_pending_paper_reindexes() == 1
     assert failed == [
@@ -145,7 +150,83 @@ async def test_recover_pending_reindexes_continues_after_enqueue_failure(monkeyp
             "kb_id": "kb-1",
             "paper_id": "paper-1",
             "revision": 2,
-            "error": "恢复任务入队失败: queue unavailable",
+            "error": "论文元数据同步恢复任务提交失败",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_recover_pending_reindex_fails_closed_without_persisted_owner(monkeypatch):
+    failures = []
+
+    class FakeRepository:
+        async def list_pending_reindex(self):
+            return [
+                SimpleNamespace(
+                    kb_id="kb-1",
+                    paper_id="paper-1",
+                    file_id="file-1",
+                    title="One",
+                    metadata_revision=2,
+                )
+            ]
+
+        async def fail_reindex(self, **kwargs):
+            failures.append(kwargs)
+
+    async def find_previous_task(**kwargs):
+        return None
+
+    async def reject_enqueue(**kwargs):
+        raise AssertionError("ownerless recovery must not enqueue a write task")
+
+    monkeypatch.setattr(research_paper_service, "AcademicPaperRepository", FakeRepository)
+    monkeypatch.setattr(research_paper_service.tasker, "find_task_by_payload", find_previous_task)
+    monkeypatch.setattr(research_paper_service, "_enqueue_paper_reindex", reject_enqueue)
+
+    assert await research_paper_service.recover_pending_paper_reindexes() == 0
+    assert failures == [
+        {
+            "kb_id": "kb-1",
+            "paper_id": "paper-1",
+            "revision": 2,
+            "error": "论文元数据同步恢复任务缺少可验证的所有者",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_new_reindex_task_executes_through_owner_validation(monkeypatch):
+    resumed = []
+
+    async def resume(context):
+        resumed.append(context.payload)
+        return {"status": "indexed"}
+
+    async def enqueue_unique_by_payload(**kwargs):
+        context = SimpleNamespace(payload=kwargs["payload"])
+        result = await kwargs["coroutine"](context)
+        return SimpleNamespace(id="task-1", status="success", result=result), True
+
+    monkeypatch.setattr(research_paper_service, "_resume_paper_reindex_task", resume)
+    monkeypatch.setattr(research_paper_service.tasker, "enqueue_unique_by_payload", enqueue_unique_by_payload)
+
+    await research_paper_service._enqueue_paper_reindex(
+        kb_id="kb-1",
+        paper_id="paper-1",
+        file_id="file-1",
+        paper_title="Paper",
+        operator_id="admin-1",
+        revision=3,
+    )
+
+    assert resumed == [
+        {
+            "kb_id": "kb-1",
+            "paper_id": "paper-1",
+            "file_id": "file-1",
+            "operator_id": "admin-1",
+            "revision": 3,
         }
     ]
 
@@ -196,6 +277,57 @@ async def test_resume_paper_reindex_uses_persisted_operator_and_payload(monkeypa
             },
         ),
     ]
+
+
+@pytest.mark.asyncio
+async def test_reindex_failure_does_not_persist_or_raise_provider_secret(monkeypatch):
+    secret = "Authorization=secret-api-key provider-body=<private>"
+    failures = []
+
+    class FakeRepository:
+        async def get_by_paper_id(self, **kwargs):
+            return SimpleNamespace(metadata_revision=3, indexed_revision=2, metadata_status="pending")
+
+        async def fail_reindex(self, **kwargs):
+            failures.append(kwargs)
+
+    class Context:
+        async def raise_if_cancelled(self):
+            return None
+
+        async def set_progress(self, *args):
+            return None
+
+    @asynccontextmanager
+    async def unlocked(*args):
+        yield
+
+    async def allow_owner(*args, **kwargs):
+        return SimpleNamespace(uid="admin-1")
+
+    async def fail_index(*args, **kwargs):
+        raise RuntimeError(secret)
+
+    monkeypatch.setattr(research_paper_service, "AcademicPaperRepository", FakeRepository)
+    monkeypatch.setattr(research_paper_service, "_paper_reindex_lock", unlocked)
+    monkeypatch.setattr(research_paper_service, "_ensure_reindex_owner_can_write", allow_owner)
+    monkeypatch.setattr(research_paper_service, "_serialize_paper", lambda paper: {"paper_id": "paper-1"})
+    monkeypatch.setattr(research_paper_service.knowledge_base, "index_file", fail_index)
+
+    with pytest.raises(research_paper_service.ResearchPaperReindexError) as exc_info:
+        await research_paper_service._run_paper_reindex(
+            Context(),
+            kb_id="kb-1",
+            paper_id="paper-1",
+            file_id="file-1",
+            operator_id="admin-1",
+            target_revision=3,
+        )
+
+    assert exc_info.value.error_type == "paper_reindex_failed"
+    assert exc_info.value.message == "论文元数据与检索索引同步失败"
+    assert failures[-1]["error"] == "论文元数据与检索索引同步失败"
+    assert secret not in repr(failures)
     assert research_paper_service.tasker._resumable_handlers["research_paper_reindex"] is (
         research_paper_service._resume_paper_reindex_task
     )

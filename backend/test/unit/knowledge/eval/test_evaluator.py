@@ -2,7 +2,15 @@ import os
 
 os.environ.setdefault("OPENAI_API_KEY", "test-key")
 
-from yuxi.knowledge.eval.evaluator import aggregate_metrics, build_answer_prompt, normalize_query_result
+import pytest
+
+from yuxi.knowledge.eval.evaluator import (
+    EvaluationAnswerGenerationError,
+    aggregate_metrics,
+    build_answer_prompt,
+    generate_answer_if_needed,
+    normalize_query_result,
+)
 
 
 def test_normalize_query_result_supports_dict_and_list():
@@ -37,3 +45,23 @@ def test_aggregate_metrics_matches_service_output_shape():
     assert metrics["f1@1"] == 0.5
     assert metrics["answer_correctness"] == 0.5
     assert metrics["overall_score"] == overall_score
+
+
+@pytest.mark.asyncio
+async def test_answer_generation_failure_does_not_expose_provider_secret():
+    secret = "Authorization=secret-api-key provider-body=<private>"
+
+    class Model:
+        async def call(self, *args, **kwargs):
+            raise RuntimeError(secret)
+
+    with pytest.raises(EvaluationAnswerGenerationError, match="评估答案模型调用失败") as exc_info:
+        await generate_answer_if_needed(
+            query="question",
+            generated_answer="",
+            retrieved_chunks=[{"content": "evidence"}],
+            retrieval_config={"answer_llm": "provider:model"},
+            select_model_fn=lambda **kwargs: Model(),
+        )
+
+    assert secret not in str(exc_info.value)

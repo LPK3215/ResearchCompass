@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 import pytest
@@ -97,6 +98,102 @@ class _FakeConvRepo:
 
     async def bind_attachments_to_request(self, conversation_id: int, request_id: str, file_ids: list[str]):
         return []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("mode", "expected_error_type", "expected_error_message"),
+    [
+        ("chat", "unexpected_error", "智能体运行失败"),
+        ("resume", "resume_error", "对话恢复失败"),
+    ],
+)
+async def test_agent_stream_failures_do_not_expose_provider_secrets(
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+    expected_error_type: str,
+    expected_error_message: str,
+):
+    secret = "Authorization=secret-api-key provider-body=<private>"
+    saved_errors: list[dict] = []
+    log_entries: list[tuple[str, tuple, dict]] = []
+
+    class FakeLogger:
+        def __getattr__(self, level):
+            def record(*args, **kwargs):
+                log_entries.append((level, args, kwargs))
+
+            return record
+
+    class FailingAgent:
+        context_schema = _FakeContext
+
+        async def stream_messages_with_state(self, messages, input_context=None, **kwargs):
+            del messages, input_context, kwargs
+            raise RuntimeError(secret)
+            yield
+
+        async def stream_resume_with_state(self, command, input_context=None, **kwargs):
+            del command, input_context, kwargs
+            raise RuntimeError(secret)
+            yield
+
+    async def fake_resolve_agent_runtime(**_kwargs):
+        return SimpleNamespace(slug="test-agent", backend_id="ChatbotAgent"), FailingAgent(), {}
+
+    async def fake_guard_check(_content):
+        return False
+
+    async def fake_save_partial_message(*args, **kwargs):
+        del args
+        saved_errors.append(kwargs)
+        return SimpleNamespace(id=1)
+
+    @asynccontextmanager
+    async def fake_session_context():
+        yield _FakeSession()
+
+    monkeypatch.setattr(svc, "_resolve_agent_runtime", fake_resolve_agent_runtime)
+    monkeypatch.setattr(svc, "ConversationRepository", _FakeConvRepo)
+    monkeypatch.setattr(svc.content_guard, "check", fake_guard_check)
+    monkeypatch.setattr(svc, "save_partial_message", fake_save_partial_message)
+    monkeypatch.setattr(svc.pg_manager, "get_async_session_context", fake_session_context)
+    monkeypatch.setattr(
+        svc,
+        "_build_langfuse_run_context",
+        lambda **kwargs: SimpleNamespace(callbacks=[], metadata={}, tags=[], trace_id=None),
+    )
+    monkeypatch.setattr(svc, "flush_langfuse", lambda: None)
+    monkeypatch.setattr(svc, "logger", FakeLogger())
+
+    if mode == "chat":
+        stream = svc.stream_agent_chat(
+            agent_slug="test-agent",
+            thread_id="thread-1",
+            meta={"request_id": "req-1"},
+            input_message=build_chat_input_message("hello"),
+            current_user=SimpleNamespace(id=1, uid="user-1", role="user", department_id="dept-1"),
+            db=_FakeSession(),
+        )
+    else:
+        stream = svc.stream_agent_resume(
+            thread_id="thread-1",
+            resume_input={"approved": True},
+            meta={"request_id": "req-1"},
+            current_user=SimpleNamespace(id=1, uid="user-1", role="user", department_id="dept-1"),
+            db=_FakeSession(),
+        )
+
+    chunks = [json.loads(chunk.decode("utf-8")) async for chunk in stream]
+
+    assert chunks[-1]["status"] == "error"
+    assert chunks[-1]["error_type"] == expected_error_type
+    assert chunks[-1]["error_message"] == expected_error_message
+    assert saved_errors[-1]["error_type"] == expected_error_type
+    assert saved_errors[-1]["error_message"] == expected_error_message
+    assert secret not in repr(chunks)
+    assert secret not in repr(saved_errors)
+    assert secret not in repr(log_entries)
 
 
 def test_build_langfuse_run_context_reads_evaluation_from_invocation_meta(monkeypatch: pytest.MonkeyPatch):

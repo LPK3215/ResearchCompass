@@ -16,12 +16,12 @@ from yuxi.services.semantic_scholar_service import (
     SemanticScholarError,
     normalize_paper_title,
 )
-from yuxi.services.task_service import TaskContext, tasker
+from yuxi.services.task_service import PublicTaskError, TaskContext, tasker
 from yuxi.storage.postgres.models_business import User
 from yuxi.utils import hashstr
 
 
-class AcademicGraphSyncError(RuntimeError):
+class AcademicGraphSyncError(PublicTaskError):
     def __init__(self, error_type: str, message: str):
         super().__init__(message)
         self.error_type = error_type
@@ -210,6 +210,16 @@ async def _persist_sync_checkpoint(
     )
 
 
+async def _ensure_graph_sync_owner_can_write(run: Any) -> None:
+    user = await UserRepository().get_by_uid(str(run.uid))
+    if user is None or bool(user.is_deleted):
+        raise AcademicGraphSyncError("forbidden", "图谱同步任务所有者不存在或已删除")
+    try:
+        await _ensure_access(user, str(run.kb_id), write=True)
+    except HTTPException as exc:
+        raise AcademicGraphSyncError("forbidden", "图谱同步任务所有者已失去知识库写入权限") from exc
+
+
 async def _run_sync(
     context: TaskContext,
     *,
@@ -248,6 +258,7 @@ async def _run_sync(
         "conflict_count": int(run.conflict_count or 0),
     }
     try:
+        await _ensure_graph_sync_owner_can_write(run)
         papers = await paper_repo.list_for_graph_sync(kb_id=kb_id, paper_ids=paper_ids or None)
         if paper_ids and len(papers) != len(set(paper_ids)):
             raise AcademicGraphSyncError("paper_not_found", "部分待同步论文不存在于当前知识库")
@@ -257,6 +268,7 @@ async def _run_sync(
             if local_paper.paper_id in processed_paper_ids:
                 continue
             await context.raise_if_cancelled()
+            await _ensure_graph_sync_owner_can_write(run)
             await context.set_progress((index - 1) / len(papers) * 90, f"正在同步 {local_paper.title}")
             try:
                 remote = await client.resolve_paper(local_paper)
@@ -270,6 +282,7 @@ async def _run_sync(
                     continue
                 raise
 
+            await _ensure_graph_sync_owner_can_write(run)
             try:
                 local_graph_id, author_count, topic_count = await _persist_paper(
                     repo=repo,
@@ -323,10 +336,13 @@ async def _run_sync(
                 client.list_citations(remote["paperId"], citation_limit),
                 client.list_references(remote["paperId"], reference_limit),
             )
-            for edge, paper_field, local_is_citing in [
+            await _ensure_graph_sync_owner_can_write(run)
+            for edge_index, (edge, paper_field, local_is_citing) in enumerate([
                 *((edge, "citingPaper", False) for edge in citations),
                 *((edge, "citedPaper", True) for edge in references),
-            ]:
+            ]):
+                if edge_index and edge_index % 100 == 0:
+                    await _ensure_graph_sync_owner_can_write(run)
                 related = edge.get(paper_field)
                 if not isinstance(related, dict) or not related.get("paperId") or not related.get("title"):
                     raise AcademicGraphSyncError("invalid_citation_edge", "Semantic Scholar 引用边缺少论文数据")
@@ -355,6 +371,7 @@ async def _run_sync(
             await _persist_sync_checkpoint(repo, run_id, counts, processed_paper_ids)
 
         await context.raise_if_cancelled()
+        await _ensure_graph_sync_owner_can_write(run)
         graph_counts = await repo.counts(kb_id)
         counts.update(
             {
@@ -397,19 +414,25 @@ async def _run_sync(
             )
         raise
     except Exception as exc:
-        error_type = getattr(exc, "error_type", "academic_graph_sync_failed")
-        error_message = getattr(exc, "message", str(exc))
+        if isinstance(exc, AcademicGraphSyncError):
+            failure = exc
+        elif isinstance(exc, SemanticScholarError):
+            failure = AcademicGraphSyncError(exc.error_type, exc.message)
+        else:
+            failure = AcademicGraphSyncError("academic_graph_sync_failed", "学术图谱同步任务执行失败")
         await repo.update_sync_run(
             run_id,
             {
                 **counts,
                 "status": "failed",
-                "error_type": error_type,
-                "error_message": error_message,
+                "error_type": failure.error_type,
+                "error_message": failure.message,
                 "completed_at": _now(),
             },
         )
-        raise
+        if failure is exc:
+            raise
+        raise failure from exc
 
 
 async def enqueue_academic_graph_sync(
@@ -433,16 +456,6 @@ async def enqueue_academic_graph_sync(
         sync_config=sync_config,
     )
 
-    async def sync(context: TaskContext) -> dict[str, Any]:
-        return await _run_sync(
-            context,
-            run_id=run_id,
-            kb_id=kb_id,
-            paper_ids=normalized_ids,
-            citation_limit=citation_limit,
-            reference_limit=reference_limit,
-        )
-
     try:
         task, created = await tasker.enqueue_unique_by_payload(
             name="同步学术引用图谱",
@@ -450,7 +463,7 @@ async def enqueue_academic_graph_sync(
             payload={"run_id": run_id, "kb_id": kb_id, **sync_config},
             payload_match={"kb_id": kb_id},
             statuses={"pending", "running"},
-            coroutine=sync,
+            coroutine=_resume_academic_graph_sync_task,
         )
         if not created:
             await repo.update_sync_run(
@@ -471,7 +484,7 @@ async def enqueue_academic_graph_sync(
             {
                 "status": "failed",
                 "error_type": "task_enqueue_failed",
-                "error_message": str(exc),
+                "error_message": "学术图谱同步任务提交失败",
                 "completed_at": _now(),
             },
         )
@@ -572,16 +585,6 @@ async def recover_academic_graph_sync_runs() -> int:
             )
             continue
 
-        async def sync(context: TaskContext, record=run, sync_config=config) -> dict[str, Any]:
-            return await _run_sync(
-                context,
-                run_id=str(record.run_id),
-                kb_id=str(record.kb_id),
-                paper_ids=list(record.requested_paper_ids or []),
-                citation_limit=int(sync_config.get("citation_limit") or 0),
-                reference_limit=int(sync_config.get("reference_limit") or 0),
-            )
-
         try:
             _, created = await tasker.enqueue_unique_by_payload(
                 name="恢复学术引用图谱同步",
@@ -589,15 +592,15 @@ async def recover_academic_graph_sync_runs() -> int:
                 payload={"run_id": run.run_id, "kb_id": run.kb_id, **config},
                 payload_match={"run_id": run.run_id},
                 statuses={"pending", "running"},
-                coroutine=sync,
+                coroutine=_resume_academic_graph_sync_task,
             )
-        except Exception as exc:
+        except Exception:
             await repo.update_sync_run(
                 str(run.run_id),
                 {
                     "status": "failed",
                     "error_type": "graph_sync_recovery_failed",
-                    "error_message": str(exc),
+                    "error_message": "学术图谱同步恢复任务提交失败",
                     "completed_at": _now(),
                 },
             )

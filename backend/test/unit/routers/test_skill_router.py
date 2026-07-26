@@ -1,11 +1,27 @@
 from __future__ import annotations
 
+import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
+from server.routers import skill_router
 from server.routers.skill_router import skills, user_skills
 from server.utils.auth_middleware import get_admin_user, get_db, get_required_user
 from yuxi.storage.postgres.models_business import Skill, User
+
+
+SECRET = "Authorization=secret-api-key path=/private/repository"
+
+
+class _CapturingLogger:
+    def __init__(self):
+        self.entries: list[tuple[str, tuple, dict]] = []
+
+    def __getattr__(self, level: str):
+        def record(*args, **kwargs):
+            self.entries.append((level, args, kwargs))
+
+        return record
 
 
 def _build_app(*, role: str = "admin") -> FastAPI:
@@ -135,7 +151,13 @@ def test_prepare_skill_upload_route(monkeypatch):
     client = TestClient(_build_app(role="user"))
     resp = client.post(
         "/api/skills/import/prepare",
-        files={"file": ("SKILL.md", b"---\nname: demo\ndescription: demo skill\n---\n", "text/markdown")},
+        files={
+            "file": (
+                r"C:\Users\alice\private\SKILL.md",
+                b"---\nname: demo\ndescription: demo skill\n---\n",
+                "text/markdown",
+            )
+        },
     )
 
     assert resp.status_code == 200, resp.text
@@ -145,6 +167,209 @@ def test_prepare_skill_upload_route(monkeypatch):
         "file_bytes": "---\nname: demo\ndescription: demo skill\n---\n",
         "operator_uid": "user",
     }
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "/var/lib/yuxi/skills",
+        "file:///var/lib/yuxi/skills",
+        "http://github.com/anthropics/skills",
+        "https://token@github.com/anthropics/skills",
+        "https://github.com/anthropics/skills?token=secret",
+    ],
+)
+def test_remote_skill_routes_reject_local_or_credentialed_sources(monkeypatch, source):
+    async def unexpected_list(_source):
+        raise AssertionError("remote list must not run")
+
+    async def unexpected_prepare(*_args, **_kwargs):
+        raise AssertionError("remote prepare must not run")
+
+    monkeypatch.setattr(skill_router, "list_remote_skills", unexpected_list)
+    monkeypatch.setattr(skill_router, "prepare_remote_skill_install", unexpected_prepare)
+
+    client = TestClient(_build_app(role="user"))
+    list_resp = client.post("/api/skills/remote/list", json={"source": source})
+    prepare_resp = client.post(
+        "/api/skills/remote/prepare",
+        json={"source": source, "skills": ["demo"]},
+    )
+
+    assert list_resp.status_code == 400
+    assert list_resp.json() == {"detail": "Skill 请求无效"}
+    assert prepare_resp.status_code == 400
+    assert prepare_resp.json() == {"detail": "Skill 请求无效"}
+    assert source not in list_resp.text
+    assert source not in prepare_resp.text
+
+
+def test_remote_skill_list_accepts_github_https_url(monkeypatch):
+    captured: dict[str, str] = {}
+
+    async def fake_list_remote_skills(source):
+        captured["source"] = source
+        return [{"name": "demo", "description": "Demo"}]
+
+    monkeypatch.setattr(skill_router, "list_remote_skills", fake_list_remote_skills)
+
+    client = TestClient(_build_app(role="user"))
+    resp = client.post(
+        "/api/skills/remote/list",
+        json={"source": "https://github.com/anthropics/skills.git"},
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"] == [{"name": "demo", "description": "Demo"}]
+    assert captured == {"source": "https://github.com/anthropics/skills.git"}
+
+
+def test_remote_skill_failure_does_not_expose_exception_or_source(monkeypatch):
+    logger = _CapturingLogger()
+    source = "private-owner/private-repository"
+
+    async def fail(_source):
+        raise RuntimeError(SECRET)
+
+    monkeypatch.setattr(skill_router, "list_remote_skills", fail)
+    monkeypatch.setattr(skill_router, "logger", logger)
+
+    client = TestClient(_build_app(role="user"))
+    resp = client.post("/api/skills/remote/list", json={"source": source})
+
+    assert resp.status_code == 500
+    assert resp.json() == {"detail": "获取远程 skills 列表失败"}
+    assert SECRET not in resp.text
+    assert SECRET not in repr(logger.entries)
+    assert source not in repr(logger.entries)
+
+
+def test_remote_skill_value_error_is_sanitized(monkeypatch):
+    async def fail(_source):
+        raise ValueError(SECRET)
+
+    monkeypatch.setattr(skill_router, "list_remote_skills", fail)
+
+    client = TestClient(_build_app(role="user"))
+    resp = client.post("/api/skills/remote/list", json={"source": "anthropics/skills"})
+
+    assert resp.status_code == 400
+    assert resp.json() == {"detail": "Skill 请求无效"}
+    assert SECRET not in resp.text
+
+
+def test_remote_skill_prepare_sanitizes_item_failures(monkeypatch):
+    async def fake_prepare_remote_skill_install(*_args, **_kwargs):
+        return {
+            "draft_id": "draft-1",
+            "source": "anthropics/skills",
+            "items": [{"slug": "demo", "success": False, "error": SECRET}],
+        }
+
+    monkeypatch.setattr(skill_router, "prepare_remote_skill_install", fake_prepare_remote_skill_install)
+
+    client = TestClient(_build_app(role="user"))
+    resp = client.post(
+        "/api/skills/remote/prepare",
+        json={"source": "anthropics/skills", "skills": ["demo"]},
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"]["items"] == [
+        {"slug": "demo", "success": False, "error": "远程 Skill 解析失败"}
+    ]
+    assert SECRET not in resp.text
+
+
+def test_remote_skill_search_failure_does_not_expose_query(monkeypatch):
+    logger = _CapturingLogger()
+    query = "private research query"
+
+    async def fail(_query):
+        raise RuntimeError(SECRET)
+
+    monkeypatch.setattr(skill_router, "search_remote_skills", fail)
+    monkeypatch.setattr(skill_router, "logger", logger)
+
+    client = TestClient(_build_app(role="user"))
+    resp = client.post("/api/skills/remote/search", json={"query": query})
+
+    assert resp.status_code == 500
+    assert resp.json() == {"detail": "搜索远程 skills 失败"}
+    assert SECRET not in resp.text
+    assert SECRET not in repr(logger.entries)
+    assert query not in repr(logger.entries)
+
+
+def test_skill_file_failure_does_not_expose_path(monkeypatch):
+    logger = _CapturingLogger()
+    requested_path = "private/credential.txt"
+
+    async def allow_read(_db, _user, slug):
+        return _skill(slug=slug)
+
+    async def fail_read(_db, _slug, _path):
+        raise RuntimeError(SECRET)
+
+    monkeypatch.setattr(skill_router, "get_management_readable_skill_or_raise", allow_read)
+    monkeypatch.setattr(skill_router, "read_skill_file", fail_read)
+    monkeypatch.setattr(skill_router, "logger", logger)
+
+    client = TestClient(_build_app(role="user"))
+    resp = client.get("/api/system/skills/demo/file", params={"path": requested_path})
+
+    assert resp.status_code == 500
+    assert resp.json() == {"detail": "读取技能文件失败"}
+    assert SECRET not in resp.text
+    assert SECRET not in repr(logger.entries)
+    assert requested_path not in repr(logger.entries)
+
+
+def test_skill_file_route_stops_when_management_read_is_denied(monkeypatch):
+    async def deny_read(_db, _user, _slug):
+        raise ValueError(f"技能不存在或无权访问: {SECRET}")
+
+    async def unexpected_read(*_args, **_kwargs):
+        raise AssertionError("file read must not run")
+
+    monkeypatch.setattr(skill_router, "get_management_readable_skill_or_raise", deny_read)
+    monkeypatch.setattr(skill_router, "read_skill_file", unexpected_read)
+
+    client = TestClient(_build_app(role="user"))
+    resp = client.get("/api/system/skills/demo/file", params={"path": "SKILL.md"})
+
+    assert resp.status_code == 404
+    assert resp.json() == {"detail": "Skill 不存在或无权访问"}
+    assert SECRET not in resp.text
+
+
+def test_batch_operation_failure_details_are_sanitized(monkeypatch):
+    async def fake_confirm(*_args, **_kwargs):
+        return [{"slug": "demo", "success": False, "error": SECRET}]
+
+    async def allow_manage(_db, _user, slug):
+        return _skill(slug=slug)
+
+    async def fake_delete_batch(_db, *, slugs):
+        return [{"slug": slugs[0], "success": False, "error": SECRET}]
+
+    monkeypatch.setattr(skill_router, "confirm_skill_install_draft", fake_confirm)
+    monkeypatch.setattr(skill_router, "get_manageable_skill_or_raise", allow_manage)
+    monkeypatch.setattr(skill_router, "delete_skills_batch", fake_delete_batch)
+
+    client = TestClient(_build_app(role="user"))
+    confirm_resp = client.post(
+        "/api/skills/install-drafts/draft-1/confirm",
+        json={"share_config": None},
+    )
+    delete_resp = client.post("/api/system/skills/delete-batch", json={"slugs": ["demo"]})
+
+    assert confirm_resp.status_code == 200, confirm_resp.text
+    assert confirm_resp.json()["data"] == [{"slug": "demo", "success": False, "error": "Skill 安装失败"}]
+    assert delete_resp.status_code == 200, delete_resp.text
+    assert delete_resp.json()["data"] == [{"slug": "demo", "success": False, "error": "删除 Skill 失败"}]
+    assert SECRET not in confirm_resp.text
+    assert SECRET not in delete_resp.text
 
 
 def test_remote_skill_prepare_and_confirm_routes(monkeypatch):

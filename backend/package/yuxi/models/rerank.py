@@ -66,7 +66,11 @@ class BaseReranker(ABC):
                 all_scores.extend(scores)
                 logger.debug(f"Reranking batch {batch_no}/{total_batches} completed")
             except Exception as exc:
-                logger.error(f"Reranking batch {batch_no} failed: {exc}")
+                logger.error(
+                    "Reranking batch failed: batch_no={} exception_type={}",
+                    batch_no,
+                    type(exc).__name__,
+                )
                 if strict:
                     raise RuntimeError(f"Reranking batch {batch_no} failed") from exc
                 all_scores.extend([0.5] * len(batch))
@@ -95,7 +99,7 @@ class BaseReranker(ABC):
             logger.error(f"Reranking request timeout after {total_timeout:.1f}s")
             raise exc
         except aiohttp.ClientError as exc:
-            logger.error(f"Reranking request failed: {exc}")
+            logger.error("Reranking request failed: exception_type={}", type(exc).__name__)
             raise exc
 
         processed = sorted(self._extract_results(result), key=lambda item: item.get("index", 0))
@@ -114,16 +118,16 @@ class BaseReranker(ABC):
             if scores:
                 return True, "连接正常"
             return False, "响应无效"
-        except Exception as e:
-            error_msg = str(e)
-            logger.error(f"Rerank connection test failed: {error_msg}")
-            return False, error_msg
+        except Exception as exc:
+            logger.error("Rerank connection test failed: exception_type={}", type(exc).__name__)
+            return False, "连接失败"
         finally:
             await self.aclose()
 
     async def aclose(self) -> None:
         if self.session and not self.session.closed:
             await self.session.close()
+        self.session = None
 
     def __del__(self) -> None:
         if self.session and not self.session.closed:

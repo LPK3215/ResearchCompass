@@ -90,3 +90,25 @@ def test_normalize_after_seq_stream_id_only():
     assert run_queue_service.normalize_after_seq("1700000000000-3") == "1700000000000-3"
     assert run_queue_service.normalize_after_seq("12") == "0-0"
     assert run_queue_service.normalize_after_seq("bad-value") == "0-0"
+
+
+@pytest.mark.asyncio
+async def test_publish_cancel_signal_reports_queue_failure_without_leaking_details(monkeypatch: pytest.MonkeyPatch):
+    secret = "Authorization=secret-api-key provider-body=<private>"
+    messages: list[str] = []
+
+    class FailingRedis:
+        async def set(self, *args, **kwargs):
+            raise RuntimeError(secret)
+
+    async def fake_get_async_redis_client():
+        return FailingRedis()
+
+    monkeypatch.setattr(run_queue_service, "get_async_redis_client", fake_get_async_redis_client)
+    monkeypatch.setattr(run_queue_service.logger, "warning", messages.append)
+
+    with pytest.raises(run_queue_service.RunQueueUnavailableError, match="运行队列暂不可用") as exc_info:
+        await run_queue_service.publish_cancel_signal("run-1")
+
+    assert secret not in str(exc_info.value)
+    assert secret not in " ".join(messages)

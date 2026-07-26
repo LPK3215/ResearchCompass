@@ -19,13 +19,36 @@ from yuxi.repositories.knowledge_base_repository import KnowledgeBaseRepository
 from yuxi.repositories.knowledge_chunk_repository import KnowledgeChunkRepository
 from yuxi.repositories.knowledge_file_repository import KnowledgeFileRepository
 from yuxi.repositories.task_repository import TaskRepository
-from yuxi.services.task_service import TaskContext, tasker
+from yuxi.repositories.user_repository import UserRepository
+from yuxi.services.task_service import PublicTaskError, TaskContext, tasker
 from yuxi.utils import logger
 from yuxi.utils.datetime_utils import format_utc_datetime, utc_now_naive
 
 
 EXPERIMENT_VARIANT_LIMIT = 8
 _EXPERIMENT_METRIC_ORDER = ("overall_score", "answer_correctness", "recall@10", "f1@10", "recall@5", "f1@5")
+
+
+class EvaluationTaskError(PublicTaskError):
+    def __init__(self, error_type: str, message: str):
+        super().__init__(message)
+        self.error_type = error_type
+
+
+class EvaluationPermissionError(PermissionError):
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message
+
+
+def _evaluation_task_failure(exc: BaseException, error_type: str, message: str) -> EvaluationTaskError:
+    if isinstance(exc, EvaluationTaskError):
+        return exc
+    if isinstance(exc, PublicTaskError):
+        return EvaluationTaskError(getattr(exc, "error_type", error_type), exc.message)
+    if isinstance(exc, EvaluationPermissionError):
+        return EvaluationTaskError("forbidden", exc.message)
+    return EvaluationTaskError(error_type, message)
 
 
 def build_evaluation_run_name(started_at=None, hash_value: str | None = None) -> str:
@@ -111,6 +134,28 @@ class EvaluationService:
         self.chunk_repo = KnowledgeChunkRepository()
         self.file_repo = KnowledgeFileRepository()
         self.task_repo = TaskRepository()
+
+    async def _ensure_creator_can_write(self, creator_uid: str, kb_ids: set[str]) -> None:
+        creator_uid = str(creator_uid or "").strip()
+        if not creator_uid:
+            raise EvaluationPermissionError("任务缺少创建者，拒绝继续执行")
+        user = await UserRepository().get_by_uid(creator_uid)
+        if user is None or bool(user.is_deleted):
+            raise EvaluationPermissionError("任务创建者不存在或已被删除，拒绝继续执行")
+        if user.role not in {"admin", "superadmin"}:
+            raise EvaluationPermissionError("任务创建者已不具备知识库写入权限")
+        user_info = {"uid": str(user.uid), "role": user.role, "department_id": user.department_id}
+        for kb_id in sorted({str(value).strip() for value in kb_ids if str(value).strip()}):
+            if not await knowledge_base.check_accessible(user_info, kb_id):
+                raise EvaluationPermissionError(f"任务创建者已无权访问知识库 {kb_id}，拒绝继续执行")
+
+    async def _ensure_experiment_creator_can_write(self, experiment: Any) -> None:
+        """在异步继续执行前验证实验创建者仍可写入全部实验知识库。"""
+        variants = await self.eval_repo.list_experiment_variants(experiment.experiment_id)
+        await self._ensure_creator_can_write(
+            str(experiment.created_by or ""),
+            {str(experiment.source_kb_id), *(str(variant.kb_id) for variant in variants)},
+        )
 
     def _dataset_to_dict(self, row) -> dict[str, Any]:
         return {
@@ -343,8 +388,8 @@ class EvaluationService:
                 self._build_dataset_items(dataset_id, kb_id, questions),
             )
             return self._dataset_to_dict(row)
-        except Exception as e:
-            logger.error(f"上传评估数据集失败: {e}")
+        except Exception as exc:
+            logger.error("上传评估数据集失败: exception_type={}", type(exc).__name__)
             raise
 
     async def list_datasets(self, kb_id: str) -> list[dict[str, Any]]:
@@ -353,8 +398,8 @@ class EvaluationService:
             for row in rows:
                 await self._sync_dataset_build_metadata(row)
             return [self._dataset_to_dict(row) for row in rows]
-        except Exception as e:
-            logger.error(f"获取评估数据集列表失败: {e}")
+        except Exception as exc:
+            logger.error("获取评估数据集列表失败: exception_type={}", type(exc).__name__)
             raise
 
     async def get_dataset_detail(
@@ -385,8 +430,8 @@ class EvaluationService:
                 }
             )
             return data
-        except Exception as e:
-            logger.error(f"获取评估数据集详情失败: {e}")
+        except Exception as exc:
+            logger.error("获取评估数据集详情失败: exception_type={}", type(exc).__name__)
             raise
 
     async def export_dataset_jsonl(self, dataset_id: str) -> dict[str, str]:
@@ -529,8 +574,8 @@ class EvaluationService:
                 raise ValueError("Dataset not found")
             await self.eval_repo.delete_dataset(dataset_id)
             logger.info(f"成功删除评估数据集: {dataset_id}")
-        except Exception as e:
-            logger.error(f"删除评估数据集失败: {e}")
+        except Exception as exc:
+            logger.error("删除评估数据集失败: exception_type={}", type(exc).__name__)
             raise
 
     async def generate_dataset(
@@ -603,9 +648,15 @@ class EvaluationService:
                 coroutine=self._generate_dataset_task,
             )
         except Exception as exc:
-            build_metadata.update(status="failed", progress=100, message=f"任务提交失败: {exc}")
+            error_message = "评估数据集生成任务提交失败"
+            build_metadata.update(
+                status="failed",
+                progress=100,
+                error_message=error_message,
+                message=error_message,
+            )
             await self.eval_repo.update_dataset(dataset_id, {"build_metadata": build_metadata})
-            raise
+            raise EvaluationTaskError("dataset_generation_enqueue_failed", error_message) from exc
         build_metadata["task_id"] = task.id
         await self.eval_repo.update_dataset(dataset_id, {"build_metadata": build_metadata})
         return {"dataset_id": dataset_id, "task_id": task.id, "message": "评估数据集生成任务已提交"}
@@ -643,9 +694,41 @@ class EvaluationService:
                 "graph_expand_top_k": graph_expand_top_k,
             },
         }
+        try:
+            await self._ensure_creator_can_write(str(payload.get("created_by") or ""), {str(kb_id or "")})
+        except Exception as exc:
+            failure = _evaluation_task_failure(
+                exc,
+                "dataset_generation_access_failed",
+                "评估数据集生成权限校验失败",
+            )
+            await self._update_dataset_build_metadata(
+                dataset_id,
+                build_metadata,
+                status="failed",
+                progress=100,
+                error_message=failure.message,
+                message=failure.message,
+            )
+            raise failure from exc
         await self._update_dataset_build_metadata(dataset_id, build_metadata)
 
-        existing_item_count = await self.eval_repo.count_dataset_items(dataset_id)
+        try:
+            existing_item_count = await self.eval_repo.count_dataset_items(dataset_id)
+        except Exception as exc:
+            failure = EvaluationTaskError(
+                "dataset_generation_state_failed",
+                "评估数据集生成状态读取失败",
+            )
+            await self._update_dataset_build_metadata(
+                dataset_id,
+                build_metadata,
+                status="failed",
+                progress=100,
+                error_message=failure.message,
+                message=failure.message,
+            )
+            raise failure from exc
         if existing_item_count == count:
             await self.eval_repo.update_dataset(dataset_id, {"item_count": existing_item_count})
             await self._update_dataset_build_metadata(
@@ -671,12 +754,20 @@ class EvaluationService:
             kb_instance = await knowledge_base.aget_kb(kb_id)
             if not kb_instance:
                 await report_progress(100, "知识库不存在")
-                raise ValueError("Knowledge Base not found")
+                raise EvaluationTaskError("knowledge_base_not_found", "知识库不存在")
             if kb_instance.kb_type != "milvus":
                 await report_progress(100, "仅支持 commonrag/Milvus 类型知识库生成评估数据集")
-                raise ValueError("Unsupported KB type for dataset generation")
+                raise EvaluationTaskError(
+                    "unsupported_knowledge_base",
+                    "仅支持 commonrag/Milvus 类型知识库生成评估数据集",
+                )
 
             questions = []
+
+            async def ensure_generation_can_continue() -> None:
+                await context.raise_if_cancelled()
+                await self._ensure_creator_can_write(str(payload.get("created_by") or ""), {str(kb_id)})
+
             try:
                 async for item in iter_generated_benchmark_items(
                     kb_instance=kb_instance,
@@ -688,16 +779,27 @@ class EvaluationService:
                     generation_mode=generation_mode,
                     graph_expand_top_k=graph_expand_top_k,
                     progress_cb=report_progress,
-                    cancel_cb=context.raise_if_cancelled,
+                    cancel_cb=ensure_generation_can_continue,
                 ):
                     questions.append(item)
-            except ValueError as e:
-                if str(e) == "No chunks found in knowledge base":
-                    await report_progress(100, "知识库为空或未解析到chunks")
+            except ValueError as exc:
+                public_errors = {
+                    "No chunks found in knowledge base": "知识库为空或未解析到 chunks",
+                    "No graph indexed chunks with entities found in knowledge base": (
+                        "知识库没有可用于图增强生成的已索引实体"
+                    ),
+                    "Unsupported benchmark generation mode": "不支持的评估基准生成方式",
+                    "llm_model_spec 不能为空": "评估数据集生成模型不能为空",
+                }
+                public_message = public_errors.get(str(exc))
+                if public_message:
+                    if str(exc) == "No chunks found in knowledge base":
+                        await report_progress(100, public_message)
+                    raise EvaluationTaskError("dataset_generation_invalid", public_message) from exc
                 raise
 
             if not questions:
-                raise ValueError("未生成有效评估题目")
+                raise EvaluationTaskError("dataset_generation_empty", "未生成有效评估题目")
 
             dataset_items = self._build_dataset_items(dataset_id, kb_id, questions)
             await self.eval_repo.replace_dataset_items(dataset_id, dataset_items)
@@ -710,27 +812,24 @@ class EvaluationService:
                 message="完成",
             )
             await context.set_progress(100, "完成")
-        except (Exception, asyncio.CancelledError) as e:
-            if isinstance(e, asyncio.CancelledError):
-                current_task = asyncio.current_task()
-                if current_task is not None and current_task.cancelling():
-                    current_task.uncancel()
-                if context.cancellation_reason == "shutdown" and not context.is_cancel_requested():
-                    await self._update_dataset_build_metadata(
-                        dataset_id,
-                        build_metadata,
-                        status="pending",
-                        message="服务重启，任务将继续",
-                    )
-                    raise
-            error = str(e)
-            if isinstance(e, asyncio.CancelledError):
-                if context.is_cancel_requested():
-                    error = "任务已取消"
-                elif context.cancellation_reason == "timeout":
-                    error = "任务执行超时"
-                else:
-                    error = "服务停止，任务执行中断"
+        except asyncio.CancelledError:
+            current_task = asyncio.current_task()
+            if current_task is not None and current_task.cancelling():
+                current_task.uncancel()
+            if context.cancellation_reason == "shutdown" and not context.is_cancel_requested():
+                await self._update_dataset_build_metadata(
+                    dataset_id,
+                    build_metadata,
+                    status="pending",
+                    message="服务重启，任务将继续",
+                )
+                raise
+            if context.is_cancel_requested():
+                error = "任务已取消"
+            elif context.cancellation_reason == "timeout":
+                error = "任务执行超时"
+            else:
+                error = "服务停止，任务执行中断"
             await self._update_dataset_build_metadata(
                 dataset_id,
                 build_metadata,
@@ -740,6 +839,23 @@ class EvaluationService:
                 message=error,
             )
             raise
+        except Exception as exc:
+            failure = _evaluation_task_failure(
+                exc,
+                "dataset_generation_failed",
+                "评估数据集生成任务执行失败",
+            )
+            await self._update_dataset_build_metadata(
+                dataset_id,
+                build_metadata,
+                status="failed",
+                progress=100,
+                error_message=failure.message,
+                message=failure.message,
+            )
+            if failure is exc:
+                raise
+            raise failure from exc
 
     async def run_evaluation(
         self,
@@ -770,8 +886,8 @@ class EvaluationService:
                     if kb_instance:
                         retrieval_config = kb_instance._get_default_query_params(kb_id).get("options", {})
                 logger.info(f"从知识库 {kb_id} 加载检索配置: {list(retrieval_config.keys())}")
-            except Exception as e:
-                logger.error(f"获取知识库检索配置失败: {e}")
+            except Exception as exc:
+                logger.error("获取知识库检索配置失败: exception_type={}", type(exc).__name__)
 
             if model_config:
                 retrieval_config.update(model_config)
@@ -813,18 +929,19 @@ class EvaluationService:
                     coroutine=self._run_evaluation_task,
                 )
             except Exception as exc:
+                error_message = "RAG 评估任务提交失败"
                 await self.eval_repo.update_run(
                     run_id,
                     {
                         "status": "failed",
-                        "metrics": {"error": f"任务提交失败: {exc}"},
+                        "metrics": {"error": error_message},
                         "completed_at": utc_now_naive(),
                     },
                 )
-                raise
+                raise EvaluationTaskError("evaluation_enqueue_failed", error_message) from exc
             return run_id
-        except Exception as e:
-            logger.error(f"启动评估失败: {e}")
+        except Exception as exc:
+            logger.error("启动评估失败: exception_type={}", type(exc).__name__)
             raise
 
     async def create_experiment(
@@ -839,6 +956,13 @@ class EvaluationService:
         variants: list[dict[str, Any]],
         created_by: str,
     ) -> dict[str, Any]:
+        requested_kb_ids = {str(kb_id)}
+        requested_kb_ids.update(
+            str(variant.get("kb_id") or kb_id)
+            for variant in variants
+            if str(variant.get("execution_type") or "research_compass") == "research_compass"
+        )
+        await self._ensure_creator_can_write(created_by, requested_kb_ids)
         dataset = await self.eval_repo.get_dataset(dataset_id)
         if dataset is None or dataset.kb_id != kb_id:
             raise ValueError("Dataset not found")
@@ -965,32 +1089,49 @@ class EvaluationService:
             if not created:
                 raise RuntimeError("实验任务已存在")
         except Exception as exc:
+            error_message = "消融实验任务提交失败"
             await self.eval_repo.update_experiment(
                 experiment_id,
-                {"status": "failed", "error_message": str(exc), "completed_at": utc_now_naive()},
+                {"status": "failed", "error_message": error_message, "completed_at": utc_now_naive()},
             )
-            raise
+            raise EvaluationTaskError("experiment_enqueue_failed", error_message) from exc
         await self.eval_repo.update_experiment(experiment_id, {"task_id": task.id})
         return {"experiment_id": experiment_id, "task_id": task.id, "status": "queued"}
 
     async def _run_experiment_task(self, context: TaskContext, *, experiment_id: str) -> dict[str, Any]:
         experiment = await self.eval_repo.get_experiment(experiment_id)
         if experiment is None:
-            raise ValueError("Experiment not found")
-        variants = await self.eval_repo.list_experiment_variants(experiment_id)
-        if not variants:
-            raise ValueError("Experiment has no variants")
-        await self.eval_repo.update_experiment(
-            experiment_id,
-            {"status": "running", "started_at": utc_now_naive(), "error_message": None},
-        )
+            raise EvaluationTaskError("experiment_not_found", "消融实验不存在")
         try:
+            variants = await self.eval_repo.list_experiment_variants(experiment_id)
+            if not variants:
+                raise EvaluationTaskError("experiment_invalid", "消融实验没有可执行变体")
+            await self._ensure_experiment_creator_can_write(experiment)
+            await self.eval_repo.update_experiment(
+                experiment_id,
+                {"status": "running", "started_at": utc_now_naive(), "error_message": None},
+            )
             total_variants = len(variants)
+            completed_variants = 0
             for index, variant in enumerate(variants):
                 await context.raise_if_cancelled()
+                await self._ensure_experiment_creator_can_write(experiment)
                 progress_start = (index / total_variants) * 90
                 progress_end = ((index + 1) / total_variants) * 90
                 await context.set_progress(progress_start, f"运行变体 {index + 1}/{total_variants}：{variant.name}")
+                if variant.status == "completed" and variant.run_id:
+                    run = await self.eval_repo.get_run(variant.run_id)
+                    if run is not None and run.status == "completed":
+                        completed_variants += 1
+                        await self.eval_repo.update_experiment(
+                            experiment_id,
+                            {"completed_variants": completed_variants},
+                        )
+                        await context.set_progress(
+                            progress_end,
+                            f"已恢复变体 {index + 1}/{total_variants}：{variant.name}",
+                        )
+                        continue
                 await self.eval_repo.update_experiment_variant(
                     variant.variant_id, {"status": "running", "started_at": utc_now_naive(), "error_message": None}
                 )
@@ -1004,16 +1145,23 @@ class EvaluationService:
                     )
                     run = await self.eval_repo.get_run(run_id)
                     if run is None or run.status != "completed":
-                        message = (run.metrics or {}).get("error") if run is not None else "评估运行记录不存在"
-                        raise RuntimeError(str(message or "评估运行失败"))
+                        raise EvaluationTaskError(
+                            "experiment_variant_run_failed",
+                            "实验变体的评估运行失败，请查看对应运行记录",
+                        )
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
+                    failure = _evaluation_task_failure(
+                        exc,
+                        "experiment_variant_failed",
+                        "实验变体执行失败",
+                    )
                     await self.eval_repo.update_experiment_variant(
                         variant.variant_id,
                         {
                             "status": "failed",
-                            "error_message": str(exc),
+                            "error_message": failure.message,
                             "completed_at": utc_now_naive(),
                         },
                     )
@@ -1027,8 +1175,8 @@ class EvaluationService:
                             "completed_at": utc_now_naive(),
                         },
                     )
-                completed = index + 1
-                await self.eval_repo.update_experiment(experiment_id, {"completed_variants": completed})
+                    completed_variants += 1
+                await self.eval_repo.update_experiment(experiment_id, {"completed_variants": completed_variants})
 
             report = await self._build_experiment_report(experiment_id)
             has_failed_variant = any(item["status"] != "completed" for item in report["variants"])
@@ -1044,15 +1192,28 @@ class EvaluationService:
             await context.set_result(report)
             await context.set_progress(100, "实验对比报告已生成")
             return report
-        except (Exception, asyncio.CancelledError) as exc:
-            message = "任务已取消" if isinstance(exc, asyncio.CancelledError) else str(exc)
-            if isinstance(exc, asyncio.CancelledError) and context.cancellation_reason == "shutdown":
+        except asyncio.CancelledError:
+            if context.cancellation_reason == "shutdown":
                 raise
+            message = "实验任务执行超时" if context.cancellation_reason == "timeout" else "实验任务已取消"
             await self.eval_repo.update_experiment(
                 experiment_id,
                 {"status": "failed", "error_message": message, "completed_at": utc_now_naive()},
             )
             raise
+        except Exception as exc:
+            failure = _evaluation_task_failure(
+                exc,
+                "experiment_failed",
+                "消融实验任务执行失败",
+            )
+            await self.eval_repo.update_experiment(
+                experiment_id,
+                {"status": "failed", "error_message": failure.message, "completed_at": utc_now_naive()},
+            )
+            if failure is exc:
+                raise
+            raise failure from exc
 
     async def _run_experiment_variant(
         self,
@@ -1093,6 +1254,7 @@ class EvaluationService:
                             "dataset_id": variant.dataset_id,
                             "retrieval_config": retrieval_config,
                             "evaluation_identity": evaluation_identity,
+                            "created_by": str(experiment.created_by or ""),
                         },
                         progress_start,
                         progress_end,
@@ -1132,6 +1294,7 @@ class EvaluationService:
                     "dataset_id": variant.dataset_id,
                     "retrieval_config": retrieval_config,
                     "evaluation_identity": evaluation_identity,
+                    "created_by": str(experiment.created_by or ""),
                 },
                 progress_start,
                 progress_end,
@@ -1148,6 +1311,16 @@ class EvaluationService:
         progress_start: float,
         progress_end: float,
     ) -> str:
+        run_id = variant.run_id
+        run = await self.eval_repo.get_run(run_id) if run_id else None
+        if run is not None and run.status == "completed":
+            return run_id
+        if run is not None and run.status != "running":
+            await self.eval_repo.update_run(
+                run_id,
+                {"status": "running", "metrics": {}, "overall_score": None, "completed_at": None},
+            )
+
         snapshot = variant.input_snapshot or {}
         if snapshot.get("dataset_fingerprint") != experiment.dataset_fingerprint:
             raise ValueError("外部基线数据集指纹与实验快照不一致")
@@ -1165,6 +1338,20 @@ class EvaluationService:
         if not dataset.has_gold_chunks and not dataset.has_gold_answers:
             raise ValueError("外部基线评估基准缺少可计算的标准答案或 gold 文档")
 
+        items = await self.eval_repo.list_all_dataset_items(variant.dataset_id)
+        if not items:
+            raise ValueError("Dataset has no items")
+        existing_items_by_index = {
+            int(item.item_index): item for item in await self.eval_repo.list_all_run_items(run_id)
+        } if run_id else {}
+        has_pending_items = any(
+            (
+                (existing_item := existing_items_by_index.get(index)) is None
+                or str(existing_item.dataset_item_id) != str(dataset_item.item_id)
+            )
+            for index, dataset_item in enumerate(items)
+        )
+
         retrieval_identity = (experiment.corpus_snapshot or {}).get("retrieval_identity") or "chunk_id"
         document_gold_by_item_id = {}
         if retrieval_identity == "content_hash" and dataset.has_gold_chunks:
@@ -1172,14 +1359,12 @@ class EvaluationService:
                 await self.eval_repo.list_all_dataset_items(variant.dataset_id)
             )
         judge_llm = None
-        if dataset.has_gold_answers:
+        if dataset.has_gold_answers and has_pending_items:
             judge_model_spec = (experiment.shared_config or {}).get("judge_llm")
             if not judge_model_spec:
                 raise ValueError("外部基线含答案指标时必须固定 Judge 模型")
             judge_llm = select_model(model_spec=judge_model_spec)
 
-        run_id = variant.run_id
-        run = await self.eval_repo.get_run(run_id) if run_id else None
         if run is None:
             run_id = f"run_{uuid.uuid4().hex[:8]}"
             await self.eval_repo.create_run(
@@ -1207,7 +1392,6 @@ class EvaluationService:
             )
             await self.eval_repo.update_experiment_variant(variant.variant_id, {"run_id": run_id})
 
-        items = await self.eval_repo.list_all_dataset_items(variant.dataset_id)
         result_by_item_id = {str(item["item_id"]): item for item in results if isinstance(item, dict)}
         if set(result_by_item_id) != {str(item.item_id) for item in items}:
             raise ValueError("外部基线快照与评估基准题目集合不一致")
@@ -1219,6 +1403,23 @@ class EvaluationService:
                 progress_start + (progress_end - progress_start) * (index / len(items)),
                 f"导入外部基线 {index + 1}/{len(items)}",
             )
+            existing_item = existing_items_by_index.get(index)
+            if existing_item is not None and str(existing_item.dataset_item_id) == str(dataset_item.item_id):
+                existing_metrics = existing_item.metrics or {}
+                if dataset.has_gold_chunks:
+                    retrieval_metrics_list.append(
+                        {
+                            key: value
+                            for key, value in existing_metrics.items()
+                            if key.startswith(("recall@", "f1@"))
+                        }
+                    )
+                if dataset.has_gold_answers and "score" in existing_metrics:
+                    answer_metrics_list.append(
+                        {key: value for key, value in existing_metrics.items() if key in {"score", "reasoning"}}
+                    )
+                await self.eval_repo.update_run(run_id, {"completed_items": index + 1})
+                continue
             result = result_by_item_id[str(dataset_item.item_id)]
             document_hashes = result.get("retrieved_document_hashes") or []
             retrieved_chunks = [
@@ -1359,23 +1560,64 @@ class EvaluationService:
     async def recover_experiments(self) -> int:
         recovered = 0
         for experiment in await self.eval_repo.list_recoverable_experiments():
+            task = await tasker.get_task(experiment.task_id) if experiment.task_id else None
+            if task and task["status"] in {"pending", "running"}:
+                continue
+            if task and (task["payload"].get("_tasker_resumable") or task.get("cancel_requested")):
+                message = "任务已取消" if task.get("cancel_requested") else "实验任务未能恢复"
+                await self.eval_repo.update_experiment(
+                    experiment.experiment_id,
+                    {"status": "failed", "error_message": message, "completed_at": utc_now_naive()},
+                )
+                continue
+            try:
+                await self._ensure_experiment_creator_can_write(experiment)
+            except EvaluationPermissionError as exc:
+                await self.eval_repo.update_experiment(
+                    experiment.experiment_id,
+                    {"status": "failed", "error_message": exc.message, "completed_at": utc_now_naive()},
+                )
+                continue
+            except Exception:
+                await self.eval_repo.update_experiment(
+                    experiment.experiment_id,
+                    {
+                        "status": "failed",
+                        "error_message": "消融实验恢复权限校验失败",
+                        "completed_at": utc_now_naive(),
+                    },
+                )
+                continue
             await self.eval_repo.reset_running_experiment_variants(experiment.experiment_id)
 
             async def run(context: TaskContext, item_id=experiment.experiment_id):
                 return await self._run_experiment_task(context, experiment_id=item_id)
 
-            _, created = await tasker.enqueue_unique_by_payload(
-                name=f"恢复消融实验 ({experiment.name})",
-                task_type="rag_ablation_experiment",
-                payload={
-                    "experiment_id": experiment.experiment_id,
-                    "kb_id": experiment.source_kb_id,
-                    "dataset_id": experiment.dataset_id,
-                },
-                payload_match={"experiment_id": experiment.experiment_id},
-                statuses={"pending", "running"},
-                coroutine=run,
-            )
+            try:
+                task, created = await tasker.enqueue_unique_by_payload(
+                    name=f"恢复消融实验 ({experiment.name})",
+                    task_type="rag_ablation_experiment",
+                    payload={
+                        "experiment_id": experiment.experiment_id,
+                        "kb_id": experiment.source_kb_id,
+                        "dataset_id": experiment.dataset_id,
+                    },
+                    payload_match={"experiment_id": experiment.experiment_id},
+                    statuses={"pending", "running"},
+                    coroutine=run,
+                )
+            except Exception:
+                await self.eval_repo.update_experiment(
+                    experiment.experiment_id,
+                    {
+                        "status": "failed",
+                        "error_message": "消融实验恢复任务提交失败",
+                        "completed_at": utc_now_naive(),
+                    },
+                )
+                continue
+            if str(experiment.task_id or "") != str(task.id):
+                await self.eval_repo.update_experiment(experiment.experiment_id, {"task_id": task.id})
             recovered += int(created)
         return recovered
 
@@ -1388,18 +1630,20 @@ class EvaluationService:
             dataset_id = payload["dataset_id"]
             retrieval_config = payload["retrieval_config"]
 
+            await self._ensure_creator_can_write(str(payload.get("created_by") or ""), {str(kb_id)})
+
             await context.set_progress(5, "加载评估数据集")
             dataset_row = await self.eval_repo.get_dataset(dataset_id)
             evaluation_identity = payload.get("evaluation_identity") or {}
             source_kb_id = str(evaluation_identity.get("source_kb_id") or "")
             is_document_identity = evaluation_identity.get("field") == "content_hash"
             if dataset_row is None or (dataset_row.kb_id != kb_id and dataset_row.kb_id != source_kb_id):
-                raise ValueError("Dataset not found")
+                raise EvaluationTaskError("dataset_not_found", "评估数据集不存在")
             if dataset_row.kb_id != kb_id and not is_document_identity:
-                raise ValueError("跨知识库评估必须使用源文档身份指标")
+                raise EvaluationTaskError("evaluation_identity_invalid", "跨知识库评估必须使用源文档身份指标")
             dataset_items = await self.eval_repo.list_all_dataset_items(dataset_id)
             if not dataset_items:
-                raise ValueError("Dataset has no items")
+                raise EvaluationTaskError("dataset_empty", "评估数据集没有可执行题目")
 
             existing_items_by_index = {
                 int(item.item_index): item for item in await self.eval_repo.list_all_run_items(run_id)
@@ -1412,17 +1656,21 @@ class EvaluationService:
 
             kb_instance = await knowledge_base.aget_kb(kb_id)
             if not kb_instance:
-                raise ValueError(f"Knowledge Base {kb_id} not found")
+                raise EvaluationTaskError("knowledge_base_not_found", "评估知识库不存在")
 
             judge_llm = None
             if dataset_row.has_gold_answers:
                 judge_model_spec = retrieval_config.get("judge_llm") or retrieval_config.get("answer_llm")
                 if judge_model_spec:
                     try:
-                        logger.debug(f"Initializing Judge LLM: {judge_model_spec}")
+                        logger.debug("Initializing evaluation Judge LLM")
                         judge_llm = select_model(model_spec=judge_model_spec)
-                    except Exception as e:
-                        logger.error(f"Failed to load judge LLM: {e}")
+                    except Exception as exc:
+                        logger.error("Failed to load evaluation Judge LLM: exception_type={}", type(exc).__name__)
+                        raise EvaluationTaskError(
+                            "judge_model_unavailable",
+                            "评估裁判模型初始化失败",
+                        ) from exc
 
             all_retrieval_metrics = []
             all_answer_metrics = []
@@ -1445,6 +1693,7 @@ class EvaluationService:
 
             for index, item in enumerate(dataset_items):
                 await context.raise_if_cancelled()
+                await self._ensure_creator_can_write(str(payload.get("created_by") or ""), {str(kb_id)})
                 progress = 10 + (index / total_items) * 80
                 await context.set_progress(progress, f"评估 {index + 1}/{total_items}")
 
@@ -1525,24 +1774,20 @@ class EvaluationService:
                 final_score=overall_score,
             )
             await context.set_progress(100, "完成")
-        except (Exception, asyncio.CancelledError) as e:
-            if isinstance(e, asyncio.CancelledError):
-                current_task = asyncio.current_task()
-                if current_task is not None and current_task.cancelling():
-                    current_task.uncancel()
-                if context.cancellation_reason == "shutdown" and not context.is_cancel_requested():
-                    if "payload" in locals():
-                        await self.eval_repo.update_run(payload["run_id"], {"status": "running", "completed_at": None})
-                    raise
-            error = str(e)
-            if isinstance(e, asyncio.CancelledError):
-                if context.is_cancel_requested():
-                    error = "任务已取消"
-                elif context.cancellation_reason == "timeout":
-                    error = "任务执行超时"
-                else:
-                    error = "服务停止，任务执行中断"
-            logger.error(f"Task failed: {error}")
+        except asyncio.CancelledError:
+            current_task = asyncio.current_task()
+            if current_task is not None and current_task.cancelling():
+                current_task.uncancel()
+            if context.cancellation_reason == "shutdown" and not context.is_cancel_requested():
+                if "payload" in locals():
+                    await self.eval_repo.update_run(payload["run_id"], {"status": "running", "completed_at": None})
+                raise
+            if context.is_cancel_requested():
+                error = "任务已取消"
+            elif context.cancellation_reason == "timeout":
+                error = "任务执行超时"
+            else:
+                error = "服务停止，任务执行中断"
             try:
                 if "payload" in locals():
                     await self.eval_repo.update_run(
@@ -1550,9 +1795,39 @@ class EvaluationService:
                         {"status": "failed", "metrics": {"error": error}, "completed_at": utc_now_naive()},
                     )
             except Exception as exc:
-                logger.error(f"Error updating run record: {exc}")
+                logger.error("Error updating cancelled evaluation run: exception_type={}", type(exc).__name__)
             await context.set_message(f"Error: {error}")
             raise
+        except Exception as exc:
+            failure = _evaluation_task_failure(
+                exc,
+                "evaluation_failed",
+                "RAG 评估任务执行失败",
+            )
+            logger.error(
+                "RAG evaluation task failed: exception_type={} error_type={}",
+                type(exc).__name__,
+                failure.error_type,
+            )
+            try:
+                if "payload" in locals():
+                    await self.eval_repo.update_run(
+                        payload["run_id"],
+                        {
+                            "status": "failed",
+                            "metrics": {"error": failure.message},
+                            "completed_at": utc_now_naive(),
+                        },
+                    )
+            except Exception as update_exc:
+                logger.error(
+                    "Error updating failed evaluation run: exception_type={}",
+                    type(update_exc).__name__,
+                )
+            await context.set_message(f"Error: {failure.message}")
+            if failure is exc:
+                raise
+            raise failure from exc
 
     async def list_runs(self, kb_id: str) -> list[dict[str, Any]]:
         try:
@@ -1590,8 +1865,8 @@ class EvaluationService:
                         run.update(progress=task.progress, message=task.message)
                 runs.append(run)
             return runs
-        except Exception as e:
-            logger.error(f"获取评估运行历史失败: {e}")
+        except Exception as exc:
+            logger.error("获取评估运行历史失败: exception_type={}", type(exc).__name__)
             raise
 
     async def get_run_results(
@@ -1665,5 +1940,32 @@ async def _resume_rag_evaluation_task(context: TaskContext):
     return await EvaluationService()._run_evaluation_task(context)
 
 
+async def _resume_rag_ablation_experiment_task(context: TaskContext):
+    experiment_id = str(context.payload.get("experiment_id") or "").strip()
+    if not experiment_id:
+        raise ValueError("恢复消融实验时缺少 experiment_id")
+    service = EvaluationService()
+    experiment = await service.eval_repo.get_experiment(experiment_id)
+    if experiment is None:
+        raise EvaluationTaskError("experiment_not_found", "消融实验不存在")
+    try:
+        await service._ensure_experiment_creator_can_write(experiment)
+    except EvaluationPermissionError as exc:
+        await service.eval_repo.update_experiment(
+            experiment_id,
+            {"status": "failed", "error_message": exc.message, "completed_at": utc_now_naive()},
+        )
+        raise EvaluationTaskError("forbidden", exc.message) from exc
+    except Exception as exc:
+        error_message = "消融实验恢复权限校验失败"
+        await service.eval_repo.update_experiment(
+            experiment_id,
+            {"status": "failed", "error_message": error_message, "completed_at": utc_now_naive()},
+        )
+        raise EvaluationTaskError("experiment_recovery_access_failed", error_message) from exc
+    return await service._run_experiment_task(context, experiment_id=experiment_id)
+
+
 tasker.register_resumable_handler("dataset_generation", _resume_dataset_generation_task)
 tasker.register_resumable_handler("rag_evaluation", _resume_rag_evaluation_task)
+tasker.register_resumable_handler("rag_ablation_experiment", _resume_rag_ablation_experiment_task)

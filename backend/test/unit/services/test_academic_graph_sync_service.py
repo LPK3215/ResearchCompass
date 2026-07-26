@@ -141,10 +141,14 @@ async def test_graph_sync_reuses_persisted_paper_checkpoint(monkeypatch):
     async def persist_paper(**kwargs):
         return "graph-paper-2", 1, 1
 
+    async def allow_owner(*args, **kwargs):
+        return None
+
     monkeypatch.setattr(academic_graph_sync_service, "AcademicGraphRepository", FakeGraphRepository)
     monkeypatch.setattr(academic_graph_sync_service, "AcademicPaperRepository", FakePaperRepository)
     monkeypatch.setattr(academic_graph_sync_service, "SemanticScholarClient", FakeClient)
     monkeypatch.setattr(academic_graph_sync_service, "_persist_paper", persist_paper)
+    monkeypatch.setattr(academic_graph_sync_service, "_ensure_graph_sync_owner_can_write", allow_owner)
 
     result = await academic_graph_sync_service._run_sync(
         Context(),
@@ -158,6 +162,41 @@ async def test_graph_sync_reuses_persisted_paper_checkpoint(monkeypatch):
     assert resolved_papers == ["paper-2"]
     assert result["processed_papers"] == 2
     assert updates[-1]["processed_paper_ids"] == ["paper-1", "paper-2"]
+
+
+@pytest.mark.asyncio
+async def test_new_graph_sync_queues_owner_checked_handler(monkeypatch):
+    queued = {}
+
+    async def allow_access(*args, **kwargs):
+        return None
+
+    class FakeRepository:
+        async def create_sync_run(self, **kwargs):
+            return None
+
+    async def enqueue_unique_by_payload(**kwargs):
+        queued.update(kwargs)
+        return SimpleNamespace(id="task-1", status="pending"), True
+
+    monkeypatch.setattr(academic_graph_sync_service, "_ensure_access", allow_access)
+    monkeypatch.setattr(academic_graph_sync_service, "AcademicGraphRepository", FakeRepository)
+    monkeypatch.setattr(
+        academic_graph_sync_service.tasker,
+        "enqueue_unique_by_payload",
+        enqueue_unique_by_payload,
+    )
+
+    result = await academic_graph_sync_service.enqueue_academic_graph_sync(
+        kb_id="kb-1",
+        current_user=SimpleNamespace(uid="admin-1"),
+        paper_ids=[],
+        citation_limit=10,
+        reference_limit=10,
+    )
+
+    assert result["task_id"] == "task-1"
+    assert queued["coroutine"] is academic_graph_sync_service._resume_academic_graph_sync_task
 
 
 @pytest.mark.asyncio
@@ -201,3 +240,57 @@ async def test_graph_sync_resume_handler_reuses_original_run(monkeypatch):
     assert academic_graph_sync_service.tasker._resumable_handlers["academic_graph_sync"] is (
         academic_graph_sync_service._resume_academic_graph_sync_task
     )
+
+
+@pytest.mark.asyncio
+async def test_graph_sync_unknown_failure_is_persisted_and_raised_without_provider_secret(monkeypatch):
+    secret = "Authorization=secret-api-key provider-body=<private>"
+    updates = []
+
+    class FakeGraphRepository:
+        async def get_sync_run(self, run_id):
+            return SimpleNamespace(
+                processed_paper_ids=[],
+                graph_papers=0,
+                citations=0,
+                authors=0,
+                topics=0,
+                conflict_count=0,
+            )
+
+        async def update_sync_run(self, run_id, values):
+            updates.append(values)
+
+    class FakePaperRepository:
+        async def list_for_graph_sync(self, *, kb_id, paper_ids):
+            raise RuntimeError(secret)
+
+    class Context:
+        cancellation_reason = None
+
+        async def raise_if_cancelled(self):
+            return None
+
+        async def set_progress(self, *args):
+            return None
+
+    async def allow_owner(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(academic_graph_sync_service, "AcademicGraphRepository", FakeGraphRepository)
+    monkeypatch.setattr(academic_graph_sync_service, "AcademicPaperRepository", FakePaperRepository)
+    monkeypatch.setattr(academic_graph_sync_service, "_ensure_graph_sync_owner_can_write", allow_owner)
+
+    with pytest.raises(academic_graph_sync_service.AcademicGraphSyncError) as exc_info:
+        await academic_graph_sync_service._run_sync(
+            Context(),
+            run_id="run-1",
+            kb_id="kb-1",
+            paper_ids=[],
+            citation_limit=5,
+            reference_limit=5,
+        )
+
+    assert exc_info.value.error_type == "academic_graph_sync_failed"
+    assert exc_info.value.message == "学术图谱同步任务执行失败"
+    assert secret not in repr(updates)

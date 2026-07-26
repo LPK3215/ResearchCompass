@@ -21,7 +21,7 @@
 为避免与开发环境冲突，生产环境建议使用 `.env.prod` 文件：
 
 ```bash
-cp .env.template .env.prod
+cp .env.prod.template .env.prod
 ```
 
 编辑 `.env.prod`，设置强密码和必要的 API 密钥：

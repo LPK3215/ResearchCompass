@@ -48,6 +48,14 @@ from yuxi.utils.question_utils import (
 )
 from yuxi.utils.thread_utils import extract_thread_id as _metadata_thread_id
 
+CHAT_STREAM_FAILED_MESSAGE = "智能体运行失败"
+CHAT_RESUME_FAILED_MESSAGE = "对话恢复失败"
+MESSAGE_SAVE_FAILED_MESSAGE = "消息保存失败"
+
+
+class PublicChatError(ValueError):
+    """Expected chat setup error whose message is safe to show to the user."""
+
 
 def _build_state_files(attachments: list[dict]) -> dict:
     """将附件列表转换为 StateBackend 格式的 files 字典
@@ -217,7 +225,7 @@ def _apply_subagent_runtime_context(input_context: dict, meta: dict | None) -> N
     for key in ("parent_thread_id", "file_thread_id", "skills_thread_id"):
         value = str(meta.get(key) or "").strip()
         if not value:
-            raise ValueError(f"子智能体运行缺少必需的 {key}")
+            raise PublicChatError(f"子智能体运行缺少必需的 {key}")
         input_context[key] = value
     # 标记为子智能体运行，供下游逻辑判断
     input_context["is_subagent_runtime"] = True
@@ -496,8 +504,8 @@ async def save_partial_message(
             request_id=request_id,
         )
 
-    except Exception as e:
-        logger.exception(f"Error saving message: {e}")
+    except Exception as exc:
+        logger.error(f"Failed to save partial message (error_type={type(exc).__name__})")
         return None
 
 
@@ -675,22 +683,22 @@ async def _resolve_agent_runtime(
         conversation = await conv_repo.get_conversation_by_thread_id(thread_id)
         if conversation:
             if conversation.uid != str(user.uid) or conversation.status == "deleted":
-                raise ValueError("对话线程不存在")
+                raise PublicChatError("对话线程不存在")
             # Conversation.agent_id 是历史字段名，实际保存的是 Agent.slug。
             if requested_agent_slug and requested_agent_slug != conversation.agent_id:
-                raise ValueError("已有线程已绑定智能体，不能切换")
+                raise PublicChatError("已有线程已绑定智能体，不能切换")
             resolved_agent_slug = conversation.agent_id
 
     if not resolved_agent_slug:
-        raise ValueError("缺少必需的 agent_slug 字段")
+        raise PublicChatError("缺少必需的 agent_slug 字段")
 
     agent_item = await agent_repo.get_visible_by_slug(slug=resolved_agent_slug, user=user, kind=agent_kind)
     if not agent_item:
-        raise ValueError("智能体不存在或无权限访问")
+        raise PublicChatError("智能体不存在或无权限访问")
 
     backend = agent_manager.get_agent(agent_item.backend_id)
     if not backend:
-        raise ValueError(f"智能体后端 {agent_item.backend_id} 不存在")
+        raise PublicChatError("智能体后端不可用")
 
     agent_config = await normalize_agent_context_config(
         (agent_item.config_json or {}).get("context", {}),
@@ -729,8 +737,8 @@ async def check_and_handle_interrupts(
             meta["interrupt"] = question_payload
             yield make_chunk(status="ask_user_question_required", meta=meta, **question_payload)
 
-    except Exception as e:
-        logger.exception(f"Error checking interrupts: {e}")
+    except Exception as exc:
+        logger.error(f"Failed to check chat interrupts (error_type={type(exc).__name__})")
 
 
 async def _ensure_thread_bound_agent(
@@ -751,7 +759,7 @@ async def _ensure_thread_bound_agent(
         return
 
     if conversation.agent_id != agent_item.slug:
-        raise ValueError("已有线程已绑定智能体，不能切换")
+        raise PublicChatError("已有线程已绑定智能体，不能切换")
 
 
 def _normalize_attachment_file_ids(meta: dict | None) -> list[str]:
@@ -840,8 +848,8 @@ async def stream_agent_chat(
             thread_id=thread_id,
             agent_kind="subagent" if meta.get("run_type") == "subagent" else "main",
         )
-    except ValueError as e:
-        yield make_chunk(status="error", error_type="invalid_agent", error_message=str(e), meta=meta)
+    except PublicChatError as exc:
+        yield make_chunk(status="error", error_type="invalid_agent", error_message=str(exc), meta=meta)
         return
 
     meta.update(
@@ -926,8 +934,8 @@ async def stream_agent_chat(
                         "attachments": request_attachments,
                     },
                 )
-            except Exception as e:
-                logger.error(f"Error saving user message: {e}")
+            except Exception as exc:
+                logger.error(f"Failed to save user message (error_type={type(exc).__name__})")
 
         # 智能体流式执行期间不访问业务数据库，先结束预处理事务并归还连接池。
         await db.commit()
@@ -1062,17 +1070,17 @@ async def stream_agent_chat(
                 run_id=meta.get("run_id"),
                 request_id=meta.get("request_id"),
             )
-        except Exception as e:
-            logger.exception(f"Error saving messages from LangGraph state: {e}")
-            yield make_chunk(status="warning", message=f"消息保存失败: {e}", meta=meta)
+        except Exception as exc:
+            logger.error(f"Failed to save LangGraph messages (error_type={type(exc).__name__})")
+            yield make_chunk(status="warning", message=MESSAGE_SAVE_FAILED_MESSAGE, meta=meta)
 
         if interrupted:
             return
 
         yield make_chunk(status="finished", meta=meta)
 
-    except (asyncio.CancelledError, ConnectionError) as e:
-        logger.warning(f"Client disconnected, cancelling stream: {e}")
+    except (asyncio.CancelledError, ConnectionError) as exc:
+        logger.warning(f"Chat stream interrupted (error_type={type(exc).__name__})")
 
         async def save_cleanup():
             nonlocal full_msg
@@ -1097,14 +1105,14 @@ async def stream_agent_chat(
         except asyncio.CancelledError:
             pass
         except Exception as exc:
-            logger.error(f"Error during cleanup save: {exc}")
+            logger.error(f"Failed to save interrupted chat (error_type={type(exc).__name__})")
 
         yield make_chunk(status="interrupted", message="对话已中断", meta=meta)
 
-    except Exception as e:
-        logger.exception(f"Error streaming messages: {e}")
+    except Exception as exc:
+        logger.error(f"Agent chat stream failed (error_type={type(exc).__name__})")
 
-        error_msg = f"Error streaming messages: {e}"
+        error_msg = CHAT_STREAM_FAILED_MESSAGE
         error_type = "unexpected_error"
 
         full_msg = _ensure_full_msg(full_msg, accumulated_content)
@@ -1159,8 +1167,8 @@ async def stream_agent_resume(
             requested_agent_slug=None,
             thread_id=thread_id,
         )
-    except ValueError as e:
-        yield make_resume_chunk(status="error", error_type="invalid_agent", error_message=str(e), meta=meta)
+    except PublicChatError as exc:
+        yield make_resume_chunk(status="error", error_type="invalid_agent", error_message=str(exc), meta=meta)
         return
 
     # 恢复流执行期间不访问业务数据库，先结束运行时解析事务并归还连接池。
@@ -1293,17 +1301,17 @@ async def stream_agent_resume(
                 run_id=meta.get("run_id"),
                 request_id=meta.get("request_id"),
             )
-        except Exception as e:
-            logger.exception(f"Error saving messages from LangGraph state: {e}")
-            yield make_resume_chunk(status="warning", message=f"消息保存失败: {e}", meta=meta)
+        except Exception as exc:
+            logger.error(f"Failed to save resumed LangGraph messages (error_type={type(exc).__name__})")
+            yield make_resume_chunk(status="warning", message=MESSAGE_SAVE_FAILED_MESSAGE, meta=meta)
 
         if interrupted:
             return
 
         yield make_resume_chunk(status="finished", meta=meta)
 
-    except (asyncio.CancelledError, ConnectionError) as e:
-        logger.warning(f"Client disconnected during resume: {e}")
+    except (asyncio.CancelledError, ConnectionError) as exc:
+        logger.warning(f"Chat resume interrupted (error_type={type(exc).__name__})")
 
         async with pg_manager.get_async_session_context() as new_db:
             new_conv_repo = ConversationRepository(new_db)
@@ -1319,22 +1327,27 @@ async def stream_agent_resume(
 
         yield make_resume_chunk(status="interrupted", message="对话恢复已中断", meta=meta)
 
-    except Exception as e:
-        logger.exception(f"Error during resume: {e}")
+    except Exception as exc:
+        logger.error(f"Agent chat resume failed (error_type={type(exc).__name__})")
 
         async with pg_manager.get_async_session_context() as new_db:
             new_conv_repo = ConversationRepository(new_db)
             await save_partial_message(
                 new_conv_repo,
                 thread_id,
-                error_message=f"Error during resume: {e}",
+                error_message=CHAT_RESUME_FAILED_MESSAGE,
                 error_type="resume_error",
                 trace_info=trace_info,
                 run_id=meta.get("run_id"),
                 request_id=meta.get("request_id"),
             )
 
-        yield make_resume_chunk(message=f"Error during resume: {e}", status="error")
+        yield make_resume_chunk(
+            status="error",
+            error_type="resume_error",
+            error_message=CHAT_RESUME_FAILED_MESSAGE,
+            meta=meta,
+        )
     finally:
         flush_langfuse()
 
@@ -1429,7 +1442,10 @@ async def get_agent_state_view(
                 try:
                     response["subagent_run"] = serialize_subagent_run_state(latest_run)
                 except ValueError as exc:
-                    logger.error(f"子智能体运行记录格式异常: thread_id={thread_id}, run_id={latest_run.id}, {exc}")
+                    logger.error(
+                        "子智能体运行记录格式异常: "
+                        f"thread_id={thread_id}, run_id={latest_run.id}, error_type={type(exc).__name__}"
+                    )
                     raise HTTPException(status_code=500, detail="子智能体运行记录格式异常") from exc
         if include_messages:
             response["messages"] = _serialize_state_messages(values)

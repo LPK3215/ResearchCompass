@@ -5,6 +5,7 @@
 """
 
 import asyncio
+import hashlib
 from importlib import import_module
 from typing import Any
 
@@ -27,7 +28,8 @@ class DocumentProcessorFactory:
             return processor_type
 
         kwargs_repr = "|".join(f"{key}={kwargs[key]!r}" for key in sorted(kwargs))
-        return f"{processor_type}|{kwargs_repr}"
+        fingerprint = hashlib.sha256(kwargs_repr.encode("utf-8")).hexdigest()[:16]
+        return f"{processor_type}|{fingerprint}"
 
     @classmethod
     def _load_processor_class(cls, processor_type: str) -> type[BaseDocumentProcessor]:
@@ -106,8 +108,8 @@ class DocumentProcessorFactory:
         except Exception as e:
             return {
                 "status": "error",
-                "message": f"健康检查失败: {str(e)}",
-                "details": {"error": str(e)},
+                "message": "健康检查失败",
+                "details": {"error_type": type(e).__name__},
             }
 
     @classmethod
@@ -139,5 +141,15 @@ class DocumentProcessorFactory:
     @classmethod
     def clear_cache(cls):
         """清除处理器缓存"""
+        closed_instances: set[int] = set()
+        for processor in _PROCESSOR_CACHE.values():
+            processor_id = id(processor)
+            if processor_id in closed_instances:
+                continue
+            closed_instances.add(processor_id)
+            try:
+                processor.close()
+            except Exception as error:
+                logger.warning(f"释放文档处理器失败 (error_type={type(error).__name__})")
         _PROCESSOR_CACHE.clear()
         logger.debug("文档处理器缓存已清除")

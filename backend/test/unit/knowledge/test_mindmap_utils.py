@@ -6,6 +6,17 @@ from fastapi import HTTPException
 from yuxi.knowledge.utils import mindmap_utils as mm
 
 
+class CapturedLogger:
+    def __init__(self):
+        self.messages: list[str] = []
+
+    def info(self, message: str) -> None:
+        self.messages.append(message)
+
+    def error(self, message: str) -> None:
+        self.messages.append(message)
+
+
 def make_kb(**overrides):
     data = {
         "kb_id": "kb_1",
@@ -116,3 +127,70 @@ async def test_generate_database_mindmap_rejects_missing_selected_files(monkeypa
 
     with pytest.raises(HTTPException, match="选择的文件不存在"):
         await mm.generate_database_mindmap("kb_1", file_ids=["missing"])
+
+
+@pytest.mark.asyncio
+async def test_generate_database_mindmap_sanitizes_invalid_model_output(monkeypatch):
+    secret = "Authorization=secret-api-key provider-body=<private>"
+    captured_logger = CapturedLogger()
+    kb_repo = FakeKnowledgeBaseRepository(make_kb(mindmap=None, mindmap_file_ids=None))
+
+    class FakeFileRepository:
+        async def list_by_file_ids(self, file_ids):
+            return [make_file("outside-page", "outside.pdf")]
+
+    class FakeModel:
+        async def call(self, messages, stream):
+            return SimpleNamespace(content=secret)
+
+    monkeypatch.setattr(mm, "KnowledgeBaseRepository", lambda: kb_repo)
+    monkeypatch.setattr(
+        "yuxi.repositories.knowledge_file_repository.KnowledgeFileRepository",
+        FakeFileRepository,
+    )
+    monkeypatch.setattr(mm, "select_model", lambda model_spec: FakeModel())
+    monkeypatch.setattr(mm, "logger", captured_logger)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await mm.generate_database_mindmap("kb_1", file_ids=["outside-page"])
+
+    assert exc_info.value.status_code == 500
+    assert exc_info.value.detail == "AI返回格式错误"
+    assert secret not in " ".join(captured_logger.messages)
+
+
+@pytest.mark.asyncio
+async def test_generate_database_mindmap_reports_persistence_failure(monkeypatch):
+    secret = "Authorization=secret-api-key provider-body=<private>"
+    captured_logger = CapturedLogger()
+
+    class FailingKnowledgeBaseRepository(FakeKnowledgeBaseRepository):
+        async def update(self, kb_id, data):
+            raise RuntimeError(secret)
+
+    kb_repo = FailingKnowledgeBaseRepository(make_kb(mindmap=None, mindmap_file_ids=None))
+
+    class FakeFileRepository:
+        async def list_by_file_ids(self, file_ids):
+            return [make_file("outside-page", "outside.pdf")]
+
+    class FakeModel:
+        async def call(self, messages, stream):
+            return SimpleNamespace(
+                content='{"content":"知识库","children":[{"content":"outside.pdf","children":[]}]}'
+            )
+
+    monkeypatch.setattr(mm, "KnowledgeBaseRepository", lambda: kb_repo)
+    monkeypatch.setattr(
+        "yuxi.repositories.knowledge_file_repository.KnowledgeFileRepository",
+        FakeFileRepository,
+    )
+    monkeypatch.setattr(mm, "select_model", lambda model_spec: FakeModel())
+    monkeypatch.setattr(mm, "logger", captured_logger)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await mm.generate_database_mindmap("kb_1", file_ids=["outside-page"])
+
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.detail == "思维导图保存失败"
+    assert secret not in " ".join(captured_logger.messages)

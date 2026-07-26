@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from yuxi.services import task_service
 from yuxi.services.task_service import Tasker
 
 
@@ -75,6 +76,25 @@ class FakeTaskRepository:
             if all(data.get("payload", {}).get(key) == value for key, value in payload_match.items()):
                 return SimpleNamespace(to_dict=lambda: {"id": task_id, **data})
         return None
+
+    async def find_any_by_payload(self, *, payload_match, statuses=None):
+        for task_id, data in self.records.items():
+            if statuses is not None and data["status"] not in statuses:
+                continue
+            if all(data.get("payload", {}).get(key) == value for key, value in payload_match.items()):
+                return SimpleNamespace(to_dict=lambda: {"id": task_id, **data})
+        return None
+
+    async def delete_by_payload(self, *, payload_match, statuses):
+        matching_ids = [
+            task_id
+            for task_id, data in self.records.items()
+            if data["status"] in statuses
+            and all(data.get("payload", {}).get(key) == value for key, value in payload_match.items())
+        ]
+        for task_id in matching_ids:
+            del self.records[task_id]
+        return matching_ids
 
 
 async def _wait_for_status(tasker, task_id, expected_status):
@@ -214,3 +234,88 @@ async def test_task_details_use_the_persisted_record_instead_of_a_stale_local_co
     detail = await tasker.get_task(task.id)
     assert detail["status"] == "failed"
     assert detail["message"] == "另一个实例已标记失败"
+
+
+@pytest.mark.asyncio
+async def test_find_active_task_by_payload_across_task_types():
+    repository = FakeTaskRepository()
+    tasker = Tasker(worker_count=1, default_timeout_seconds=5)
+    tasker._repo = repository
+    matching = await tasker.enqueue(
+        name="analysis",
+        task_type="academic_paper_analysis",
+        payload={"kb_id": "kb-1"},
+        coroutine=lambda context: asyncio.sleep(0),
+    )
+    await tasker.enqueue(
+        name="other",
+        task_type="research_synthesis",
+        payload={"kb_id": "kb-2"},
+        coroutine=lambda context: asyncio.sleep(0),
+    )
+
+    found = await tasker.find_task_by_payload_any_type(
+        payload_match={"kb_id": "kb-1"},
+        statuses={"pending", "running"},
+    )
+
+    assert found is not None
+    assert found.id == matching.id
+
+
+@pytest.mark.asyncio
+async def test_delete_terminal_tasks_by_payload_preserves_active_work_and_releases_memory():
+    repository = FakeTaskRepository()
+    tasker = Tasker(worker_count=1, default_timeout_seconds=5)
+    tasker._repo = repository
+    completed = await tasker.enqueue(
+        name="completed",
+        task_type="research_synthesis",
+        payload={"kb_id": "kb-1"},
+        coroutine=lambda context: asyncio.sleep(0),
+    )
+    active = await tasker.enqueue(
+        name="active",
+        task_type="academic_paper_analysis",
+        payload={"kb_id": "kb-1"},
+        coroutine=lambda context: asyncio.sleep(0),
+    )
+    await tasker._update_task(completed.id, status="success")
+
+    deleted = await tasker.delete_terminal_tasks_by_payload(payload_match={"kb_id": "kb-1"})
+
+    assert deleted == 1
+    assert completed.id not in repository.records
+    assert completed.id not in tasker._tasks
+    assert active.id in repository.records
+    assert active.id in tasker._tasks
+
+
+@pytest.mark.asyncio
+async def test_unknown_task_failure_does_not_persist_or_log_provider_secrets(monkeypatch):
+    secret = "Authorization=secret-api-key provider-body=<private>"
+    log_entries = []
+
+    class FakeLogger:
+        def __getattr__(self, level):
+            def record(*args, **kwargs):
+                log_entries.append((level, args, kwargs))
+
+            return record
+
+    async def fail(context):
+        raise RuntimeError(secret)
+
+    monkeypatch.setattr(task_service, "logger", FakeLogger())
+    tasker = Tasker(worker_count=1, default_timeout_seconds=5)
+    tasker._repo = FakeTaskRepository()
+
+    await tasker.start()
+    try:
+        task = await tasker.enqueue(name="provider failure", task_type="test", coroutine=fail)
+        failed = await _wait_for_status(tasker, task.id, "failed")
+    finally:
+        await tasker.shutdown()
+
+    assert failed["error"] == "任务执行失败，请稍后重试"
+    assert secret not in repr(log_entries)

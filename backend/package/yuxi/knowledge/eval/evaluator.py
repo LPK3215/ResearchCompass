@@ -2,7 +2,12 @@ from collections.abc import Callable
 from typing import Any
 
 from yuxi.knowledge.eval.metrics import EvaluationMetricsCalculator
+from yuxi.services.task_service import PublicTaskError
 from yuxi.utils import logger
+
+
+class EvaluationAnswerGenerationError(PublicTaskError):
+    error_type = "answer_model_failed"
 
 
 def normalize_query_result(query_result: Any) -> tuple[str, list[dict[str, Any]]]:
@@ -50,9 +55,9 @@ async def generate_answer_if_needed(
         generated_answer = response.content if response else ""
         logger.debug(f"LLM 生成的答案长度: {len(generated_answer) if generated_answer else 0}")
         return generated_answer
-    except Exception as e:
-        logger.error(f"LLM 生成答案失败: {e}")
-        return ""
+    except Exception as exc:
+        logger.error("LLM 生成评估答案失败: exception_type={}", type(exc).__name__)
+        raise EvaluationAnswerGenerationError("评估答案模型调用失败") from exc
 
 
 async def evaluate_question(

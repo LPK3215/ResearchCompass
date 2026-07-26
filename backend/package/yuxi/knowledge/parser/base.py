@@ -97,3 +97,6 @@ class BaseDocumentProcessor(ABC):
     def get_supported_extensions(self) -> list[str]:
         """返回支持的文件扩展名列表"""
         pass
+
+    def close(self) -> None:
+        """释放处理器持有的网络或本地资源。"""

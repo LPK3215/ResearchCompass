@@ -28,6 +28,20 @@ class _TaskExecutionTimeout(TimeoutError):
     pass
 
 
+class PublicTaskError(RuntimeError):
+    """A deliberately sanitized failure that may be shown in task details."""
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message
+
+
+def _public_task_error_message(exc: Exception) -> str:
+    if isinstance(exc, PublicTaskError):
+        return exc.message
+    return "任务执行失败，请稍后重试"
+
+
 def _iso_to_utc_naive(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -159,6 +173,14 @@ class Tasker:
                     worker.cancel()
 
             await asyncio.gather(*workers, return_exceptions=True)
+            async with self._lock:
+                # Worker cancellation only removes the item currently being processed. Any
+                # queued callables belong to the stopped event loop generation and must not
+                # survive a same-process restart; _load_state() will reconstruct only the
+                # explicitly resumable work from durable state.
+                self._queue = asyncio.Queue()
+                self._tasks.clear()
+                self._last_persisted_progress.clear()
             logger.info("Tasker shutdown complete")
 
     async def enqueue(
@@ -189,6 +211,18 @@ class Tasker:
     ) -> Task | None:
         record = await self._repo.find_by_payload(
             task_type=task_type,
+            payload_match=payload_match,
+            statuses=statuses,
+        )
+        return Task.from_dict(record.to_dict()) if record else None
+
+    async def find_task_by_payload_any_type(
+        self,
+        *,
+        payload_match: dict[str, Any],
+        statuses: set[str] | None = None,
+    ) -> Task | None:
+        record = await self._repo.find_any_by_payload(
             payload_match=payload_match,
             statuses=statuses,
         )
@@ -280,6 +314,21 @@ class Tasker:
         logger.info("Deleted task {}", task_id)
         return True
 
+    async def delete_terminal_tasks_by_payload(self, *, payload_match: dict[str, Any]) -> int:
+        deleted_ids = await self._repo.delete_by_payload(
+            payload_match=payload_match,
+            statuses=TERMINAL_STATUSES,
+        )
+        if not deleted_ids:
+            return 0
+
+        async with self._lock:
+            for task_id in deleted_ids:
+                self._tasks.pop(task_id, None)
+                self._last_persisted_progress.pop(task_id, None)
+        logger.info("Deleted {} terminal task(s) for removed resource", len(deleted_ids))
+        return len(deleted_ids)
+
     async def _worker_loop(self) -> None:
         while True:
             try:
@@ -333,13 +382,19 @@ class Tasker:
                             raise
                         await self._mark_cancelled(task_id, "任务被取消")
                     except Exception as exc:  # noqa: BLE001
-                        logger.exception("Task {} failed: {}", task_id, exc)
+                        public_error = _public_task_error_message(exc)
+                        logger.error(
+                            "Task {} failed: exception_type={} error_type={}",
+                            task_id,
+                            type(exc).__name__,
+                            getattr(exc, "error_type", "unhandled_task_error"),
+                        )
                         await self._update_task(
                             task_id,
                             status="failed",
                             progress=100.0,
                             message="任务执行失败",
-                            error=str(exc),
+                            error=public_error,
                             completed_at=utc_isoformat(),
                         )
                 finally:
@@ -348,7 +403,7 @@ class Tasker:
             except asyncio.CancelledError:
                 break
             except Exception as exc:  # noqa: BLE001
-                logger.exception("Tasker worker error: {}", exc)
+                logger.error("Tasker worker error: exception_type={}", type(exc).__name__)
                 worker = asyncio.current_task()
                 if worker is not None and worker.cancelling() > 0:
                     break

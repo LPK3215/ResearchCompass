@@ -390,9 +390,9 @@ async def update_mindmap_incremental(kb_id: str, user_prompt: str = "") -> dict[
 
             try:
                 mindmap_data = parse_mindmap_content(content)
-            except ValueError as e:
-                logger.error(f"增量AI返回的JSON解析失败: {e}, 原始内容: {content}")
-                raise HTTPException(status_code=500, detail=f"AI返回格式错误: {str(e)}") from e
+            except ValueError as error:
+                logger.error(f"增量 AI 返回的思维导图格式无效 (error_type={type(error).__name__})")
+                raise HTTPException(status_code=500, detail="AI返回格式错误") from error
 
         for f in changes["added_files"]:
             updated_file_ids[f["file_id"]] = f["filename"]
@@ -415,7 +415,8 @@ async def update_mindmap_incremental(kb_id: str, user_prompt: str = "") -> dict[
         )
         logger.info(f"思维导图增量更新成功: {kb_id}")
     except Exception as save_error:
-        logger.error(f"保存思维导图失败: {save_error}")
+        logger.error(f"保存思维导图失败 (error_type={type(save_error).__name__})")
+        raise HTTPException(status_code=503, detail="思维导图保存失败") from save_error
 
     no_ai = not changes["added_files"]
     return {
@@ -478,9 +479,9 @@ async def generate_database_mindmap(
 
     try:
         mindmap_data = parse_mindmap_content(content)
-    except ValueError as e:
-        logger.error(f"AI返回的JSON解析失败: {e}, 原始内容: {content}")
-        raise HTTPException(status_code=500, detail=f"AI返回格式错误: {str(e)}") from e
+    except ValueError as error:
+        logger.error(f"AI 返回的思维导图格式无效 (error_type={type(error).__name__})")
+        raise HTTPException(status_code=500, detail="AI返回格式错误") from error
 
     logger.info("思维导图生成成功")
 
@@ -503,7 +504,8 @@ async def generate_database_mindmap(
         )
         logger.info(f"思维导图已保存到知识库: {kb_id}")
     except Exception as save_error:
-        logger.error(f"保存思维导图失败: {save_error}")
+        logger.error(f"保存思维导图失败 (error_type={type(save_error).__name__})")
+        raise HTTPException(status_code=503, detail="思维导图保存失败") from save_error
 
     return {
         "message": "success",
@@ -608,8 +610,8 @@ async def remove_file_from_mindmap(kb_id: str, file_id: str, filename: str | Non
             },
         )
         logger.info(f"思维导图中已移除文件: {removed_filename}")
-    except Exception as e:
-        logger.error(f"从思维导图移除文件失败: {e}")
+    except Exception as error:
+        logger.error(f"从思维导图移除文件失败 (error_type={type(error).__name__})")
 
 
 async def batch_remove_files_from_mindmap(kb_id: str, removals: list[tuple[str, str]]) -> None:
@@ -656,5 +658,5 @@ async def batch_remove_files_from_mindmap(kb_id: str, removals: list[tuple[str, 
             },
         )
         logger.info(f"思维导图批量清理完成: {kb_id}, 移除 {len(stale_filenames)} 个文件")
-    except Exception as e:
-        logger.error(f"从思维导图批量移除文件失败: {e}")
+    except Exception as error:
+        logger.error(f"从思维导图批量移除文件失败 (error_type={type(error).__name__})")

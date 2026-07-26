@@ -25,11 +25,11 @@ from yuxi.repositories.research_synthesis_repository import ResearchSynthesisRep
 from yuxi.repositories.user_repository import UserRepository
 from yuxi.services.research_paper_service import _ensure_access
 from yuxi.services.research_search_service import LOCAL_HYBRID_MODE, ResearchSearchError, search_papers
-from yuxi.services.task_service import TaskContext, tasker
+from yuxi.services.task_service import PublicTaskError, TaskContext, tasker
 from yuxi.storage.postgres.models_business import User
 
 
-class ResearchSynthesisError(RuntimeError):
+class ResearchSynthesisError(PublicTaskError):
     def __init__(self, error_type: str, message: str):
         super().__init__(message)
         self.error_type = error_type
@@ -207,6 +207,20 @@ async def _call_synthesis_model(model_spec: str, context: str) -> dict[str, Any]
     except Exception as exc:
         raise ResearchSynthesisError("synthesis_generation_failed", "综述模型调用失败") from exc
     return _parse_json(str(response.content or ""))
+
+
+async def _refresh_synthesis_owner(current_user: User, kb_id: str) -> User:
+    uid = str(getattr(current_user, "uid", "") or "").strip()
+    if not uid:
+        raise ResearchSynthesisError("forbidden", "研究综述任务缺少有效所有者")
+    user = await UserRepository().get_by_uid(uid)
+    if user is None or bool(user.is_deleted):
+        raise ResearchSynthesisError("forbidden", "综述任务所有者不存在或已被删除")
+    try:
+        await _ensure_access(user, kb_id)
+    except HTTPException as exc:
+        raise ResearchSynthesisError("forbidden", "综述任务所有者已失去知识库访问权限") from exc
+    return user
 
 
 async def _verified_evidence_index(kb_id: str, snapshot: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -500,6 +514,7 @@ async def _run_synthesis(
         )
     try:
         await context.raise_if_cancelled()
+        current_user = await _refresh_synthesis_owner(current_user, kb_id)
         if snapshot is None:
             await context.set_progress(5, "正在执行本地混合检索")
             started = time.perf_counter()
@@ -540,6 +555,7 @@ async def _run_synthesis(
             await context.set_progress(40, "服务重启，复用已持久化的检索快照")
 
         await context.raise_if_cancelled()
+        current_user = await _refresh_synthesis_owner(current_user, kb_id)
         await context.set_progress(45, "正在生成结构化跨论文综述")
         started = time.perf_counter()
         raw_report = await _call_synthesis_model(model_spec, _model_context(query, snapshot))
@@ -552,12 +568,14 @@ async def _run_synthesis(
         )
 
         await context.raise_if_cancelled()
+        current_user = await _refresh_synthesis_owner(current_user, kb_id)
         await context.set_progress(80, "正在校验证据身份与引用覆盖率")
         started = time.perf_counter()
         evidence_index = await _verified_evidence_index(kb_id, snapshot)
         result = _validate_report(raw_report, query=query, snapshot=snapshot, evidence_index=evidence_index)
         timings["validation_ms"] = _elapsed(started)
         await context.raise_if_cancelled()
+        await _refresh_synthesis_owner(current_user, kb_id)
         completed = await repo.update_if_not_cancelled(
             run_id,
             {
@@ -602,20 +620,24 @@ async def _run_synthesis(
             )
         raise
     except Exception as exc:
-        error_type = getattr(exc, "error_type", "synthesis_failed")
-        error_message = getattr(exc, "message", str(exc))
+        if isinstance(exc, (ResearchSynthesisError, ResearchSearchError)):
+            failure = ResearchSynthesisError(exc.error_type, exc.message)
+        else:
+            failure = ResearchSynthesisError("synthesis_failed", "综述任务执行失败")
         await repo.update_if_not_cancelled(
             run_id,
             {
                 "status": "failed",
                 "stage": "failed",
                 "stage_timings": timings,
-                "error_type": error_type,
-                "error_message": error_message,
+                "error_type": failure.error_type,
+                "error_message": failure.message,
                 "completed_at": _now(),
             },
         )
-        raise
+        if isinstance(exc, ResearchSynthesisError):
+            raise
+        raise failure from exc
 
 
 async def enqueue_research_synthesis(
@@ -688,18 +710,6 @@ async def enqueue_research_synthesis(
             raise ResearchSynthesisError("synthesis_active", f"当前知识库已有综述运行中：{active.run_id}") from exc
         raise ResearchSynthesisError("synthesis_record_failed", "综述运行记录创建失败") from exc
 
-    async def run(context: TaskContext):
-        return await _run_synthesis(
-            context,
-            run_id=run_id,
-            kb_id=kb_id,
-            current_user=current_user,
-            query=query,
-            model_spec=resolved_model,
-            reranker_model=resolved_reranker,
-            retrieval_config=retrieval_config,
-        )
-
     try:
         task, _ = await tasker.enqueue_unique_by_payload(
             name=f"证据约束研究综述 ({query[:40]})",
@@ -707,7 +717,7 @@ async def enqueue_research_synthesis(
             payload={"run_id": run_id, "kb_id": kb_id, "uid": uid},
             payload_match={"run_id": run_id},
             statuses={"pending", "running"},
-            coroutine=run,
+            coroutine=_resume_research_synthesis_task,
         )
         await repo.update(run_id, {"task_id": task.id})
     except Exception as exc:
@@ -717,7 +727,7 @@ async def enqueue_research_synthesis(
                 "status": "failed",
                 "stage": "failed",
                 "error_type": "synthesis_enqueue_failed",
-                "error_message": str(exc),
+                "error_message": "综述任务提交失败",
                 "completed_at": _now(),
             },
         )
@@ -877,24 +887,30 @@ def _citation_suffix(item: dict[str, Any], reference_numbers: dict[str, int]) ->
     return " " + "".join(f"[{number}]" for number in numbers) if numbers else ""
 
 
+def _markdown_inline(value: Any) -> str:
+    normalized = " ".join(str(value or "").split())
+    return re.sub(r"([\\`<>\[\]()!])", r"\\\1", normalized)
+
+
 def _render_markdown(result: dict[str, Any]) -> str:
     reference_numbers, references = _report_references(result)
     coverage = result.get("coverage") or {}
     lines = [
         "# 证据约束研究综述",
         "",
-        f"**研究问题：** {result.get('question') or ''}",
+        f"**研究问题：** {_markdown_inline(result.get('question'))}",
         "",
         "## 执行摘要",
         "",
-        str((result.get("executive_summary") or {}).get("text") or ""),
+        _markdown_inline((result.get("executive_summary") or {}).get("text")),
         "",
         "## 核心结论",
         "",
     ]
     for claim in result.get("claims") or []:
         lines.append(
-            f"- **{claim['claim_id']} · {claim['confidence']}** {claim['statement']}"
+            f"- **{_markdown_inline(claim['claim_id'])} · {_markdown_inline(claim['confidence'])}** "
+            f"{_markdown_inline(claim['statement'])}"
             f"{_citation_suffix(claim, reference_numbers)}"
         )
     sections = (
@@ -907,14 +923,16 @@ def _render_markdown(result: dict[str, Any]) -> str:
         lines.extend(["", f"## {title}", ""])
         for item in result.get(field) or []:
             if field == "themes":
-                lines.append(f"### {item['title']}")
-                lines.extend(["", item["summary"], ""])
+                lines.append(f"### {_markdown_inline(item['title'])}")
+                lines.extend(["", _markdown_inline(item["summary"]), ""])
             else:
-                basis = f"（依据：{item['basis']}）" if item.get("basis") else ""
-                lines.append(f"- {item['statement']}{basis}{_citation_suffix(item, reference_numbers)}")
+                basis = f"（依据：{_markdown_inline(item['basis'])}）" if item.get("basis") else ""
+                lines.append(
+                    f"- {_markdown_inline(item['statement'])}{basis}{_citation_suffix(item, reference_numbers)}"
+                )
     lines.extend(["", "## 未支持结论", ""])
     for item in result.get("unsupported_claims") or []:
-        lines.append(f"- {item['statement']}（{item['reason']}）")
+        lines.append(f"- {_markdown_inline(item['statement'])}（{_markdown_inline(item['reason'])}）")
     lines.extend(
         [
             "",
@@ -928,13 +946,14 @@ def _render_markdown(result: dict[str, Any]) -> str:
             "",
         ]
     )
-    lines.extend(f"- {item}" for item in result.get("methodological_constraints") or [])
+    lines.extend(f"- {_markdown_inline(item)}" for item in result.get("methodological_constraints") or [])
     lines.extend(["", "## 证据索引", ""])
     for number, citation in enumerate(references, start=1):
         section = citation.get("section_title") or citation.get("section_type") or "论文内容"
         lines.append(
-            f"[{number}] {citation['paper_title']} · {section} · "
-            f"paper_id={citation['paper_id']} · chunk_id={citation['chunk_id']}"
+            f"[{number}] {_markdown_inline(citation['paper_title'])} · {_markdown_inline(section)} · "
+            f"paper_id={_markdown_inline(citation['paper_id'])} · "
+            f"chunk_id={_markdown_inline(citation['chunk_id'])}"
         )
     return "\n".join(lines).strip() + "\n"
 
@@ -1077,17 +1096,18 @@ async def recover_research_synthesis_runs() -> int:
                 statuses={"pending", "running"},
                 coroutine=run,
             )
-            if created:
+            if str(getattr(record, "task_id", None) or "") != str(task.id):
                 await repo.update(str(record.run_id), {"task_id": task.id})
+            if created:
                 recovered += 1
-        except Exception as exc:
+        except Exception:
             await repo.update(
                 str(record.run_id),
                 {
                     "status": "failed",
                     "stage": "failed",
                     "error_type": "synthesis_recovery_failed",
-                    "error_message": str(exc),
+                    "error_message": "综述恢复任务提交失败",
                     "completed_at": _now(),
                 },
             )

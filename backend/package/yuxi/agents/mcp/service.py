@@ -36,6 +36,10 @@ _mcp_tools_cache: dict[str, list[Callable[..., Any]]] = {}
 _mcp_tools_stats: dict[str, dict[str, int]] = {}
 _UNSET = object()
 
+
+class MCPToolsLoadError(RuntimeError):
+    pass
+
 # Default MCP Server configurations (Imported to DB on first run)
 _DEFAULT_MCP_SERVERS = {
     "mcp-server-chart": {
@@ -128,8 +132,8 @@ async def ensure_builtin_mcp_servers_in_db() -> None:
             if any_changed:
                 await session.commit()
 
-    except Exception as e:
-        logger.exception(f"Failed to ensure builtin MCP servers in database: {e}")
+    except Exception as exc:
+        logger.error("Failed to ensure builtin MCP servers: exception_type={}", type(exc).__name__)
 
 
 async def get_mcp_client(
@@ -140,8 +144,8 @@ async def get_mcp_client(
         client = MultiServerMCPClient(server_configs)  # pyright: ignore[reportArgumentType]
         logger.info(f"Initialized MCP client with servers: {list(server_configs.keys())}")
         return client
-    except Exception as e:
-        logger.error("Failed to initialize MCP client: {}", e)
+    except Exception as exc:
+        logger.error("Failed to initialize MCP client: exception_type={}", type(exc).__name__)
         return None
 
 
@@ -200,6 +204,7 @@ async def get_mcp_tools(
     disabled_tools: list[str] = None,
     cache: bool = True,
     force_refresh: bool = False,
+    strict: bool = False,
 ) -> list[Callable[..., Any]]:
     """Get MCP tools for a specific server.
 
@@ -222,6 +227,8 @@ async def get_mcp_tools(
 
     if server_config is None:
         logger.warning(f"MCP server '{server_slug}' not found in database or disabled")
+        if strict:
+            raise MCPToolsLoadError("MCP 服务器不存在、已禁用或配置不可用")
         return []
 
     # 配置 hash 直接基于完整配置生成。只要数据库中的配置发生变化，
@@ -243,6 +250,8 @@ async def get_mcp_tools(
 
             client = await get_mcp_client({server_slug: client_config})
             if client is None:
+                if strict:
+                    raise MCPToolsLoadError("MCP 客户端初始化失败")
                 return []
 
             raw_tools = cast(list[Any], await client.get_tools())
@@ -282,8 +291,10 @@ async def get_mcp_tools(
                     f"{len(all_processed_tools)} tools loaded."
                 )
 
-        except Exception as e:
-            logger.exception(f"Failed to load tools from MCP server '{server_slug}': {e}")
+        except Exception as exc:
+            logger.error("Failed to load MCP tools: exception_type={}", type(exc).__name__)
+            if strict:
+                raise MCPToolsLoadError("MCP 工具加载失败") from exc
             return []
 
     # 3. Filtering (Apply to Return Value Only)
@@ -606,4 +617,5 @@ async def get_all_mcp_tools(server_slug: str) -> list:
         disabled_tools=[],
         cache=False,
         force_refresh=True,
+        strict=True,
     )

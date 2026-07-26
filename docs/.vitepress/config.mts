@@ -5,9 +5,9 @@ import markdownItTaskCheckbox from 'markdown-it-task-checkbox'
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
   lang: 'zh-CN',
-  title: "Yuxi",
-  description: "语析",
-  base: '/Yuxi/',
+  title: 'ResearchCompass',
+  description: '基于知识图谱与多 Agent 的学术文献智能分析平台',
+  base: '/ResearchCompass/',
   ignoreDeadLinks: [
     /localhost/,
     /CONTRIBUTING$/,
@@ -23,6 +23,7 @@ export default defineConfig({
     // https://vitepress.dev/reference/default-theme-config
     logo: "/favicon.svg",
     nav: [
+      { text: '科研罗盘', link: '/intro/research-compass' },
       { text: '快速开始', link: '/intro/quick-start' },
       { text: '智能体开发', link: '/agents/agents-config' }
     ],
@@ -31,6 +32,7 @@ export default defineConfig({
       {
         text: '简介',
         items: [
+          { text: '科研罗盘', link: '/intro/research-compass' },
           { text: '什么是 Yuxi？', link: '/intro/project-overview' },
           { text: '快速开始', link: '/intro/quick-start' },
           { text: '命令行工具', link: '/intro/cli' },
@@ -78,16 +80,16 @@ export default defineConfig({
     ],
 
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/xerrors/Yuxi' }
+      { icon: 'github', link: 'https://github.com/LPK3215/ResearchCompass' }
     ],
 
     footer: {
       message: '本项目基于 MIT License 开源，欢迎使用和贡献。',
-      copyright: 'Copyright © 2025-present Yuxi'
+      copyright: 'ResearchCompass，基于 Yuxi 开发'
     },
 
     editLink: {
-      pattern: 'https://github.com/xerrors/Yuxi/edit/main/docs/:path',
+      pattern: 'https://github.com/LPK3215/ResearchCompass/edit/main/docs/:path',
       text: '在 GitHub 上编辑此页'
     },
 

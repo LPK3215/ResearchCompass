@@ -528,7 +528,7 @@ async def search_papers(
                 "status": "failed",
                 "stage_timings": timings,
                 "error_type": failure_type,
-                "error_message": str(exc),
+                "error_message": failure_message,
                 "completed_at": _now(),
             },
         )

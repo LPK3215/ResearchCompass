@@ -43,10 +43,6 @@ const { activeCount: activeCountRef, isDrawerOpen } = storeToRefs(taskerStore)
 const { threads, currentThreadId, hasMoreThreads, isLoadingMoreThreads } =
   storeToRefs(chatThreadsStore)
 
-// Add state for GitHub stars
-const githubStars = ref(0)
-const isLoadingStars = ref(false)
-
 // Add state for debug modal
 const showDebugModal = ref(false)
 
@@ -84,21 +80,6 @@ const getRemoteDatabase = async () => {
   }
 }
 
-// Fetch GitHub stars count
-const fetchGithubStars = async () => {
-  try {
-    isLoadingStars.value = true
-    // 公共API，可以直接使用fetch
-    const response = await fetch('https://api.github.com/repos/xerrors/Yuxi')
-    const data = await response.json()
-    githubStars.value = data.stargazers_count
-  } catch (error) {
-    console.error('获取GitHub stars失败:', error)
-  } finally {
-    isLoadingStars.value = false
-  }
-}
-
 onMounted(async () => {
   initResponsiveSidebar()
   // 加载信息配置与知识库数据无依赖，可并行
@@ -108,7 +89,6 @@ onMounted(async () => {
   // 任务中心包含全局运维任务，仅超级管理员加载。
   if (userStore.isSuperAdmin) {
     taskerStore.loadTasks()
-    fetchGithubStars() // Fetch GitHub stars on mount
   }
 })
 
@@ -129,7 +109,7 @@ const activeConversationThreadId = computed(() => {
   return route.path.startsWith('/agent') ? currentThreadId.value : null
 })
 const organizationName = computed(() => {
-  return infoStore.organization.name || infoStore.branding.name || 'Yuxi'
+  return infoStore.organization.name || infoStore.branding.name || 'ResearchCompass'
 })
 
 // 下面是导航菜单部分，添加智能体项
@@ -415,12 +395,9 @@ provide('settingsModal', {
         <div class="github nav-item" @click.stop>
           <a-tooltip placement="right" :open="sidebarCollapsed ? undefined : false">
             <template #title>欢迎 Star</template>
-            <a href="https://github.com/xerrors/Yuxi" target="_blank" class="github-link">
+            <a href="https://github.com/LPK3215/ResearchCompass" target="_blank" class="github-link">
               <GithubOutlined class="icon" />
               <span class="nav-text">GitHub</span>
-              <span v-if="githubStars > 0" class="github-stars">
-                <span class="star-count">{{ (githubStars / 1000).toFixed(1) }}k</span>
-              </span>
             </a>
           </a-tooltip>
         </div>
@@ -752,26 +729,6 @@ div.header,
         line-height: 1;
       }
 
-      .github-stars {
-        display: flex;
-        align-items: center;
-        max-width: 48px;
-        margin-left: auto;
-        overflow: hidden;
-        font-size: 12px;
-        color: var(--gray-600);
-        background-color: var(--gray-100);
-        padding: 2px 8px;
-        border-radius: 6px;
-        white-space: nowrap;
-        transition:
-          opacity 0.12s ease,
-          max-width 0.18s ease;
-
-        .star-count {
-          font-weight: 600;
-        }
-      }
     }
 
     &.api-docs {
@@ -915,8 +872,7 @@ div.header,
       width: 100%;
       padding: 0 @sidebar-collapsed-icon-padding-x;
 
-      .nav-text,
-      .github-stars {
+      .nav-text {
         max-width: 0;
         margin-left: 0;
         opacity: 0;

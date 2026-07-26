@@ -89,7 +89,7 @@
               <X :size="14" />
             </button>
           </div>
-          <p class="star-card-title">给 Yuxi 点个 Star</p>
+          <p class="star-card-title">给 ResearchCompass 点个 Star</p>
           <p class="star-card-description">
             如果这个项目帮到了你，欢迎去 GitHub 点亮一个 Star，让更多人看到它。
           </p>
@@ -99,11 +99,7 @@
             target="_blank"
             rel="noopener noreferrer"
           >
-            <img
-              class="star-card-link-image"
-              src="https://img.shields.io/github/stars/xerrors/Yuxi?label=Yuxi&style=social"
-              alt="GitHub stars for Yuxi"
-            />
+            <span>打开 GitHub 仓库</span>
             <ExternalLink :size="13" />
           </a>
         </div>
@@ -232,7 +228,7 @@ const activeTab = ref('account')
 const showStarCard = ref(true)
 
 const STAR_CARD_STORAGE_KEY = 'yuxi-settings-star-card-dismissed'
-const projectRepoUrl = 'https://github.com/xerrors/Yuxi'
+const projectRepoUrl = 'https://github.com/LPK3215/ResearchCompass'
 
 const visible = computed({
   get: () => props.visible,
@@ -455,10 +451,6 @@ watch(
     color: var(--gray-600);
   }
 
-  .star-card-link-image {
-    display: block;
-    height: 20px;
-  }
 }
 
 /* Content Area */

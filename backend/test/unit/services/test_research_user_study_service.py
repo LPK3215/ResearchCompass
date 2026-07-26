@@ -58,6 +58,42 @@ async def test_public_rate_limit_fails_closed_when_redis_is_unavailable(monkeypa
 
 
 @pytest.mark.asyncio
+async def test_submit_reports_study_closed_when_atomic_repository_check_loses_close_race(monkeypatch):
+    class FakeRepository:
+        async def get_invite_by_hash(self, token_hash):
+            return SimpleNamespace(invite_id="invite-1", study_id="study-1", status="pending")
+
+        async def get_study(self, study_id):
+            return SimpleNamespace(study_id=study_id, status="open")
+
+        async def create_response_and_use_invite(self, **kwargs):
+            assert kwargs["study_id"] == "study-1"
+            return None, "study_closed"
+
+    async def allow_rate_limit(**kwargs):
+        return None
+
+    monkeypatch.setattr(research_user_study_service, "_enforce_public_rate_limit", allow_rate_limit)
+    service = ResearchUserStudyService()
+    service.repo = FakeRepository()
+
+    with pytest.raises(ResearchUserStudyError) as exc_info:
+        await service.submit_public_response(
+            token="valid-secret-token-for-test",
+            consent=True,
+            research_stage="master",
+            research_experience="1_to_3_years",
+            task_scores={key: 4 for key in research_user_study_service.TASK_SCORE_KEYS},
+            sus_scores={key: 3 for key in research_user_study_service.SUS_SCORE_KEYS},
+            overall_rating=4,
+            recommend_score=8,
+            feedback="",
+        )
+
+    assert exc_info.value.error_type == "study_closed"
+
+
+@pytest.mark.asyncio
 async def test_study_report_paginates_responses_but_summarizes_all(monkeypatch):
     responses = [
         SimpleNamespace(

@@ -83,3 +83,35 @@ async def test_get_list_summary_aggregates_persisted_task_records():
     finally:
         async with pg_manager.get_async_session_context() as session:
             await session.execute(delete(TaskRecord).where(TaskRecord.id.in_(task_ids)))
+
+
+async def test_delete_by_payload_only_removes_matching_terminal_tasks():
+    task_ids = [uuid.uuid4().hex for _ in range(3)]
+    repository = TaskRepository()
+
+    try:
+        completed = _task_data({"kb_id": "pytest-kb-delete", "run_id": "completed"})
+        completed["status"] = "success"
+        await repository.upsert(task_ids[0], completed)
+        await repository.upsert(
+            task_ids[1],
+            _task_data({"kb_id": "pytest-kb-delete", "run_id": "active"}),
+        )
+        other = _task_data({"kb_id": "pytest-other-kb", "run_id": "other"})
+        other["status"] = "failed"
+        await repository.upsert(task_ids[2], other)
+
+        deleted_ids = await repository.delete_by_payload(
+            payload_match={"kb_id": "pytest-kb-delete"},
+            statuses={"success", "failed", "cancelled"},
+        )
+
+        assert deleted_ids == [task_ids[0]]
+        async with pg_manager.get_async_session_context() as session:
+            remaining_ids = set(
+                await session.scalars(select(TaskRecord.id).where(TaskRecord.id.in_(task_ids)))
+            )
+        assert remaining_ids == {task_ids[1], task_ids[2]}
+    finally:
+        async with pg_manager.get_async_session_context() as session:
+            await session.execute(delete(TaskRecord).where(TaskRecord.id.in_(task_ids)))

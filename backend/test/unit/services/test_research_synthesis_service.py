@@ -10,6 +10,14 @@ from docx import Document
 from yuxi.services import research_synthesis_service
 
 
+@pytest.fixture(autouse=True)
+def allow_synthesis_owner_for_non_access_tests(monkeypatch):
+    async def refresh_owner(current_user, kb_id):
+        return current_user
+
+    monkeypatch.setattr(research_synthesis_service, "_refresh_synthesis_owner", refresh_owner)
+
+
 def _snapshot() -> dict:
     return {
         "search_run_id": "search-1",
@@ -227,6 +235,19 @@ def test_synthesis_export_renderers_include_verified_evidence():
     assert "chunk_id=chunk-2" in markdown
     assert "证据约束研究综述" in docx_text
     assert "The approach has reproducible evidence." in docx_text
+
+
+def test_markdown_export_neutralizes_active_content_from_questions_and_model_text():
+    result = _validated_report()
+    result["question"] = '<img src="https://attacker.invalid/track">'
+    result["claims"][0]["statement"] = "Evidence [open](https://attacker.invalid)\n# injected heading"
+
+    markdown = research_synthesis_service._render_markdown(result)
+
+    assert '<img src="https://attacker.invalid/track">' not in markdown
+    assert "[open](https://attacker.invalid)" not in markdown
+    assert "\n# injected heading" not in markdown
+    assert r'\<img src="https://attacker.invalid/track"\>' in markdown
 
 
 @pytest.mark.asyncio
@@ -566,3 +587,195 @@ async def test_cancel_synthesis_requests_task_cancellation_before_marking_run_te
 
     assert result == {"run_id": "run-1", "status": "cancelled", "task_id": "task-1"}
     assert calls == [("task", "task-1"), ("mark", "run-1")]
+
+
+@pytest.mark.asyncio
+async def test_new_synthesis_uses_persisted_resume_handler_for_fresh_owner_access(monkeypatch):
+    captured = {}
+
+    class FakeRepository:
+        async def get_active(self, *, kb_id, uid):
+            return None
+
+        async def create(self, **kwargs):
+            captured["created"] = kwargs
+
+        async def update(self, run_id, values):
+            captured["updated"] = (run_id, values)
+
+    class FakeKnowledgeBaseRepository:
+        async def get_by_kb_id(self, kb_id):
+            return SimpleNamespace(llm_model_spec="chat:model")
+
+    async def enqueue_unique_by_payload(*, coroutine, **kwargs):
+        captured["coroutine"] = coroutine
+        return SimpleNamespace(id="task-1", status="pending"), True
+
+    def model_info(spec):
+        model_type = "chat" if spec == "chat:model" else "rerank"
+        return SimpleNamespace(model_type=model_type, api_key="configured", provider_type="test")
+
+    monkeypatch.setattr(research_synthesis_service, "ResearchSynthesisRepository", FakeRepository)
+    monkeypatch.setattr(research_synthesis_service, "KnowledgeBaseRepository", FakeKnowledgeBaseRepository)
+    monkeypatch.setattr(research_synthesis_service, "_ensure_access", lambda *args: asyncio.sleep(0))
+    monkeypatch.setattr(research_synthesis_service.model_cache, "get_model_info", model_info)
+    monkeypatch.setattr(research_synthesis_service.tasker, "enqueue_unique_by_payload", enqueue_unique_by_payload)
+
+    result = await research_synthesis_service.enqueue_research_synthesis(
+        kb_id="kb-1",
+        current_user=SimpleNamespace(uid="user-1"),
+        query="question",
+        top_k=2,
+        recall_top_k=20,
+        year_from=None,
+        year_to=None,
+        model_spec="chat:model",
+        reranker_model="rerank:model",
+    )
+
+    assert result == {"run_id": captured["created"]["run_id"], "task_id": "task-1", "status": "pending"}
+    assert captured["coroutine"] is research_synthesis_service._resume_research_synthesis_task
+
+
+@pytest.mark.asyncio
+async def test_synthesis_recovery_adopts_existing_active_task_id(monkeypatch):
+    record = SimpleNamespace(
+        run_id="run-1",
+        task_id="stale-task",
+        kb_id="kb-1",
+        uid="user-1",
+        raw_query="question",
+        model_config_json={"model": "chat:model", "reranker_model": "rerank:model"},
+        retrieval_config={"top_k": 2, "recall_top_k": 20},
+    )
+    updates = []
+
+    class FakeRepository:
+        async def list_recoverable(self):
+            return [record]
+
+        async def update(self, run_id, values):
+            updates.append((run_id, values))
+
+    class FakeUserRepository:
+        async def get_by_uid(self, uid):
+            return SimpleNamespace(uid=uid, is_deleted=False)
+
+    async def enqueue_unique_by_payload(**kwargs):
+        return SimpleNamespace(id="active-task"), False
+
+    monkeypatch.setattr(research_synthesis_service, "ResearchSynthesisRepository", FakeRepository)
+    monkeypatch.setattr(research_synthesis_service, "UserRepository", FakeUserRepository)
+    monkeypatch.setattr(research_synthesis_service, "_ensure_access", lambda *args: asyncio.sleep(0))
+    monkeypatch.setattr(research_synthesis_service.tasker, "enqueue_unique_by_payload", enqueue_unique_by_payload)
+
+    assert await research_synthesis_service.recover_research_synthesis_runs() == 0
+    assert updates == [("run-1", {"task_id": "active-task"})]
+
+
+@pytest.mark.asyncio
+async def test_synthesis_stops_before_model_when_owner_access_is_revoked_after_retrieval(monkeypatch):
+    updates = []
+    access_checks = 0
+
+    class FakeRepository:
+        async def update_if_not_cancelled(self, run_id, values):
+            updates.append(values)
+            return SimpleNamespace()
+
+    class Context:
+        cancellation_reason = None
+
+        async def raise_if_cancelled(self):
+            return None
+
+        async def set_progress(self, *args):
+            return None
+
+    async def refresh_owner(current_user, kb_id):
+        nonlocal access_checks
+        access_checks += 1
+        if access_checks > 1:
+            raise research_synthesis_service.ResearchSynthesisError(
+                "forbidden", "综述任务所有者已失去知识库访问权限"
+            )
+        return current_user
+
+    async def unexpected_model_call(*args):
+        pytest.fail("权限撤销后不应向模型发送检索证据")
+
+    monkeypatch.setattr(research_synthesis_service, "ResearchSynthesisRepository", FakeRepository)
+    monkeypatch.setattr(
+        research_synthesis_service,
+        "_refresh_synthesis_owner",
+        refresh_owner,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        research_synthesis_service,
+        "search_papers",
+        lambda **kwargs: asyncio.sleep(0, result={"items": [{"paper_id": "one"}, {"paper_id": "two"}]}),
+    )
+    monkeypatch.setattr(
+        research_synthesis_service,
+        "_build_snapshot",
+        lambda result: {"papers": [{"paper_id": "one"}, {"paper_id": "two"}]},
+    )
+    monkeypatch.setattr(research_synthesis_service, "_call_synthesis_model", unexpected_model_call)
+
+    with pytest.raises(research_synthesis_service.ResearchSynthesisError, match="失去知识库访问权限"):
+        await research_synthesis_service._run_synthesis(
+            Context(),
+            run_id="run-1",
+            kb_id="kb-1",
+            current_user=SimpleNamespace(uid="user-1"),
+            query="question",
+            model_spec="chat:model",
+            reranker_model="rerank:model",
+            retrieval_config={"top_k": 2, "recall_top_k": 20},
+        )
+
+    assert [values["status"] for values in updates] == ["retrieving", "synthesizing", "failed"]
+    assert updates[-1]["error_type"] == "forbidden"
+
+
+@pytest.mark.asyncio
+async def test_synthesis_unknown_failure_is_persisted_and_raised_without_provider_secret(monkeypatch):
+    secret = "Authorization=secret-api-key provider-body=<private>"
+    updates = []
+
+    class FakeRepository:
+        async def update_if_not_cancelled(self, run_id, values):
+            updates.append(values)
+            return SimpleNamespace()
+
+    class Context:
+        cancellation_reason = None
+
+        async def raise_if_cancelled(self):
+            return None
+
+        async def set_progress(self, *args):
+            return None
+
+    async def fail_search(**kwargs):
+        raise RuntimeError(secret)
+
+    monkeypatch.setattr(research_synthesis_service, "ResearchSynthesisRepository", FakeRepository)
+    monkeypatch.setattr(research_synthesis_service, "search_papers", fail_search)
+
+    with pytest.raises(research_synthesis_service.ResearchSynthesisError) as exc_info:
+        await research_synthesis_service._run_synthesis(
+            Context(),
+            run_id="run-1",
+            kb_id="kb-1",
+            current_user=SimpleNamespace(uid="user-1"),
+            query="question",
+            model_spec="chat:model",
+            reranker_model="rerank:model",
+            retrieval_config={"top_k": 2, "recall_top_k": 20},
+        )
+
+    assert exc_info.value.error_type == "synthesis_failed"
+    assert exc_info.value.message == "综述任务执行失败"
+    assert secret not in repr(updates)

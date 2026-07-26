@@ -4,6 +4,7 @@ from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
+from fastapi import HTTPException
 
 from yuxi.services import feedback_service as svc
 
@@ -24,7 +25,10 @@ class _FakeSession:
         self.rolled_back = False
 
     async def execute(self, _query):
-        return _FakeResult(self.results.pop(0))
+        value = self.results.pop(0)
+        if isinstance(value, Exception):
+            raise value
+        return _FakeResult(value)
 
     def add(self, item):
         self.added.append(item)
@@ -103,3 +107,31 @@ async def test_submit_message_feedback_skips_langfuse_without_trace_id(monkeypat
     assert result["rating"] == "dislike"
     assert result["reason"] == "不相关"
     assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_get_message_feedback_requires_conversation_ownership():
+    message = SimpleNamespace(id=3, conversation_id=7, extra_metadata={})
+    foreign_conversation = SimpleNamespace(id=7, uid="user-2")
+    db = _FakeSession([message, foreign_conversation])
+
+    with pytest.raises(HTTPException) as exc_info:
+        await svc.get_message_feedback_view(message_id=3, db=db, current_uid="user-1")
+
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail == "Access denied"
+
+
+@pytest.mark.asyncio
+async def test_get_message_feedback_sanitizes_database_failure(monkeypatch: pytest.MonkeyPatch):
+    secret = "Authorization=secret-api-key provider-body=<private>"
+    messages: list[str] = []
+    db = _FakeSession([RuntimeError(secret)])
+    monkeypatch.setattr(svc.logger, "error", messages.append)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await svc.get_message_feedback_view(message_id=3, db=db, current_uid="user-1")
+
+    assert exc_info.value.status_code == 500
+    assert exc_info.value.detail == "Failed to get feedback"
+    assert secret not in " ".join(messages)

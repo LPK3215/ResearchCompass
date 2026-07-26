@@ -12,10 +12,55 @@ from yuxi.services.run_queue_service import close_queue_clients, get_redis_clien
 from yuxi.storage.postgres.manager import pg_manager
 from yuxi.storage.neo4j import close_shared_neo4j_connection
 from yuxi.knowledge.runtime import knowledge_base
+from yuxi.knowledge.parser.factory import DocumentProcessorFactory
 from yuxi.utils import logger
 from yuxi.agents.backends.sandbox import init_sandbox_provider, shutdown_sandbox_provider
 from yuxi import get_version
 from yuxi.config import config
+
+
+async def _shutdown_resources() -> None:
+    try:
+        await tasker.shutdown()
+    except Exception as error:
+        logger.error(f"Failed to stop tasker (error_type={type(error).__name__})")
+
+    try:
+        config.stop_runtime_sync()
+    except Exception as error:
+        logger.error(f"Failed to stop runtime config sync (error_type={type(error).__name__})")
+
+    try:
+        DocumentProcessorFactory.clear_cache()
+    except Exception as error:
+        logger.error(f"Failed to close document processors (error_type={type(error).__name__})")
+
+    try:
+        from yuxi.services.langfuse_service import close_langfuse_client
+
+        close_langfuse_client()
+    except Exception as error:
+        logger.error(f"Failed to close Langfuse client (error_type={type(error).__name__})")
+
+    try:
+        shutdown_sandbox_provider()
+    except Exception as error:
+        logger.error(f"Failed to stop sandbox provider (error_type={type(error).__name__})")
+
+    try:
+        await close_queue_clients()
+    except Exception as error:
+        logger.error(f"Failed to close run queue clients (error_type={type(error).__name__})")
+
+    try:
+        close_shared_neo4j_connection()
+    except Exception as error:
+        logger.error(f"Failed to close Neo4j connection (error_type={type(error).__name__})")
+
+    try:
+        await pg_manager.close()
+    except Exception as error:
+        logger.error(f"Failed to close PostgreSQL resources (error_type={type(error).__name__})")
 
 
 @asynccontextmanager
@@ -29,13 +74,13 @@ async def lifespan(app: FastAPI):
         await pg_manager.ensure_business_schema()
         await pg_manager.ensure_knowledge_schema()
     except Exception as e:
-        logger.error(f"Failed to initialize database during startup: {e}")
+        logger.error(f"Failed to initialize database during startup (error_type={type(e).__name__})")
 
     # 确保内置 MCP 服务器定义存在于数据库
     try:
         await ensure_builtin_mcp_servers_in_db()
     except Exception as e:
-        logger.error(f"Failed to ensure builtin MCP servers during startup: {e}")
+        logger.error(f"Failed to ensure builtin MCP servers during startup (error_type={type(e).__name__})")
 
     try:
         from yuxi.agents.skills.service import init_builtin_skills
@@ -43,7 +88,7 @@ async def lifespan(app: FastAPI):
         async with pg_manager.get_async_session_context() as session:
             await init_builtin_skills(session)
     except Exception as e:
-        logger.error(f"Failed to initialize builtin skills during startup: {e}")
+        logger.error(f"Failed to initialize builtin skills during startup (error_type={type(e).__name__})")
 
     try:
         from yuxi.repositories.agent_repository import AgentRepository
@@ -55,14 +100,14 @@ async def lifespan(app: FastAPI):
             await repository.ensure_web_search_subagent()
             await repository.ensure_deep_research_agents()
     except Exception as e:
-        logger.error(f"Failed to ensure default agent during startup: {e}")
+        logger.error(f"Failed to ensure default agent during startup (error_type={type(e).__name__})")
 
     # 初始化内置模型供应商配置
     try:
         async with pg_manager.get_async_session_context() as session:
             await ensure_builtin_model_providers_in_db(session)
     except Exception as e:
-        logger.error(f"Failed to ensure builtin model providers during startup: {e}")
+        logger.error(f"Failed to ensure builtin model providers during startup (error_type={type(e).__name__})")
 
     # 初始化模型缓存（v2 模型选择使用）
     try:
@@ -73,7 +118,7 @@ async def lifespan(app: FastAPI):
             providers = await get_all_model_providers(session)
             model_cache.rebuild(providers)
     except Exception as e:
-        logger.error(f"Failed to initialize model cache during startup: {e}")
+        logger.error(f"Failed to initialize model cache during startup (error_type={type(e).__name__})")
 
     # 初始化知识库管理器
     if os.environ.get("LITE_MODE", "").lower() in ("true", "1"):
@@ -82,14 +127,14 @@ async def lifespan(app: FastAPI):
         try:
             await knowledge_base.initialize()
         except Exception as e:
-            logger.error(f"Failed to initialize knowledge base manager: {e}")
+            logger.error(f"Failed to initialize knowledge base manager (error_type={type(e).__name__})")
 
     # 预热 Redis（run 队列）
     try:
         redis = await get_redis_client()
         await redis.ping()
     except Exception as e:
-        logger.warning(f"Run queue redis unavailable on startup: {e}")
+        logger.warning(f"Run queue redis unavailable on startup (error_type={type(e).__name__})")
 
     # 启动运行时配置同步线程（周期性从 Redis 拉取管理员保存的配置快照）
     config.start_runtime_sync()
@@ -97,7 +142,7 @@ async def lifespan(app: FastAPI):
     try:
         init_sandbox_provider()
     except Exception as e:
-        logger.error(f"Failed to initialize sandbox provider during startup: {e}")
+        logger.error(f"Failed to initialize sandbox provider during startup (error_type={type(e).__name__})")
 
     # =========================================================
     # 2. 核心修复：在这里执行一次 setup()，建完表就拉倒
@@ -115,7 +160,7 @@ async def lifespan(app: FastAPI):
         if recovered:
             logger.info(f"Recovered {recovered} pending research paper reindex tasks")
     except Exception as e:
-        logger.error(f"Failed to recover research paper reindex tasks: {e}")
+        logger.error(f"Failed to recover research paper reindex tasks (error_type={type(e).__name__})")
     try:
         from yuxi.services.academic_graph_sync_service import recover_academic_graph_sync_runs
 
@@ -123,7 +168,7 @@ async def lifespan(app: FastAPI):
         if recovered:
             logger.info(f"Recovered {recovered} academic graph sync runs")
     except Exception as e:
-        logger.error(f"Failed to recover academic graph sync runs: {e}")
+        logger.error(f"Failed to recover academic graph sync runs (error_type={type(e).__name__})")
     try:
         from yuxi.services.academic_paper_analysis_service import recover_paper_analysis_runs
 
@@ -131,7 +176,7 @@ async def lifespan(app: FastAPI):
         if recovered:
             logger.info(f"Recovered {recovered} academic paper analysis runs")
     except Exception as e:
-        logger.error(f"Failed to recover academic paper analysis runs: {e}")
+        logger.error(f"Failed to recover academic paper analysis runs (error_type={type(e).__name__})")
     try:
         from yuxi.services.research_synthesis_service import recover_research_synthesis_runs
 
@@ -139,7 +184,7 @@ async def lifespan(app: FastAPI):
         if recovered:
             logger.info(f"Recovered {recovered} research synthesis runs")
     except Exception as e:
-        logger.error(f"Failed to recover research synthesis runs: {e}")
+        logger.error(f"Failed to recover research synthesis runs (error_type={type(e).__name__})")
     try:
         from yuxi.services.academic_paper_analysis_evaluation_service import AcademicPaperAnalysisEvaluationService
 
@@ -147,7 +192,7 @@ async def lifespan(app: FastAPI):
         if recovered:
             logger.info(f"Recovered {recovered} paper analysis evaluation runs")
     except Exception as e:
-        logger.error(f"Failed to recover paper analysis evaluation runs: {e}")
+        logger.error(f"Failed to recover paper analysis evaluation runs (error_type={type(e).__name__})")
     try:
         from yuxi.services.academic_paper_import_service import recover_external_paper_imports
 
@@ -155,7 +200,7 @@ async def lifespan(app: FastAPI):
         if recovered:
             logger.info(f"Recovered {recovered} external academic paper import tasks")
     except Exception as e:
-        logger.error(f"Failed to recover external academic paper import tasks: {e}")
+        logger.error(f"Failed to recover external academic paper import tasks (error_type={type(e).__name__})")
     try:
         from yuxi.knowledge.eval.service import EvaluationService
 
@@ -163,7 +208,7 @@ async def lifespan(app: FastAPI):
         if recovered:
             logger.info(f"Recovered {recovered} evaluation experiments")
     except Exception as e:
-        logger.error(f"Failed to recover evaluation experiments: {e}")
+        logger.error(f"Failed to recover evaluation experiments (error_type={type(e).__name__})")
     logger.info(f"""
 
 ░██     ░██                       ░██
@@ -176,9 +221,7 @@ async def lifespan(app: FastAPI):
 
     """)
     logger.info("Yuxi backend startup complete")
-    yield
-    await tasker.shutdown()
-    shutdown_sandbox_provider()
-    await close_queue_clients()
-    close_shared_neo4j_connection()
-    await pg_manager.close()
+    try:
+        yield
+    finally:
+        await _shutdown_resources()

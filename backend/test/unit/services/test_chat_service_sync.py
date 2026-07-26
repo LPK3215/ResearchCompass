@@ -505,7 +505,16 @@ async def test_get_agent_state_view_includes_subagent_thread_relation(monkeypatc
 async def test_get_agent_state_view_reports_malformed_subagent_run_as_server_error(
     monkeypatch: pytest.MonkeyPatch,
 ):
+    secret = "Authorization=secret-api-key provider-body=<private>"
     child_thread_id = "child-thread"
+    log_entries: list[tuple[str, tuple, dict]] = []
+
+    class FakeLogger:
+        def __getattr__(self, level):
+            def record(*args, **kwargs):
+                log_entries.append((level, args, kwargs))
+
+            return record
 
     class ConvRepo:
         def __init__(self, _db):
@@ -581,12 +590,17 @@ async def test_get_agent_state_view_reports_malformed_subagent_run_as_server_err
             assert context.uid == "user-1"
             return Graph()
 
+    def fail_serialize(_run):
+        raise ValueError(secret)
+
     monkeypatch.setattr(svc, "ConversationRepository", ConvRepo)
     monkeypatch.setattr(svc, "AgentRepository", AgentRepo)
     monkeypatch.setattr(svc, "SubagentThreadRepository", ThreadRepo)
     monkeypatch.setattr(svc, "AgentRunRepository", RunRepo)
     monkeypatch.setattr(svc, "normalize_agent_context_config", _fake_normalize_agent_context_config)
     monkeypatch.setattr(svc.agent_manager, "get_agent", lambda _backend_id: Agent())
+    monkeypatch.setattr(svc, "serialize_subagent_run_state", fail_serialize)
+    monkeypatch.setattr(svc, "logger", FakeLogger())
 
     with pytest.raises(HTTPException) as exc:
         await svc.get_agent_state_view(
@@ -597,6 +611,7 @@ async def test_get_agent_state_view_reports_malformed_subagent_run_as_server_err
 
     assert exc.value.status_code == 500
     assert exc.value.detail == "子智能体运行记录格式异常"
+    assert secret not in repr(log_entries)
 
 
 @pytest.mark.asyncio

@@ -4,12 +4,20 @@ import uuid
 from contextlib import asynccontextmanager
 
 import pytest
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from yuxi.storage.postgres.manager import pg_manager
 from yuxi.storage.postgres.models_business import Department, TaskRecord, User
-from yuxi.storage.postgres.models_knowledge import AcademicPaper, KnowledgeChunk, KnowledgeFile, ResearchSynthesisRun
+from yuxi.storage.postgres.models_knowledge import (
+    AcademicPaper,
+    KnowledgeChunk,
+    KnowledgeFile,
+    ResearchSynthesisRun,
+    ResearchUserStudy,
+    ResearchUserStudyInvite,
+    ResearchUserStudyResponse,
+)
 from yuxi.utils.auth_utils import AuthUtils
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
@@ -158,12 +166,13 @@ async def test_research_compass_core_business_without_semantic_scholar(
 ):
     run_ids: list[str] = []
     task_ids: list[str] = []
+    study_record_ids: dict[str, str] = {}
     async with _temporary_superadmin(test_client) as admin:
         admin_headers = admin["headers"]
         knowledge_database = await _create_knowledge_database(test_client, admin_headers)
         kb_id = knowledge_database["kb_id"]
         try:
-            run_ids, task_ids = await _exercise_research_compass_core_business(
+            run_ids, task_ids, study_record_ids = await _exercise_research_compass_core_business(
                 test_client,
                 admin_headers,
                 admin["uid"],
@@ -185,7 +194,30 @@ async def test_research_compass_core_business_without_semantic_scholar(
                 assert int(remaining or 0) == 0
             if task_ids:
                 async with pg_manager.get_async_session_context() as session:
-                    await session.execute(delete(TaskRecord).where(TaskRecord.id.in_(task_ids)))
+                    remaining_tasks = await session.scalar(
+                        select(func.count()).select_from(TaskRecord).where(TaskRecord.id.in_(task_ids))
+                    )
+                assert int(remaining_tasks or 0) == 0
+            if study_record_ids:
+                async with pg_manager.get_async_session_context() as session:
+                    remaining_study_records = {
+                        "study": await session.scalar(
+                            select(func.count())
+                            .select_from(ResearchUserStudy)
+                            .where(ResearchUserStudy.study_id == study_record_ids["study_id"])
+                        ),
+                        "invite": await session.scalar(
+                            select(func.count())
+                            .select_from(ResearchUserStudyInvite)
+                            .where(ResearchUserStudyInvite.invite_id == study_record_ids["invite_id"])
+                        ),
+                        "response": await session.scalar(
+                            select(func.count())
+                            .select_from(ResearchUserStudyResponse)
+                            .where(ResearchUserStudyResponse.response_id == study_record_ids["response_id"])
+                        ),
+                    }
+                assert remaining_study_records == {"study": 0, "invite": 0, "response": 0}
 
 
 async def _exercise_research_compass_core_business(
@@ -193,7 +225,7 @@ async def _exercise_research_compass_core_business(
     admin_headers: dict[str, str],
     admin_uid: str,
     kb_id: str,
-) -> tuple[list[str], list[str]]:
+) -> tuple[list[str], list[str], dict[str, str]]:
     seeded = await _seed_academic_paper(kb_id)
 
     papers_response = await test_client.get(
@@ -301,7 +333,8 @@ async def _exercise_research_compass_core_business(
         json=submission,
     )
     assert submit_response.status_code == 200, submit_response.text
-    assert submit_response.json()["response_id"].startswith("response_")
+    response_id = submit_response.json()["response_id"]
+    assert response_id.startswith("response_")
 
     duplicate_response = await test_client.post(
         "/api/research/user-studies/public/responses",
@@ -343,7 +376,11 @@ async def _exercise_research_compass_core_business(
         pending_task_id=pending_task_id,
     )
     await _assert_active_synthesis_unique_constraint(kb_id=kb_id, uid=admin_uid)
-    return [success_run_id, pending_run_id], [pending_task_id]
+    return [success_run_id, pending_run_id], [pending_task_id], {
+        "study_id": study["study_id"],
+        "invite_id": study["invites"][0]["invite_id"],
+        "response_id": response_id,
+    }
 
 
 def _synthesis_result(seeded: dict[str, str]) -> dict:
@@ -530,6 +567,11 @@ async def _exercise_research_synthesis_api(
     )
     assert duplicate_cancel.status_code == 409
     assert duplicate_cancel.json()["detail"]["error"] == "synthesis_not_cancellable"
+
+    async with pg_manager.get_async_session_context() as session:
+        task = await session.get(TaskRecord, pending_task_id)
+        assert task is not None
+        task.status = "cancelled"
 
 
 async def _assert_active_synthesis_unique_constraint(*, kb_id: str, uid: str) -> None:

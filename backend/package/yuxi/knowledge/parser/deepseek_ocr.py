@@ -45,6 +45,8 @@ class DeepSeekOCRParser(BaseDocumentProcessor):
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}",
         }
+        self._session = requests.Session()
+        self._session.trust_env = False
 
     def get_service_name(self) -> str:
         return "deepseek_ocr"
@@ -58,24 +60,29 @@ class DeepSeekOCRParser(BaseDocumentProcessor):
         try:
             # We can't easily "ping" without cost, but we can check if the model list is accessible
             models_url = "https://api.siliconflow.cn/v1/models"
-            response = requests.get(models_url, headers=self.headers, timeout=10)
+            with self._session.get(models_url, headers=self.headers, timeout=10) as response:
+                status_code = response.status_code
 
-            if response.status_code == 200:
+            if status_code == 200:
                 return {
                     "status": "healthy",
                     "message": "DeepSeek OCR (SiliconFlow) is available",
                     "details": {"api_url": self.api_url},
                 }
-            elif response.status_code == 401:
+            elif status_code == 401:
                 return {"status": "unhealthy", "message": "Invalid API Key", "details": {"error_code": "401"}}
             else:
                 return {
                     "status": "unhealthy",
-                    "message": f"API Error: {response.status_code}",
-                    "details": {"status_code": response.status_code},
+                    "message": f"API Error: {status_code}",
+                    "details": {"status_code": status_code},
                 }
         except Exception as e:
-            return {"status": "unavailable", "message": f"Connection failed: {str(e)}", "details": {"error": str(e)}}
+            return {
+                "status": "unavailable",
+                "message": "Connection failed",
+                "details": {"error_type": type(e).__name__},
+            }
 
     def process_file(self, file_path: str, params: dict[str, Any] | None = None) -> str:
         """
@@ -106,12 +113,13 @@ class DeepSeekOCRParser(BaseDocumentProcessor):
 
             return content
 
-        except Exception as e:
-            if isinstance(e, DocumentParserException):
+        except Exception as error:
+            if isinstance(error, DocumentParserException):
                 raise
-            error_msg = f"DeepSeek OCR failed: {str(e)}"
-            logger.error(error_msg)
-            raise DocumentParserException(error_msg, self.get_service_name(), "processing_failed")
+            logger.error(f"DeepSeek OCR failed (error_type={type(error).__name__})")
+            raise DocumentParserException(
+                "DeepSeek OCR failed", self.get_service_name(), "processing_failed"
+            ) from error
 
     def _process_pdf(self, file_path: str) -> str:
         """Process PDF by converting pages to images"""
@@ -159,15 +167,39 @@ class DeepSeekOCRParser(BaseDocumentProcessor):
 
         payload = {"model": self.model, "messages": messages, "max_tokens": 4096, "temperature": 0.1}
 
-        response = requests.post(self.api_url, headers=self.headers, json=payload, timeout=120)
+        with self._session.post(self.api_url, headers=self.headers, json=payload, timeout=120) as response:
+            if response.status_code != 200:
+                logger.error(f"DeepSeek OCR API error (status_code={response.status_code})")
+                raise DocumentParserException(
+                    f"DeepSeek OCR API Error: HTTP {response.status_code}",
+                    self.get_service_name(),
+                    f"http_{response.status_code}",
+                )
 
-        if response.status_code != 200:
-            error_msg = f"API Error {response.status_code}: {response.text}"
-            logger.error(error_msg)
-            raise DocumentParserException(error_msg, self.get_service_name(), f"http_{response.status_code}")
+            try:
+                result = response.json()
+            except ValueError as error:
+                raise DocumentParserException(
+                    "DeepSeek OCR response format is invalid",
+                    self.get_service_name(),
+                    "response_parse_error",
+                ) from error
 
-        result = response.json()
-        content = result["choices"][0]["message"]["content"]
+        if not isinstance(result, dict):
+            raise DocumentParserException(
+                "DeepSeek OCR response format is invalid", self.get_service_name(), "response_parse_error"
+            )
+        choices = result.get("choices")
+        if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+            raise DocumentParserException(
+                "DeepSeek OCR response format is invalid", self.get_service_name(), "response_parse_error"
+            )
+        message = choices[0].get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, str):
+            raise DocumentParserException(
+                "DeepSeek OCR response format is invalid", self.get_service_name(), "response_parse_error"
+            )
 
         # Clean up special tags like <|ref|>...<|/ref|> and <|det|>...<|/det|>
         content = re.sub(r"<\|ref\|>.*?<\|/ref\|>", "", content)
@@ -175,6 +207,9 @@ class DeepSeekOCRParser(BaseDocumentProcessor):
         # content = re.sub(r"<\|.*?\|>", "", content)
 
         return content.strip()
+
+    def close(self) -> None:
+        self._session.close()
 
     def _get_mime_type(self, file_path: str) -> str:
         file_ext = Path(file_path).suffix.lower()

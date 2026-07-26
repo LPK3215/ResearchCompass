@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import threading
-import time
 from collections.abc import Iterator
 from typing import Any
 
@@ -55,15 +54,17 @@ def _load_snapshot() -> dict[str, Any] | None:
     return snapshot if isinstance(snapshot, dict) else None
 
 
-def save_runtime_config(config: Any) -> None:
+def save_runtime_config(config: Any) -> bool:
     try:
         with sync_redis_client(_runtime_config_redis_config()) as redis_client:
             redis_client.set(
                 RUNTIME_CONFIG_REDIS_KEY,
                 json.dumps(_runtime_snapshot(config), ensure_ascii=False),
             )
-    except Exception as e:
-        logger.warning(f"Failed to save runtime config to Redis: {e}")
+        return True
+    except Exception as exc:
+        logger.warning("Failed to save runtime config to Redis: exception_type={}", type(exc).__name__)
+        return False
 
 
 def refresh_runtime_config(config: Any) -> None:
@@ -80,18 +81,18 @@ def start_runtime_sync(
     config: Any,
     current_thread: threading.Thread | None,
     *,
+    stop_event: threading.Event,
     interval: float = RUNTIME_CONFIG_SYNC_INTERVAL_SECONDS,
 ) -> threading.Thread:
-    if current_thread is not None:
+    if current_thread is not None and current_thread.is_alive():
         return current_thread
 
     def runtime_sync_loop() -> None:
-        while True:
-            time.sleep(interval)
+        while not stop_event.wait(interval):
             try:
                 refresh_runtime_config(config)
             except Exception as e:
-                logger.warning(f"Runtime config sync iteration failed: {e}")
+                logger.warning("Runtime config sync iteration failed: exception_type={}", type(e).__name__)
 
     thread = threading.Thread(target=runtime_sync_loop, name="config-runtime-sync", daemon=True)
     thread.start()

@@ -8,6 +8,19 @@ from yuxi.storage.postgres.models_business import Conversation, Message, Message
 from yuxi.utils.logging_config import logger
 
 
+async def _require_owned_message(db: AsyncSession, message_id: int, current_uid: str) -> Message:
+    message_result = await db.execute(select(Message).filter_by(id=message_id))
+    message = message_result.scalar_one_or_none()
+    if not message:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    conversation_result = await db.execute(select(Conversation).filter_by(id=message.conversation_id))
+    conversation = conversation_result.scalar_one_or_none()
+    if not conversation or conversation.uid != str(current_uid):
+        raise HTTPException(status_code=403, detail="Access denied")
+    return message
+
+
 async def submit_message_feedback_view(
     *,
     message_id: int,
@@ -20,15 +33,7 @@ async def submit_message_feedback_view(
         raise HTTPException(status_code=422, detail="Rating must be 'like' or 'dislike'")
 
     try:
-        message_result = await db.execute(select(Message).filter_by(id=message_id))
-        message = message_result.scalar_one_or_none()
-        if not message:
-            raise HTTPException(status_code=404, detail="Message not found")
-
-        conversation_result = await db.execute(select(Conversation).filter_by(id=message.conversation_id))
-        conversation = conversation_result.scalar_one_or_none()
-        if not conversation or conversation.uid != str(current_uid):
-            raise HTTPException(status_code=403, detail="Access denied")
+        message = await _require_owned_message(db, message_id, current_uid)
 
         existing_feedback_result = await db.execute(
             select(MessageFeedback).filter_by(message_id=message_id, uid=str(current_uid))
@@ -63,7 +68,7 @@ async def submit_message_feedback_view(
                 reason=reason,
             )
 
-        logger.info(f"User {current_uid} submitted {rating} feedback for message {message_id}")
+        logger.info("Message feedback submitted")
 
         return {
             "id": new_feedback.id,
@@ -76,9 +81,9 @@ async def submit_message_feedback_view(
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception(f"Error submitting message feedback: {e}")
+        logger.error(f"Error submitting message feedback (error_type={type(e).__name__})")
         await db.rollback()
-        raise HTTPException(status_code=500, detail=f"Failed to submit feedback: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to submit feedback") from e
 
 
 async def get_message_feedback_view(
@@ -88,6 +93,7 @@ async def get_message_feedback_view(
     current_uid: str,
 ) -> dict:
     try:
+        await _require_owned_message(db, message_id, current_uid)
         feedback_result = await db.execute(
             select(MessageFeedback).filter_by(message_id=message_id, uid=str(current_uid))
         )
@@ -106,6 +112,8 @@ async def get_message_feedback_view(
             },
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.exception(f"Error getting message feedback: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to get feedback: {str(e)}")
+        logger.error(f"Error getting message feedback (error_type={type(e).__name__})")
+        raise HTTPException(status_code=500, detail="Failed to get feedback") from e

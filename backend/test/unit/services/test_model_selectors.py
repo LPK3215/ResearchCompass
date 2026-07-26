@@ -62,6 +62,24 @@ def _httpx_embedding_response(status_code: int, content: str | None = None) -> h
     return httpx.Response(status_code, request=request, text=content or '{"error":"temporary error"}')
 
 
+def _patch_requests_session(monkeypatch: pytest.MonkeyPatch, post):
+    class Session:
+        trust_env = True
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            return False
+
+        def post(self, *args, **kwargs):
+            return post(*args, **kwargs)
+
+    session = Session()
+    monkeypatch.setattr("yuxi.models.embed.requests.Session", lambda: session)
+    return session
+
+
 @pytest.mark.parametrize(
     "selector,args",
     [
@@ -264,9 +282,9 @@ def test_embedding_sync_400_logs_warning(monkeypatch):
         calls.append(1)
         return response
 
-    monkeypatch.setattr("yuxi.models.embed.requests.post", fake_post)
+    session = _patch_requests_session(monkeypatch, fake_post)
 
-    with pytest.raises(ValueError, match="400 Client Error"):
+    with pytest.raises(ValueError, match="Embedding request failed"):
         model.encode(["hello", "test"])
 
     assert len(calls) == 1
@@ -276,7 +294,8 @@ def test_embedding_sync_400_logs_warning(monkeypatch):
     assert "model=namespace/embedding-model" in warning
     assert "input_count=2" in warning
     assert "input_lengths=[5, 4]" in warning
-    assert "bad embedding input" in warning
+    assert "bad embedding input" not in warning
+    assert session.trust_env is False
 
 
 def test_embedding_sync_429_retries_ten_times_before_success(monkeypatch):
@@ -292,7 +311,7 @@ def test_embedding_sync_429_retries_ten_times_before_success(monkeypatch):
     success = _requests_embedding_response(200, b'{"data":[{"embedding":[0.1,0.2]}]}')
     responses = [_requests_embedding_response(429) for _ in range(10)] + [success]
 
-    monkeypatch.setattr("yuxi.models.embed.requests.post", lambda *_args, **_kwargs: responses.pop(0))
+    _patch_requests_session(monkeypatch, lambda *_args, **_kwargs: responses.pop(0))
 
     assert model.encode(["hello"]) == [[0.1, 0.2]]
     assert len(sleeps) == 10
@@ -318,9 +337,9 @@ def test_embedding_sync_5xx_uses_short_retry_budget(monkeypatch):
         calls.append(1)
         return _requests_embedding_response(503)
 
-    monkeypatch.setattr("yuxi.models.embed.requests.post", fake_post)
+    _patch_requests_session(monkeypatch, fake_post)
 
-    with pytest.raises(ValueError, match="503 Server Error"):
+    with pytest.raises(ValueError, match="Embedding request failed"):
         model.encode(["hello"])
 
     assert len(calls) == 3
@@ -339,6 +358,9 @@ async def test_embedding_async_400_logs_warning(monkeypatch):
     )
 
     class FakeAsyncClient:
+        def __init__(self, **kwargs):
+            assert kwargs["trust_env"] is False
+
         async def __aenter__(self):
             return self
 
@@ -351,7 +373,7 @@ async def test_embedding_async_400_logs_warning(monkeypatch):
 
     monkeypatch.setattr("yuxi.models.embed.httpx.AsyncClient", FakeAsyncClient)
 
-    with pytest.raises(httpx.HTTPStatusError, match="400 Bad Request"):
+    with pytest.raises(ValueError, match="Embedding request failed"):
         await model.aencode(["hello", "test"])
 
     assert len(warnings) == 1
@@ -360,7 +382,7 @@ async def test_embedding_async_400_logs_warning(monkeypatch):
     assert "model=namespace/embedding-model" in warning
     assert "input_count=2" in warning
     assert "input_lengths=[5, 4]" in warning
-    assert "bad embedding input" in warning
+    assert "bad embedding input" not in warning
 
 
 @pytest.mark.asyncio
@@ -382,6 +404,9 @@ async def test_embedding_async_429_retries_ten_times_before_success(monkeypatch)
     responses = [_httpx_embedding_response(429) for _ in range(10)] + [success]
 
     class FakeAsyncClient:
+        def __init__(self, **kwargs):
+            assert kwargs["trust_env"] is False
+
         async def __aenter__(self):
             return self
 
@@ -400,6 +425,47 @@ async def test_embedding_async_429_retries_ten_times_before_success(monkeypatch)
     assert "retry=10/10" in warnings[-1]
 
 
+@pytest.mark.asyncio
+async def test_embedding_connection_failure_uses_fixed_message(monkeypatch):
+    secret = "Authorization=secret-api-key provider-body=<private>"
+    model = OtherEmbedding(
+        model="namespace/embedding-model",
+        base_url="https://example.com/v1/embeddings",
+        api_key="test-key",
+    )
+
+    async def fail(_messages):
+        raise RuntimeError(secret)
+
+    monkeypatch.setattr(model, "aencode", fail)
+
+    success, message = await model.test_connection()
+
+    assert success is False
+    assert message == "连接失败"
+    assert secret not in message
+
+
+@pytest.mark.asyncio
+async def test_embedding_batch_state_is_released_after_failure(monkeypatch):
+    model = OtherEmbedding(
+        model="namespace/embedding-model",
+        base_url="https://example.com/v1/embeddings",
+        api_key="test-key",
+        batch_size=1,
+    )
+
+    async def fail(_messages):
+        raise RuntimeError("failed")
+
+    monkeypatch.setattr(model, "aencode", fail)
+
+    with pytest.raises(RuntimeError, match="failed"):
+        await model.abatch_encode(["one", "two"])
+
+    assert model.embed_state == {}
+
+
 def test_get_reranker_loads_model_from_cache(monkeypatch):
     monkeypatch.setattr(
         "yuxi.models.rerank.model_cache.get_model_info",
@@ -410,3 +476,25 @@ def test_get_reranker_loads_model_from_cache(monkeypatch):
 
     assert isinstance(reranker, OpenAIReranker)
     assert reranker.model == "namespace/rerank-model"
+
+
+@pytest.mark.asyncio
+async def test_reranker_connection_failure_uses_fixed_message(monkeypatch):
+    secret = "Authorization=secret-api-key provider-body=<private>"
+    reranker = OpenAIReranker(
+        model_name="namespace/rerank-model",
+        base_url="https://example.com/v1/rerank",
+        api_key="test-key",
+    )
+
+    async def fail(*_args, **_kwargs):
+        raise RuntimeError(secret)
+
+    monkeypatch.setattr(reranker, "_batch_rerank", fail)
+
+    success, message = await reranker.test_connection()
+
+    assert success is False
+    assert message == "连接失败"
+    assert secret not in message
+    assert reranker.session is None

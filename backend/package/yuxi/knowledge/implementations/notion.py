@@ -1,7 +1,7 @@
 import asyncio
+import math
 import os
 import time
-import traceback
 from typing import Any
 
 import httpx
@@ -17,6 +17,7 @@ NOTION_MAX_DEPTH = 8
 NOTION_DEFAULT_MAX_HYDRATE_PAGES = 20
 NOTION_PAGE_CACHE_TTL_SECONDS = 300
 NOTION_PAGE_CACHE_MAX_SIZE = 64
+NOTION_MAX_RETRY_DELAY_SECONDS = 60.0
 
 
 class NotionAPIError(RuntimeError):
@@ -30,7 +31,7 @@ class _NotionClient:
         self._client: httpx.AsyncClient | None = None
 
     async def __aenter__(self):
-        self._client = httpx.AsyncClient(timeout=45.0)
+        self._client = httpx.AsyncClient(timeout=45.0, trust_env=False)
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -67,22 +68,29 @@ class _NotionClient:
                 try:
                     response.raise_for_status()
                 except httpx.HTTPStatusError as exc:
-                    body_preview = response.text[:1000] if response.text else ""
-                    logger.error(f"Notion HTTP error: status={response.status_code}, path={path}, body={body_preview}")
-                    raise NotionAPIError(str(exc)) from exc
-                return response.json()
+                    logger.error("Notion HTTP error: status={}", response.status_code)
+                    raise NotionAPIError(f"Notion API 返回 HTTP {response.status_code}") from exc
+                try:
+                    payload = response.json()
+                except ValueError as exc:
+                    raise NotionAPIError("Notion API 返回了无效 JSON") from exc
+                if not isinstance(payload, dict):
+                    raise NotionAPIError("Notion API 响应格式无效")
+                return payload
 
-            except (httpx.HTTPError, NotionAPIError) as exc:
-                if isinstance(exc, NotionAPIError) or attempt >= retries:
-                    raise
+            except NotionAPIError:
+                raise
+            except httpx.HTTPError as exc:
+                if attempt >= retries:
+                    raise NotionAPIError("Notion API 网络请求失败") from exc
                 await asyncio.sleep(min(2**attempt, 8))
 
-        raise NotionAPIError(f"Notion request failed: {method} {path}")
+        raise NotionAPIError("Notion API 请求失败")
 
     async def _request(self, method: str, url: str, **kwargs) -> httpx.Response:
         if self._client:
             return await self._client.request(method, url, **kwargs)
-        async with httpx.AsyncClient(timeout=45.0) as client:
+        async with httpx.AsyncClient(timeout=45.0, trust_env=False) as client:
             return await client.request(method, url, **kwargs)
 
     @staticmethod
@@ -90,8 +98,10 @@ class _NotionClient:
         retry_after = response.headers.get("Retry-After")
         if retry_after:
             try:
-                return float(retry_after)
-            except ValueError:
+                delay = float(retry_after)
+                if math.isfinite(delay) and delay > 0:
+                    return min(delay, NOTION_MAX_RETRY_DELAY_SECONDS)
+            except (TypeError, ValueError):
                 pass
         return float(min(2**attempt, 8))
 
@@ -254,24 +264,27 @@ class NotionKB(ReadOnlyConnectors):
                     max_scan_pages=max_scan_pages,
                 )
                 candidate_pages = self._rank_candidate_pages(candidate_pages, query_text)[:max_hydrate_pages]
-                result_tasks = [
-                    self._build_search_result(
-                        client,
-                        page,
-                        query_text,
-                        rank=rank,
-                        source=source,
-                        snippet_window_lines=snippet_window_lines,
-                    )
-                    for rank, (page, source) in enumerate(candidate_pages, start=1)
-                    if page.get("id")
-                ]
-                results = [result for result in await asyncio.gather(*result_tasks) if result]
+                async with asyncio.TaskGroup() as task_group:
+                    result_tasks = [
+                        task_group.create_task(
+                            self._build_search_result(
+                                client,
+                                page,
+                                query_text,
+                                rank=rank,
+                                source=source,
+                                snippet_window_lines=snippet_window_lines,
+                            )
+                        )
+                        for rank, (page, source) in enumerate(candidate_pages, start=1)
+                        if page.get("id")
+                    ]
+                results = [result for task in result_tasks if (result := task.result())]
 
             return sorted(results, key=lambda item: item.get("score", 0.0), reverse=True)[:final_top_k]
-        except (NotionAPIError, httpx.HTTPError, ValueError) as exc:
-            logger.error(f"Notion query failed for kb_id={kb_id}: {exc}, {traceback.format_exc()}")
-            return []
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Notion query failed: exception_type={}", type(exc).__name__)
+            raise NotionAPIError("Notion 知识库查询失败") from exc
 
     async def _search_candidate_pages(
         self,
@@ -438,7 +451,7 @@ class NotionKB(ReadOnlyConnectors):
         data_source_id = str(metadata.get("notion_data_source_id") or "").strip()
         notion_version = str(metadata.get("notion_version") or NOTION_DEFAULT_VERSION).strip() or NOTION_DEFAULT_VERSION
         if not token or not data_source_id:
-            raise ValueError(f"Notion config incomplete for kb_id={kb_id}")
+            raise ValueError("Notion 知识库配置不完整")
         return token, data_source_id, notion_version
 
     async def _page_to_markdown(

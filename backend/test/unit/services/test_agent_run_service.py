@@ -1281,6 +1281,24 @@ async def test_cancel_agent_run_view_cascades_children(monkeypatch: pytest.Monke
     assert signals == [("child-1", True), ("child-2", True), ("parent-run", True)]
 
 
+@pytest.mark.asyncio
+async def test_cancel_agent_run_view_reports_signal_delivery_failure(monkeypatch: pytest.MonkeyPatch):
+    async def failing_request(**kwargs):
+        raise agent_run_service.RunQueueUnavailableError("provider detail")
+
+    monkeypatch.setattr(agent_run_service, "request_cancel_agent_run", failing_request)
+
+    with pytest.raises(agent_run_service.HTTPException) as exc_info:
+        await agent_run_service.cancel_agent_run_view(
+            run_id="parent-run",
+            current_uid="user-1",
+            db=object(),
+        )
+
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.detail == "取消请求已记录，但工作进程通知失败，请重试"
+
+
 def test_resolve_agent_run_model_spec_rejects_unknown_explicit_model(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(agent_run_service.model_cache, "get_model_info", lambda spec: None)
     with pytest.raises(agent_run_service.HTTPException) as exc:

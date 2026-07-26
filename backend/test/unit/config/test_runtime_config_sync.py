@@ -208,21 +208,45 @@ def test_save_keeps_base_toml_when_runtime_snapshot_write_fails(tmp_path, monkey
     cfg = Config(save_dir=str(tmp_path))
     cfg.default_model = "test-provider:file-chat"
 
-    cfg.save()
+    runtime_synced = cfg.save()
 
     base_config = tomli.loads((tmp_path / "config" / "base.toml").read_text())
     assert base_config["default_model"] == "test-provider:file-chat"
+    assert runtime_synced is False
 
 
 def test_start_runtime_sync_is_idempotent(tmp_path):
     cfg = Config(save_dir=str(tmp_path))
 
-    cfg.start_runtime_sync(interval=3600)
-    thread = cfg._runtime_sync_thread
-    cfg.start_runtime_sync(interval=3600)
+    try:
+        cfg.start_runtime_sync(interval=3600)
+        thread = cfg._runtime_sync_thread
+        cfg.start_runtime_sync(interval=3600)
 
-    assert cfg._runtime_sync_thread is thread
-    assert thread.daemon is True
+        assert cfg._runtime_sync_thread is thread
+        assert thread.daemon is True
+    finally:
+        cfg.stop_runtime_sync()
+
+
+def test_stop_runtime_sync_joins_thread_and_allows_clean_restart(tmp_path):
+    cfg = Config(save_dir=str(tmp_path))
+
+    cfg.start_runtime_sync(interval=3600)
+    first_thread = cfg._runtime_sync_thread
+    cfg.stop_runtime_sync()
+
+    assert not first_thread.is_alive()
+    assert cfg._runtime_sync_thread is None
+    assert cfg._runtime_sync_stop_event is None
+
+    cfg.start_runtime_sync(interval=3600)
+    second_thread = cfg._runtime_sync_thread
+    try:
+        assert second_thread is not first_thread
+        assert second_thread.is_alive()
+    finally:
+        cfg.stop_runtime_sync()
 
 
 def test_update_ignores_readonly_save_dir(tmp_path, monkeypatch: pytest.MonkeyPatch):
@@ -248,6 +272,22 @@ def test_update_rejects_unknown_default_ocr_engine(tmp_path, monkeypatch: pytest
 
     with pytest.raises(ValueError, match="不支持的默认 OCR 引擎"):
         cfg.update({"default_ocr_engine": "not_an_ocr_engine"})
+
+
+def test_update_is_atomic_when_a_later_value_is_invalid(tmp_path, monkeypatch: pytest.MonkeyPatch):
+    _patch_runtime_redis(monkeypatch, _FakeRedis())
+    cfg = Config(save_dir=str(tmp_path))
+    original_model = cfg.default_model
+
+    with pytest.raises(ValueError, match="不支持的默认 OCR 引擎"):
+        cfg.update(
+            {
+                "default_model": "test-provider:must-not-stick",
+                "default_ocr_engine": "not-an-ocr-engine",
+            }
+        )
+
+    assert cfg.default_model == original_model
 
 
 def test_dump_config_hides_save_dir(tmp_path):

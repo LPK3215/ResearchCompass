@@ -19,6 +19,10 @@ RUN_CANCEL_CHANNEL = os.getenv("RUN_CANCEL_CHANNEL", "run:cancel:ch")
 _arq_pool = None
 
 
+class RunQueueUnavailableError(RuntimeError):
+    """Run queue operation failed and the caller must not report success."""
+
+
 def _cancel_key(run_id: str) -> str:
     return f"run:cancel:{run_id}"
 
@@ -108,7 +112,8 @@ async def publish_cancel_signal(run_id: str) -> None:
         await redis.set(key, "1", ex=RUN_CANCEL_KEY_TTL_SECONDS)
         await redis.publish(RUN_CANCEL_CHANNEL, run_id)
     except Exception as e:
-        logger.warning(f"Failed to publish cancel signal for run {run_id}: {e}")
+        logger.warning(f"Failed to publish cancel signal (error_type={type(e).__name__})")
+        raise RunQueueUnavailableError("运行队列暂不可用") from e
 
 
 async def has_cancel_signal(run_id: str) -> bool:
@@ -117,7 +122,7 @@ async def has_cancel_signal(run_id: str) -> bool:
     try:
         return bool(await redis.get(key))
     except Exception as e:
-        logger.warning(f"Failed to read cancel signal for run {run_id}: {e}")
+        logger.warning(f"Failed to read cancel signal (error_type={type(e).__name__})")
         return False
 
 
@@ -139,7 +144,7 @@ async def wait_for_cancel_signal(run_id: str, poll_timeout_seconds: float = 1.0)
     except asyncio.CancelledError:
         raise
     except Exception as e:
-        logger.warning(f"Failed to wait cancel signal for run {run_id}: {e}")
+        logger.warning(f"Failed to wait cancel signal (error_type={type(e).__name__})")
         return False
 
 
@@ -149,7 +154,7 @@ async def clear_cancel_signal(run_id: str) -> None:
     try:
         await redis.delete(key)
     except Exception as e:
-        logger.warning(f"Failed to clear cancel signal for run {run_id}: {e}")
+        logger.warning(f"Failed to clear cancel signal (error_type={type(e).__name__})")
 
 
 async def append_run_stream_event(run_id: str, event_type: str, payload: dict, *, thread_id: str | None = None) -> str:
@@ -275,7 +280,7 @@ async def close_queue_clients() -> None:
     if _arq_pool is not None:
         try:
             await _arq_pool.close()
-        except Exception:
-            pass
+        except Exception as error:
+            logger.warning(f"Failed to close ARQ pool (error_type={type(error).__name__})")
         _arq_pool = None
     await close_async_redis_client()

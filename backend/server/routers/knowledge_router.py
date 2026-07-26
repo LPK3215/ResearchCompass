@@ -2,10 +2,9 @@ import asyncio
 import os
 import textwrap
 import time
-import traceback
 from urllib.parse import quote, unquote
 
-from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from starlette.responses import StreamingResponse
@@ -31,6 +30,7 @@ from yuxi.knowledge.utils.sample_question_utils import (
 )
 from yuxi.knowledge.utils.url_fetcher import fetch_url_content
 from yuxi.models.providers.cache import model_cache
+from yuxi.repositories.knowledge_base_repository import KnowledgeBaseRepository
 from yuxi.services.task_service import TaskContext, tasker
 from yuxi.services.workspace_service import MAX_WORKSPACE_UPLOAD_SIZE_BYTES, resolve_workspace_file_path
 from yuxi.storage.minio.client import MinIOClient, StorageError, aupload_file_to_minio, get_minio_client
@@ -38,9 +38,34 @@ from yuxi.storage.postgres.models_business import User
 from yuxi.utils import logger
 from yuxi.utils.upload_utils import MAX_UPLOAD_SIZE_BYTES, read_upload_with_limit, write_upload_to_path
 
-from server.utils.auth_middleware import get_admin_user, get_required_user
+from server.utils.auth_middleware import get_admin_user, get_current_user, get_required_user
 
-knowledge = APIRouter(prefix="/knowledge", tags=["knowledge"])
+
+async def _ensure_path_kb_access(
+    request: Request,
+    current_user: User | None = Depends(get_current_user),
+) -> None:
+    kb_id = str(request.path_params.get("kb_id") or "").strip()
+    if not kb_id:
+        return
+    if current_user is None:
+        raise HTTPException(status_code=401, detail="请登录后再访问")
+    if await KnowledgeBaseRepository().get_by_kb_id(kb_id) is None:
+        raise HTTPException(status_code=404, detail="知识库不存在")
+    user_info = {
+        "uid": str(current_user.uid),
+        "role": current_user.role,
+        "department_id": current_user.department_id,
+    }
+    if not await knowledge_base.check_accessible(user_info, kb_id):
+        raise HTTPException(status_code=403, detail="无权访问该知识库")
+
+
+knowledge = APIRouter(
+    prefix="/knowledge",
+    tags=["knowledge"],
+    dependencies=[Depends(_ensure_path_kb_access)],
+)
 
 ACTIVE_GRAPH_BUILD_STATUSES = {"pending", "running"}
 ACTIVE_DOCUMENT_ACTION_TASK_STATUSES = {"pending", "running"}
@@ -49,6 +74,11 @@ DOCUMENT_ACTION_RESULT_ITEM_LIMIT = 200
 MAX_DIRECT_DOCUMENT_ACTION_FILE_IDS = 1000
 PENDING_PARSE_STATUSES = ["uploaded"]
 PENDING_INDEX_STATUSES = ["parsed", "error_indexing"]
+DOCUMENT_ADD_FAILED_MESSAGE = "添加记录失败"
+DOCUMENT_PARSE_FAILED_MESSAGE = "解析失败"
+DOCUMENT_INDEX_FAILED_MESSAGE = "入库失败"
+DOCUMENT_PARAM_UPDATE_FAILED_MESSAGE = "参数更新失败"
+DOCUMENT_TASK_SUBMIT_FAILED_MESSAGE = "任务提交失败"
 
 
 class UpdateDatabaseRequest(BaseModel):
@@ -117,17 +147,17 @@ async def _delete_document_storage_objects(kb_id: str, doc_id: str, file_path: s
             bucket_name, object_name = parse_minio_url(file_path)
             await minio_client.adelete_file(bucket_name, object_name)
         except Exception as minio_error:
-            logger.warning(f"从MinIO删除原始文件失败: {minio_error}")
+            logger.warning(f"从 MinIO 删除原始文件失败 (error_type={type(minio_error).__name__})")
 
     try:
         await minio_client.adelete_file(minio_client.KB_BUCKETS["parsed"], f"{kb_id}/parsed/{doc_id}.md")
     except Exception as minio_error:
-        logger.warning(f"从MinIO删除解析结果失败: {minio_error}")
+        logger.warning(f"从 MinIO 删除解析结果失败 (error_type={type(minio_error).__name__})")
 
     try:
         await minio_client.adelete_file(minio_client.KB_BUCKETS["parsed"], f"{kb_id}/preview/{doc_id}.pdf")
     except Exception as minio_error:
-        logger.warning(f"从MinIO删除预览 PDF 失败: {minio_error}")
+        logger.warning(f"从 MinIO 删除预览 PDF 失败 (error_type={type(minio_error).__name__})")
 
 
 async def _ensure_database_supports_documents(kb_id: str, operation: str) -> dict:
@@ -207,9 +237,9 @@ async def get_databases(current_user: User = Depends(get_admin_user)):
     """获取所有知识库（根据用户权限过滤）"""
     try:
         return await knowledge_base.get_databases_by_uid(current_user.uid)
-    except Exception as e:
-        logger.error(f"获取数据库列表失败 {e}, {traceback.format_exc()}")
-        return {"message": f"获取数据库列表失败 {e}", "databases": []}
+    except Exception as exc:
+        logger.error(f"获取数据库列表失败 (error_type={type(exc).__name__})")
+        raise HTTPException(status_code=500, detail="获取数据库列表失败") from exc
 
 
 @knowledge.post("/databases")
@@ -224,11 +254,7 @@ async def create_database(
     current_user: User = Depends(get_admin_user),
 ):
     """创建知识库"""
-    logger.debug(
-        f"Create database {database_name} with kb_type {kb_type}, "
-        f"additional_params {additional_params}, llm_model_spec {llm_model_spec}, "
-        f"embedding_model_spec {embedding_model_spec}, share_config {share_config}"
-    )
+    logger.debug(f"Create database request with kb_type={kb_type}")
     try:
         # 先检查名称是否已存在
         if await knowledge_base.database_name_exists(database_name):
@@ -282,9 +308,9 @@ async def create_database(
         return database_info
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"创建数据库失败 {e}, {traceback.format_exc()}")
-        raise HTTPException(status_code=400, detail=f"创建数据库失败: {e}")
+    except Exception as exc:
+        logger.error(f"创建数据库失败 (error_type={type(exc).__name__})")
+        raise HTTPException(status_code=500, detail="创建数据库失败") from exc
 
 
 @knowledge.get("/databases/accessible")
@@ -306,9 +332,9 @@ async def get_accessible_databases(current_user: User = Depends(get_required_use
         ]
 
         return {"databases": accessible}
-    except Exception as e:
-        logger.error(f"获取可访问知识库列表失败: {e}, {traceback.format_exc()}")
-        return {"message": f"获取可访问知识库列表失败: {str(e)}", "databases": []}
+    except Exception as exc:
+        logger.error(f"获取可访问知识库列表失败 (error_type={type(exc).__name__})")
+        raise HTTPException(status_code=500, detail="获取可访问知识库列表失败") from exc
 
 
 @knowledge.get("/mindmap/databases")
@@ -318,9 +344,9 @@ async def get_mindmap_databases(current_user: User = Depends(get_admin_user)):
         return await get_mindmap_databases_overview(current_user.uid)
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"获取知识库列表失败: {e}, {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"获取知识库列表失败: {str(e)}")
+    except Exception as exc:
+        logger.error(f"获取知识库列表失败 (error_type={type(exc).__name__})")
+        raise HTTPException(status_code=500, detail="获取知识库列表失败") from exc
 
 
 @knowledge.get("/databases/{kb_id}/mindmap/files")
@@ -330,9 +356,9 @@ async def get_database_mindmap_files(kb_id: str, current_user: User = Depends(ge
         return await get_mindmap_database_files(kb_id)
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"获取文件列表失败: {e}, {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"获取文件列表失败: {str(e)}")
+    except Exception as exc:
+        logger.error(f"获取思维导图文件列表失败 (error_type={type(exc).__name__})")
+        raise HTTPException(status_code=500, detail="获取文件列表失败") from exc
 
 
 @knowledge.post("/databases/{kb_id}/mindmap/generate")
@@ -348,9 +374,9 @@ async def generate_mindmap(
         return await generate_database_mindmap(kb_id, file_ids, user_prompt, incremental)
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"生成思维导图失败: {e}, {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"生成思维导图失败: {str(e)}")
+    except Exception as exc:
+        logger.error(f"生成思维导图失败 (error_type={type(exc).__name__})")
+        raise HTTPException(status_code=500, detail="生成思维导图失败") from exc
 
 
 @knowledge.get("/databases/{kb_id}/mindmap")
@@ -360,9 +386,9 @@ async def get_database_mindmap(kb_id: str, current_user: User = Depends(get_admi
         return await get_database_mindmap_data(kb_id)
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"获取知识库思维导图失败: {e}, {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"获取知识库思维导图失败: {str(e)}")
+    except Exception as exc:
+        logger.error(f"获取知识库思维导图失败 (error_type={type(exc).__name__})")
+        raise HTTPException(status_code=500, detail="获取知识库思维导图失败") from exc
 
 
 @knowledge.get("/databases/{kb_id}/mindmap/diff")
@@ -372,9 +398,9 @@ async def get_mindmap_diff_route(kb_id: str, current_user: User = Depends(get_ad
         return await get_mindmap_diff(kb_id)
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"检测思维导图变更失败: {e}, {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"检测思维导图变更失败: {str(e)}")
+    except Exception as exc:
+        logger.error(f"检测思维导图变更失败 (error_type={type(exc).__name__})")
+        raise HTTPException(status_code=500, detail="检测思维导图变更失败") from exc
 
 
 @knowledge.get("/databases/{kb_id}")
@@ -398,9 +424,9 @@ async def repair_database_stats(kb_id: str, current_user: User = Depends(get_adm
         return await knowledge_base.repair_missing_file_stats(kb_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"修复知识库统计失败 {e}, {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"修复知识库统计失败: {e}")
+    except Exception as exc:
+        logger.error(f"修复知识库统计失败 (error_type={type(exc).__name__})")
+        raise HTTPException(status_code=500, detail="修复知识库统计失败") from exc
 
 
 @knowledge.put("/databases/{kb_id}")
@@ -410,10 +436,7 @@ async def update_database_info(
     current_user: User = Depends(get_admin_user),
 ):
     """更新知识库信息"""
-    logger.debug(
-        f"[update_database_info] 接收到的参数: name={data.name}, llm_model_spec={data.llm_model_spec}, "
-        f"additional_params={data.additional_params}, share_config={data.share_config}"
-    )
+    logger.debug(f"Update database request for kb_id={kb_id}")
     try:
         update_llm_model_spec = "llm_model_spec" in data.model_fields_set
 
@@ -448,9 +471,9 @@ async def update_database_info(
         return {"message": "更新成功", "database": database}
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"更新数据库失败 {e}, {traceback.format_exc()}")
-        raise HTTPException(status_code=400, detail=f"更新数据库失败: {e}")
+    except Exception as exc:
+        logger.error(f"更新数据库失败 (kb_id={kb_id}, error_type={type(exc).__name__})")
+        raise HTTPException(status_code=500, detail="更新数据库失败") from exc
 
 
 @knowledge.delete("/databases/{kb_id}")
@@ -458,7 +481,14 @@ async def delete_database(kb_id: str, current_user: User = Depends(get_admin_use
     """删除知识库"""
     logger.debug(f"Delete database {kb_id}")
     try:
+        active_task = await tasker.find_task_by_payload_any_type(
+            payload_match={"kb_id": kb_id},
+            statuses={"pending", "running"},
+        )
+        if active_task is not None:
+            raise HTTPException(status_code=409, detail="知识库存在运行中任务，请先取消或等待任务结束")
         await knowledge_base.delete_database(kb_id)
+        await tasker.delete_terminal_tasks_by_payload(payload_match={"kb_id": kb_id})
 
         # 需要重新加载所有智能体，因为工具刷新了
         from yuxi.agents.buildin import agent_manager
@@ -466,9 +496,11 @@ async def delete_database(kb_id: str, current_user: User = Depends(get_admin_use
         await agent_manager.reload_all()
 
         return {"message": "删除成功"}
-    except Exception as e:
-        logger.error(f"删除数据库失败 {e}, {traceback.format_exc()}")
-        raise HTTPException(status_code=400, detail=f"删除数据库失败: {e}")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"删除数据库失败 (kb_id={kb_id}, error_type={type(exc).__name__})")
+        raise HTTPException(status_code=500, detail="删除数据库失败") from exc
 
 
 @knowledge.get("/databases/{kb_id}/graph-build/status")
@@ -477,9 +509,9 @@ async def get_graph_build_status(kb_id: str, current_user: User = Depends(get_ad
         return await MilvusGraphService().get_status(kb_id, tasker=tasker)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"获取图谱构建状态失败 {e}, {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"获取图谱构建状态失败: {e}")
+    except Exception as exc:
+        logger.error(f"获取图谱构建状态失败 (kb_id={kb_id}, error_type={type(exc).__name__})")
+        raise HTTPException(status_code=500, detail="获取图谱构建状态失败") from exc
 
 
 @knowledge.post("/databases/{kb_id}/graph-build/config")
@@ -499,9 +531,9 @@ async def configure_graph_build(
     except ValueError as e:
         status_code = 409 if "已锁定" in str(e) else 400
         raise HTTPException(status_code=status_code, detail=str(e))
-    except Exception as e:
-        logger.error(f"配置图谱构建失败 {e}, {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"配置图谱构建失败: {e}")
+    except Exception as exc:
+        logger.error(f"配置图谱构建失败 (kb_id={kb_id}, error_type={type(exc).__name__})")
+        raise HTTPException(status_code=500, detail="配置图谱构建失败") from exc
 
 
 @knowledge.post("/databases/{kb_id}/graph-build/index")
@@ -548,9 +580,9 @@ async def index_graph_build(
         raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"提交图谱构建任务失败 {e}, {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"提交图谱构建任务失败: {e}")
+    except Exception as exc:
+        logger.error(f"提交图谱构建任务失败 (kb_id={kb_id}, error_type={type(exc).__name__})")
+        raise HTTPException(status_code=500, detail="提交图谱构建任务失败") from exc
 
 
 async def _resume_graph_build_task(context: TaskContext) -> dict:
@@ -591,9 +623,9 @@ async def reset_graph_build(
         raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"重置图谱构建状态失败 {e}, {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"重置图谱构建状态失败: {e}")
+    except Exception as exc:
+        logger.error(f"重置图谱构建状态失败 (kb_id={kb_id}, error_type={type(exc).__name__})")
+        raise HTTPException(status_code=500, detail="重置图谱构建状态失败") from exc
 
 
 @knowledge.get("/databases/{kb_id}/export")
@@ -616,12 +648,12 @@ async def export_database(
         return FileResponse(path=file_path, filename=os.path.basename(file_path), media_type=media_type)
     except HTTPException:
         raise
-    except NotImplementedError as e:
-        logger.warning(f"A disabled feature was accessed: {e}")
-        raise HTTPException(status_code=501, detail=str(e))
-    except Exception as e:
-        logger.error(f"导出数据库失败 {e}, {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"导出数据库失败: {e}")
+    except NotImplementedError as exc:
+        logger.warning(f"知识库导出能力不可用 (kb_id={kb_id}, error_type={type(exc).__name__})")
+        raise HTTPException(status_code=501, detail="当前知识库类型不支持导出") from exc
+    except Exception as exc:
+        logger.error(f"导出数据库失败 (kb_id={kb_id}, error_type={type(exc).__name__})")
+        raise HTTPException(status_code=500, detail="导出数据库失败") from exc
 
 
 # =============================================================================
@@ -706,7 +738,7 @@ async def add_documents(
     kb_id: str, items: list[str] = Body(...), params: dict = Body(...), current_user: User = Depends(get_admin_user)
 ):
     """添加文档到知识库（上传 -> 解析 -> 可选入库）"""
-    logger.debug(f"Add documents for kb_id {kb_id}: {items} {params=}")
+    logger.debug(f"Add documents request for kb_id={kb_id}, item_count={len(items)}")
     await _ensure_database_supports_documents(kb_id, "文档添加/解析/入库")
 
     params = _ensure_document_params(params)
@@ -758,13 +790,15 @@ async def add_documents(
                         }
                     )
                 except Exception as add_error:
-                    logger.error(f"添加文件记录失败 {item}: {add_error}")
+                    logger.error(
+                        f"添加文件记录失败 (kb_id={kb_id}, error_type={type(add_error).__name__})"
+                    )
                     error_type = "timeout" if isinstance(add_error, TimeoutError) else "add_failed"
-                    error_msg = "添加超时" if isinstance(add_error, TimeoutError) else "添加记录失败"
+                    error_msg = "添加超时" if isinstance(add_error, TimeoutError) else DOCUMENT_ADD_FAILED_MESSAGE
                     processed_items[idx - 1] = {
                         "item": item,
                         "status": "failed",
-                        "error": f"{error_msg}: {str(add_error)}",
+                        "error": error_msg,
                         "error_type": error_type,
                     }
 
@@ -785,19 +819,26 @@ async def add_documents(
                     if not auto_index or file_meta.get("status") != "parsed":
                         processed_items[record["index"]] = file_meta
                 except Exception as parse_error:
-                    logger.error(f"解析文件失败 {item} (file_id={file_id}): {parse_error}")
+                    logger.error(
+                        "解析文件失败 "
+                        f"(kb_id={kb_id}, file_id={file_id}, error_type={type(parse_error).__name__})"
+                    )
                     error_type = "timeout" if isinstance(parse_error, TimeoutError) else "parse_failed"
-                    error_msg = "解析超时" if isinstance(parse_error, TimeoutError) else "解析失败"
+                    error_msg = "解析超时" if isinstance(parse_error, TimeoutError) else DOCUMENT_PARSE_FAILED_MESSAGE
                     processed_items[record["index"]] = {
                         "item": item,
                         "status": "failed",
-                        "error": f"{error_msg}: {str(parse_error)}",
+                        "error": error_msg,
                         "error_type": error_type,
                     }
 
             if auto_index:
                 await context.set_message("第三阶段：自动入库")
-                parsed_files = [record for record in added_files if record["file_meta"].get("status") == "parsed"]
+                parsed_files = [
+                    record
+                    for record in added_files
+                    if (record.get("file_meta") or {}).get("status") == "parsed"
+                ]
                 total_parsed = len(parsed_files)
 
                 for idx, record in enumerate(parsed_files, 1):
@@ -817,11 +858,14 @@ async def add_documents(
                         )
                         processed_items[record["index"]] = result
                     except Exception as index_error:
-                        logger.error(f"自动入库失败 {item} (file_id={file_id}): {index_error}")
+                        logger.error(
+                            "自动入库失败 "
+                            f"(kb_id={kb_id}, file_id={file_id}, error_type={type(index_error).__name__})"
+                        )
                         processed_items[record["index"]] = {
                             "item": item,
                             "status": "failed",
-                            "error": f"入库失败: {str(index_error)}",
+                            "error": DOCUMENT_INDEX_FAILED_MESSAGE,
                             "error_type": "index_failed",
                         }
 
@@ -829,8 +873,8 @@ async def add_documents(
             await context.set_progress(100.0, "任务已取消")
             raise
         except Exception as task_error:
-            logger.exception(f"Task processing failed: {task_error}")
-            await context.set_progress(100.0, f"任务处理失败: {str(task_error)}")
+            logger.error(f"知识库文档处理失败 (error_type={type(task_error).__name__})")
+            await context.set_progress(100.0, "任务处理失败")
             raise
 
         final_items = [
@@ -879,9 +923,9 @@ async def add_documents(
             "status": "queued",
             "task_id": task.id,
         }
-    except Exception as e:  # noqa: BLE001
-        logger.error(f"Failed to enqueue {content_type}s: {e}, {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Failed to enqueue task: {e}")
+    except Exception as exc:  # noqa: BLE001
+        logger.error(f"知识库文档任务提交失败 (kb_id={kb_id}, error_type={type(exc).__name__})")
+        raise HTTPException(status_code=500, detail=DOCUMENT_TASK_SUBMIT_FAILED_MESSAGE) from exc
 
 
 @knowledge.post("/databases/{kb_id}/documents/add")
@@ -891,7 +935,7 @@ async def add_uploaded_documents(
     current_user: User = Depends(get_admin_user),
 ):
     """将已上传的 MinIO 文件同步添加为知识库文档记录，不解析、不入库。"""
-    logger.debug(f"Add uploaded documents for kb_id {kb_id}: {payload.items} params={payload.params}")
+    logger.debug(f"Add uploaded documents request for kb_id={kb_id}, item_count={len(payload.items)}")
     await _ensure_database_supports_documents(kb_id, "文档添加")
 
     params = _ensure_document_params(payload.params)
@@ -923,13 +967,13 @@ async def add_uploaded_documents(
                 }
             )
         except Exception as add_error:  # noqa: BLE001
-            logger.error(f"添加文件记录失败 {item}: {add_error}")
+            logger.error(f"添加文件记录失败 (kb_id={kb_id}, error_type={type(add_error).__name__})")
             failed_items.append(
                 {
                     "index": index,
                     "item": item,
                     "status": "failed",
-                    "error": f"添加记录失败: {str(add_error)}",
+                    "error": DOCUMENT_ADD_FAILED_MESSAGE,
                     "error_type": "add_failed",
                 }
             )
@@ -1002,9 +1046,13 @@ async def _run_parse_file_ids(
         try:
             result = await knowledge_base.parse_file(kb_id, file_id, operator_id=operator_id)
             processed_items.append(result)
-        except Exception as e:
-            logger.error(f"Parse failed for {file_id}: {e}")
-            processed_items.append({"file_id": file_id, "status": "failed", "error": str(e)})
+        except Exception as exc:
+            logger.error(
+                f"文档解析失败 (kb_id={kb_id}, file_id={file_id}, error_type={type(exc).__name__})"
+            )
+            processed_items.append(
+                {"file_id": file_id, "status": "failed", "error": DOCUMENT_PARSE_FAILED_MESSAGE}
+            )
 
     failed_count = len([p for p in processed_items if _is_failed_item(p)])
     message = f"解析完成，失败 {failed_count} 个"
@@ -1035,10 +1083,15 @@ async def _run_index_file_ids(
         for file_id in file_ids:
             try:
                 await knowledge_base.update_file_params(kb_id, file_id, params, operator_id=operator_id)
-            except Exception as e:
-                logger.error(f"Failed to update params for {file_id}: {e}")
+            except Exception as exc:
+                logger.error(
+                    "文档参数更新失败 "
+                    f"(kb_id={kb_id}, file_id={file_id}, error_type={type(exc).__name__})"
+                )
                 param_update_failed.add(file_id)
-                processed_items.append({"file_id": file_id, "status": "failed", "error": f"参数更新失败: {str(e)}"})
+                processed_items.append(
+                    {"file_id": file_id, "status": "failed", "error": DOCUMENT_PARAM_UPDATE_FAILED_MESSAGE}
+                )
 
     for idx, file_id in enumerate(file_ids, 1):
         await context.raise_if_cancelled()
@@ -1053,9 +1106,13 @@ async def _run_index_file_ids(
         try:
             result = await knowledge_base.index_file(kb_id, file_id, operator_id=operator_id, params=params)
             processed_items.append(result)
-        except Exception as e:
-            logger.error(f"Index failed for {file_id}: {e}")
-            processed_items.append({"file_id": file_id, "status": "failed", "error": str(e)})
+        except Exception as exc:
+            logger.error(
+                f"文档入库失败 (kb_id={kb_id}, file_id={file_id}, error_type={type(exc).__name__})"
+            )
+            processed_items.append(
+                {"file_id": file_id, "status": "failed", "error": DOCUMENT_INDEX_FAILED_MESSAGE}
+            )
 
     failed_count = len([p for p in processed_items if _is_failed_item(p)])
     message = f"入库完成，失败 {failed_count} 个"
@@ -1104,12 +1161,14 @@ async def _run_parse_pending_statuses(
             try:
                 result = await knowledge_base.parse_file(kb_id, file_id, operator_id=operator_id)
                 _append_document_action_result_sample(result_items, result)
-            except Exception as e:
+            except Exception as exc:
                 failed_count += 1
-                logger.error(f"Parse failed for {file_id}: {e}")
+                logger.error(
+                    f"文档解析失败 (kb_id={kb_id}, file_id={file_id}, error_type={type(exc).__name__})"
+                )
                 _append_document_action_result_sample(
                     result_items,
-                    {"file_id": file_id, "status": "failed", "error": str(e)},
+                    {"file_id": file_id, "status": "failed", "error": DOCUMENT_PARSE_FAILED_MESSAGE},
                 )
 
     message = f"解析完成，失败 {failed_count} 个" if processed_count else "没有待解析文档"
@@ -1166,12 +1225,14 @@ async def _run_index_pending_statuses(
                     await knowledge_base.update_file_params(kb_id, file_id, params, operator_id=operator_id)
                 result = await knowledge_base.index_file(kb_id, file_id, operator_id=operator_id, params=params)
                 _append_document_action_result_sample(result_items, result)
-            except Exception as e:
+            except Exception as exc:
                 failed_count += 1
-                logger.error(f"Index failed for {file_id}: {e}")
+                logger.error(
+                    f"文档入库失败 (kb_id={kb_id}, file_id={file_id}, error_type={type(exc).__name__})"
+                )
                 _append_document_action_result_sample(
                     result_items,
-                    {"file_id": file_id, "status": "failed", "error": str(e)},
+                    {"file_id": file_id, "status": "failed", "error": DOCUMENT_INDEX_FAILED_MESSAGE},
                 )
 
     message = f"入库完成，失败 {failed_count} 个" if processed_count else "没有待入库文档"
@@ -1199,8 +1260,8 @@ async def _enqueue_parse_task(kb_id: str, file_ids: list[str], operator_id: str,
                 file_ids=file_ids,
                 operator_id=operator_id,
             )
-        except Exception as e:
-            logger.exception(f"Parse task failed: {e}")
+        except Exception as exc:
+            logger.error(f"文档解析任务失败 (error_type={type(exc).__name__})")
             raise
 
     try:
@@ -1211,8 +1272,9 @@ async def _enqueue_parse_task(kb_id: str, file_ids: list[str], operator_id: str,
             coroutine=run_parse,
         )
         return {"message": "解析任务已提交", "status": "queued", "task_id": task.id}
-    except Exception as e:
-        return {"message": f"提交失败: {e}", "status": "failed"}
+    except Exception as exc:
+        logger.error(f"文档解析任务提交失败 (kb_id={kb_id}, error_type={type(exc).__name__})")
+        return {"message": DOCUMENT_TASK_SUBMIT_FAILED_MESSAGE, "status": "failed"}
 
 
 async def _enqueue_parse_pending_task(kb_id: str, operator_id: str, db_info: dict) -> dict:
@@ -1231,8 +1293,8 @@ async def _enqueue_parse_pending_task(kb_id: str, operator_id: str, db_info: dic
                     initial_total=pending_count,
                     operator_id=operator_id,
                 )
-            except Exception as e:
-                logger.exception(f"Pending parse task failed: {e}")
+            except Exception as exc:
+                logger.error(f"待解析文档任务失败 (error_type={type(exc).__name__})")
                 raise
 
         task, created = await tasker.enqueue_unique_by_payload(
@@ -1256,8 +1318,9 @@ async def _enqueue_parse_pending_task(kb_id: str, operator_id: str, db_info: dic
             "task_id": task.id,
             "queued_count": pending_count,
         }
-    except Exception as e:
-        return {"message": f"提交失败: {e}", "status": "failed"}
+    except Exception as exc:
+        logger.error(f"待解析文档任务提交失败 (kb_id={kb_id}, error_type={type(exc).__name__})")
+        return {"message": DOCUMENT_TASK_SUBMIT_FAILED_MESSAGE, "status": "failed"}
 
 
 async def _enqueue_index_task(kb_id: str, file_ids: list[str], params: dict, operator_id: str, db_info: dict) -> dict:
@@ -1272,8 +1335,8 @@ async def _enqueue_index_task(kb_id: str, file_ids: list[str], params: dict, ope
                 operator_id=operator_id,
                 params=params,
             )
-        except Exception as e:
-            logger.exception(f"Index task failed: {e}")
+        except Exception as exc:
+            logger.error(f"文档入库任务失败 (error_type={type(exc).__name__})")
             raise
 
     try:
@@ -1284,8 +1347,9 @@ async def _enqueue_index_task(kb_id: str, file_ids: list[str], params: dict, ope
             coroutine=run_index,
         )
         return {"message": "入库任务已提交", "status": "queued", "task_id": task.id}
-    except Exception as e:
-        return {"message": f"提交失败: {e}", "status": "failed"}
+    except Exception as exc:
+        logger.error(f"文档入库任务提交失败 (kb_id={kb_id}, error_type={type(exc).__name__})")
+        return {"message": DOCUMENT_TASK_SUBMIT_FAILED_MESSAGE, "status": "failed"}
 
 
 async def _enqueue_index_pending_task(kb_id: str, params: dict, operator_id: str, db_info: dict) -> dict:
@@ -1305,8 +1369,8 @@ async def _enqueue_index_pending_task(kb_id: str, params: dict, operator_id: str
                     operator_id=operator_id,
                     params=params,
                 )
-            except Exception as e:
-                logger.exception(f"Pending index task failed: {e}")
+            except Exception as exc:
+                logger.error(f"待入库文档任务失败 (error_type={type(exc).__name__})")
                 raise
 
         task, created = await tasker.enqueue_unique_by_payload(
@@ -1331,8 +1395,9 @@ async def _enqueue_index_pending_task(kb_id: str, params: dict, operator_id: str
             "task_id": task.id,
             "queued_count": pending_count,
         }
-    except Exception as e:
-        return {"message": f"提交失败: {e}", "status": "failed"}
+    except Exception as exc:
+        logger.error(f"待入库文档任务提交失败 (kb_id={kb_id}, error_type={type(exc).__name__})")
+        return {"message": DOCUMENT_TASK_SUBMIT_FAILED_MESSAGE, "status": "failed"}
 
 
 def _resume_document_task_identity(payload: dict, task_name: str) -> tuple[str, str]:
@@ -1431,7 +1496,7 @@ async def index_documents(
     """手动触发文档入库（Indexing），支持更新参数"""
     file_ids = _validate_direct_document_action_file_ids(file_ids)
     params = params or {}
-    logger.debug(f"Index documents for kb_id {kb_id}: {file_ids} {params=}")
+    logger.debug(f"Index documents request for kb_id={kb_id}, file_count={len(file_ids)}")
     await _ensure_database_supports_documents(kb_id, "文档入库")
     db_info = await knowledge_base.get_database_info(kb_id)
     return await _enqueue_index_task(kb_id, file_ids, params, current_user.uid, db_info)
@@ -1445,7 +1510,7 @@ async def index_pending_documents(
 ):
     """按状态手动触发全部待入库文档入库。"""
     params = (payload.params if payload else None) or {}
-    logger.debug(f"Index pending documents for kb_id {kb_id}: {params=}")
+    logger.debug(f"Index pending documents request for kb_id={kb_id}")
     await _ensure_database_supports_documents(kb_id, "文档入库")
     db_info = await knowledge_base.get_database_info(kb_id)
     return await _enqueue_index_pending_task(kb_id, params, current_user.uid, db_info)
@@ -1460,9 +1525,11 @@ async def get_document_info(kb_id: str, doc_id: str, current_user: User = Depend
     try:
         info = await knowledge_base.get_file_info(kb_id, doc_id)
         return info
-    except Exception as e:
-        logger.error(f"Failed to get file info, {e}, {kb_id=}, {doc_id=}, {traceback.format_exc()}")
-        return {"message": "Failed to get file info", "status": "failed"}
+    except Exception as exc:
+        logger.error(
+            f"获取文档详情失败 (kb_id={kb_id}, doc_id={doc_id}, error_type={type(exc).__name__})"
+        )
+        raise HTTPException(status_code=500, detail="获取文档详情失败") from exc
 
 
 @knowledge.get("/databases/{kb_id}/documents/{doc_id}/basic")
@@ -1474,9 +1541,11 @@ async def get_document_basic_info(kb_id: str, doc_id: str, current_user: User = 
     try:
         info = await knowledge_base.get_file_basic_info(kb_id, doc_id)
         return info
-    except Exception as e:
-        logger.error(f"Failed to get file basic info, {e}, {kb_id=}, {doc_id=}, {traceback.format_exc()}")
-        return {"message": "Failed to get file basic info", "status": "failed"}
+    except Exception as exc:
+        logger.error(
+            f"获取文档基本信息失败 (kb_id={kb_id}, doc_id={doc_id}, error_type={type(exc).__name__})"
+        )
+        raise HTTPException(status_code=500, detail="获取文档基本信息失败") from exc
 
 
 @knowledge.get("/databases/{kb_id}/documents/{doc_id}/content")
@@ -1488,9 +1557,11 @@ async def get_document_content(kb_id: str, doc_id: str, current_user: User = Dep
     try:
         info = await knowledge_base.get_file_content(kb_id, doc_id)
         return info
-    except Exception as e:
-        logger.error(f"Failed to get file content, {e}, {kb_id=}, {doc_id=}, {traceback.format_exc()}")
-        return {"message": "Failed to get file content", "status": "failed"}
+    except Exception as exc:
+        logger.error(
+            f"获取文档内容失败 (kb_id={kb_id}, doc_id={doc_id}, error_type={type(exc).__name__})"
+        )
+        raise HTTPException(status_code=500, detail="获取文档内容失败") from exc
 
 
 @knowledge.delete("/databases/{kb_id}/documents/batch")
@@ -1498,7 +1569,7 @@ async def batch_delete_documents(
     kb_id: str, file_ids: list[str] = Body(...), current_user: User = Depends(get_admin_user)
 ):
     """批量删除文档或文件夹"""
-    logger.debug(f"BATCH DELETE documents {file_ids} in {kb_id}")
+    logger.debug(f"Batch delete documents request for kb_id={kb_id}, file_count={len(file_ids)}")
     await _ensure_database_supports_documents(kb_id, "批量文档删除")
 
     deleted_count = 0
@@ -1528,9 +1599,11 @@ async def batch_delete_documents(
             removed_filename = file_meta_info.get("meta", {}).get("filename", "")
             if removed_filename:
                 mindmap_removals.append((doc_id, removed_filename))
-        except Exception as e:
-            logger.error(f"批量删除过程中删除文档 {doc_id} 失败: {e}, {traceback.format_exc()}")
-            failed_items.append({"doc_id": doc_id, "error": str(e)})
+        except Exception as exc:
+            logger.error(
+                f"批量删除文档失败 (kb_id={kb_id}, doc_id={doc_id}, error_type={type(exc).__name__})"
+            )
+            failed_items.append({"doc_id": doc_id, "error": "删除失败"})
 
     # 同步清理导图快照，移除已删除文件对应的叶子节点
     await batch_remove_files_from_mindmap(kb_id, mindmap_removals)
@@ -1572,9 +1645,9 @@ async def delete_document(kb_id: str, doc_id: str, current_user: User = Depends(
         removed_filename = file_meta_info.get("meta", {}).get("filename", "")
         await remove_file_from_mindmap(kb_id, doc_id, removed_filename)
         return {"message": "删除成功"}
-    except Exception as e:
-        logger.error(f"删除文档失败 {e}, {traceback.format_exc()}")
-        raise HTTPException(status_code=400, detail=f"删除文档失败: {e}")
+    except Exception as exc:
+        logger.error(f"删除文档失败 (kb_id={kb_id}, doc_id={doc_id}, error_type={type(exc).__name__})")
+        raise HTTPException(status_code=500, detail="删除文档失败") from exc
 
 
 @knowledge.get("/databases/{kb_id}/documents/{doc_id}/download")
@@ -1594,15 +1667,11 @@ async def download_document(kb_id: str, doc_id: str, current_user: User = Depend
         # URL 类型文件没有原始文件可下载
         if file_type == "url":
             raise HTTPException(status_code=400, detail="URL 类型文件不支持下载原始文件")
-        logger.debug(f"File path from database: {file_path}")
-        logger.debug(f"Original filename from database: {filename}")
-
         # 解码URL编码的文件名（如果有的话）
         try:
             decoded_filename = unquote(filename, encoding="utf-8")
-            logger.debug(f"Decoded filename: {decoded_filename}")
-        except Exception as e:
-            logger.debug(f"Failed to decode filename {filename}: {e}")
+        except Exception as exc:
+            logger.debug(f"文件名解码失败 (error_type={type(exc).__name__})")
             decoded_filename = filename  # 如果解码失败，使用原文件名
 
         _, ext = os.path.splitext(decoded_filename)
@@ -1611,11 +1680,8 @@ async def download_document(kb_id: str, doc_id: str, current_user: User = Depend
         if not is_minio_url(file_path):
             raise HTTPException(status_code=400, detail="文件路径必须是 MinIO URL")
 
-        logger.debug(f"Downloading from MinIO: {file_path}")
-
         try:
             bucket_name, object_name = parse_minio_url(file_path)
-            logger.debug(f"Parsed bucket_name: {bucket_name}, object_name: {object_name}")
 
             minio_client = get_minio_client()
 
@@ -1624,11 +1690,12 @@ async def download_document(kb_id: str, doc_id: str, current_user: User = Depend
                 bucket_name=bucket_name,
                 object_name=object_name,
             )
-            logger.debug(f"Successfully downloaded object: {object_name}")
 
-        except Exception as e:
-            logger.error(f"Failed to download MinIO file: {e}")
-            raise StorageError(f"下载文件失败: {e}")
+        except Exception as exc:
+            logger.error(
+                f"下载 MinIO 文件失败 (kb_id={kb_id}, doc_id={doc_id}, error_type={type(exc).__name__})"
+            )
+            raise StorageError("下载文件失败") from exc
 
         # 创建流式生成器
         async def minio_stream():
@@ -1657,9 +1724,9 @@ async def download_document(kb_id: str, doc_id: str, current_user: User = Depend
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"下载文件失败: {e}, {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"下载失败: {e}")
+    except Exception as exc:
+        logger.error(f"下载文件失败 (kb_id={kb_id}, doc_id={doc_id}, error_type={type(exc).__name__})")
+        raise HTTPException(status_code=500, detail="下载失败") from exc
 
 
 # =============================================================================
@@ -1672,13 +1739,13 @@ async def query_knowledge_base(
     kb_id: str, query: str = Body(...), meta: dict = Body(...), current_user: User = Depends(get_admin_user)
 ):
     """查询知识库"""
-    logger.debug(f"Query knowledge base {kb_id}: {query}")
+    logger.debug(f"Query knowledge base request for kb_id={kb_id}")
     try:
         result = await knowledge_base.aquery(query, kb_id=kb_id, **meta)
         return {"result": result, "status": "success"}
-    except Exception as e:
-        logger.error(f"知识库查询失败 {e}, {traceback.format_exc()}")
-        return {"message": f"知识库查询失败: {e}", "status": "failed"}
+    except Exception as exc:
+        logger.error(f"知识库查询失败 (kb_id={kb_id}, error_type={type(exc).__name__})")
+        raise HTTPException(status_code=500, detail="知识库查询失败") from exc
 
 
 @knowledge.post("/databases/{kb_id}/query-test")
@@ -1686,13 +1753,13 @@ async def query_test(
     kb_id: str, query: str = Body(...), meta: dict = Body(...), current_user: User = Depends(get_admin_user)
 ):
     """测试查询知识库"""
-    logger.debug(f"Query test in {kb_id}: {query}")
+    logger.debug(f"Query test request for kb_id={kb_id}")
     try:
         result = await knowledge_base.aquery(query, kb_id=kb_id, **meta)
         return result
-    except Exception as e:
-        logger.error(f"测试查询失败 {e}, {traceback.format_exc()}")
-        return {"message": f"测试查询失败: {e}", "status": "failed"}
+    except Exception as exc:
+        logger.error(f"测试查询失败 (kb_id={kb_id}, error_type={type(exc).__name__})")
+        raise HTTPException(status_code=500, detail="测试查询失败") from exc
 
 
 @knowledge.put("/databases/{kb_id}/query-params")
@@ -1726,15 +1793,15 @@ async def update_knowledge_base_query_params(
         kb_repo = KnowledgeBaseRepository()
         await kb_repo.update(kb_id, {"query_params": updated_query_params})
 
-        logger.info(f"更新知识库 {kb_id} 查询参数: {params}")
+        logger.info(f"更新知识库查询参数成功 (kb_id={kb_id})")
 
         return {"message": "success", "data": params}
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"更新知识库查询参数失败: {e}")
-        raise HTTPException(status_code=500, detail=f"更新查询参数失败: {str(e)}")
+    except Exception as exc:
+        logger.error(f"更新知识库查询参数失败 (kb_id={kb_id}, error_type={type(exc).__name__})")
+        raise HTTPException(status_code=500, detail="更新查询参数失败") from exc
 
 
 @knowledge.get("/databases/{kb_id}/query-params")
@@ -1754,9 +1821,9 @@ async def get_knowledge_base_query_params(kb_id: str, current_user: User = Depen
 
         return {"params": params, "message": "success"}
 
-    except Exception as e:
-        logger.error(f"获取知识库查询参数失败 {e}, {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        logger.error(f"获取知识库查询参数失败 (kb_id={kb_id}, error_type={type(exc).__name__})")
+        raise HTTPException(status_code=500, detail="获取知识库查询参数失败") from exc
 
 
 def _merge_saved_options(params: dict, saved_options: dict) -> dict:
@@ -1785,9 +1852,9 @@ async def generate_sample_questions(
         return await generate_database_sample_questions(kb_id, count=count)
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"生成知识库问题失败: {e}, {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"生成问题失败: {str(e)}")
+    except Exception as exc:
+        logger.error(f"生成知识库问题失败 (kb_id={kb_id}, error_type={type(exc).__name__})")
+        raise HTTPException(status_code=500, detail="生成问题失败") from exc
 
 
 @knowledge.get("/databases/{kb_id}/sample-questions")
@@ -1797,9 +1864,9 @@ async def get_sample_questions(kb_id: str, current_user: User = Depends(get_admi
         return await get_database_sample_questions(kb_id)
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"获取知识库问题失败: {e}, {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"获取问题失败: {str(e)}")
+    except Exception as exc:
+        logger.error(f"获取知识库问题失败 (kb_id={kb_id}, error_type={type(exc).__name__})")
+        raise HTTPException(status_code=500, detail="获取问题失败") from exc
 
 
 # =============================================================================
@@ -1820,9 +1887,9 @@ async def create_folder(
         return await knowledge_base.create_folder(kb_id, folder_name, parent_id)
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"创建文件夹失败 {e}, {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        logger.error(f"创建文件夹失败 (kb_id={kb_id}, error_type={type(exc).__name__})")
+        raise HTTPException(status_code=500, detail="创建文件夹失败") from exc
 
 
 @knowledge.put("/databases/{kb_id}/documents/{doc_id}/move")
@@ -1841,9 +1908,11 @@ async def move_document(
         raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"移动文件失败 {e}, {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        logger.error(
+            f"移动文件失败 (kb_id={kb_id}, doc_id={doc_id}, error_type={type(exc).__name__})"
+        )
+        raise HTTPException(status_code=500, detail="移动文件失败") from exc
 
 
 @knowledge.post("/files/fetch-url")
@@ -1855,7 +1924,7 @@ async def fetch_url(
     """
     抓取 URL 内容并上传到 MinIO
     """
-    logger.debug(f"Fetching URL: {url} for kb_id: {kb_id}")
+    logger.debug(f"Fetch URL request for kb_id={kb_id}")
     try:
         # 1. 下载内容 (包含白名单校验、大小限制、类型检查)
         content_bytes, final_url = await fetch_url_content(url)
@@ -1908,12 +1977,12 @@ async def fetch_url(
 
     except HTTPException:
         raise
-    except ValueError as e:
-        logger.warning(f"URL fetch validation failed: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"Failed to fetch URL {url}: {e}, {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch URL: {str(e)}")
+    except ValueError as exc:
+        logger.warning(f"URL 抓取校验失败 (error_type={type(exc).__name__})")
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error(f"URL 抓取失败 (kb_id={kb_id}, error_type={type(exc).__name__})")
+        raise HTTPException(status_code=500, detail="URL 抓取失败") from exc
 
 
 @knowledge.post("/files/import-workspace")
@@ -1995,7 +2064,7 @@ async def upload_file(
     if kb_id:
         await _ensure_database_supports_documents(kb_id, "文档上传")
 
-    logger.debug(f"Received upload file with filename: {file.filename}")
+    logger.debug(f"Received knowledge file upload for kb_id={kb_id}")
 
     ext = os.path.splitext(file.filename)[1].lower()
 
@@ -2068,7 +2137,7 @@ async def mark_it_down(file: UploadFile = File(...), current_user: User = Depend
     import tempfile
 
     if not file.filename:
-        return {"message": "文件解析失败: 无法识别文件名", "markdown_content": ""}
+        raise HTTPException(status_code=400, detail="无法识别文件名")
 
     suffix = os.path.splitext(file.filename)[1].lower()
     temp_path = None
@@ -2088,15 +2157,15 @@ async def mark_it_down(file: UploadFile = File(...), current_user: User = Depend
         return {"markdown_content": markdown_content, "message": "success"}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"文件解析失败 {e}, {traceback.format_exc()}")
-        return {"message": f"文件解析失败 {e}", "markdown_content": ""}
+    except Exception as exc:
+        logger.error(f"文件解析失败 (error_type={type(exc).__name__})")
+        raise HTTPException(status_code=500, detail="文件解析失败") from exc
     finally:
         if temp_path and os.path.exists(temp_path):
             try:
                 os.unlink(temp_path)
             except Exception as cleanup_error:
-                logger.warning(f"临时文件清理失败 {temp_path}: {cleanup_error}")
+                logger.warning(f"临时文件清理失败 (error_type={type(cleanup_error).__name__})")
 
 
 # =============================================================================
@@ -2110,9 +2179,9 @@ async def get_knowledge_base_types(current_user: User = Depends(get_admin_user))
     try:
         kb_types = knowledge_base.get_supported_kb_types()
         return {"kb_types": kb_types, "message": "success"}
-    except Exception as e:
-        logger.error(f"获取知识库类型失败 {e}, {traceback.format_exc()}")
-        return {"message": f"获取知识库类型失败 {e}", "kb_types": {}}
+    except Exception as exc:
+        logger.error(f"获取知识库类型失败 (error_type={type(exc).__name__})")
+        raise HTTPException(status_code=500, detail="获取知识库类型失败") from exc
 
 
 @knowledge.get("/chunk-presets")
@@ -2127,9 +2196,9 @@ async def get_knowledge_base_statistics(current_user: User = Depends(get_admin_u
     try:
         stats = await knowledge_base.get_statistics()
         return {"stats": stats, "message": "success"}
-    except Exception as e:
-        logger.error(f"获取知识库统计失败 {e}, {traceback.format_exc()}")
-        return {"message": f"获取知识库统计失败 {e}", "stats": {}}
+    except Exception as exc:
+        logger.error(f"获取知识库统计失败 (error_type={type(exc).__name__})")
+        raise HTTPException(status_code=500, detail="获取知识库统计失败") from exc
 
 
 # =============================================================================
@@ -2151,7 +2220,7 @@ async def generate_description(
     from yuxi.models import select_model
 
     file_list = file_list or []
-    logger.debug(f"Generating description for knowledge base: {name}, files: {len(file_list)}")
+    logger.debug(f"Generating knowledge base description with file_count={len(file_list)}")
 
     # 构建文件列表文本
     if file_list:
@@ -2185,8 +2254,8 @@ async def generate_description(
         model = select_model(model_spec=config.default_model)
         response = await model.call(prompt)
         description = response.content.strip()
-        logger.debug(f"Generated description: {description}")
+        logger.debug(f"Generated knowledge base description (length={len(description)})")
         return {"description": description, "status": "success"}
-    except Exception as e:
-        logger.error(f"生成描述失败: {e}, {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"生成描述失败: {e}")
+    except Exception as exc:
+        logger.error(f"生成知识库描述失败 (error_type={type(exc).__name__})")
+        raise HTTPException(status_code=500, detail="生成描述失败") from exc

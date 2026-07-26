@@ -16,6 +16,19 @@ from yuxi.knowledge.implementations.milvus import (
 from yuxi.knowledge.graphs.milvus_graph_vector_store import MilvusGraphVectorStore
 
 
+class CapturedLogger:
+    def __init__(self):
+        self.messages: list[str] = []
+
+    def _capture(self, message: str) -> None:
+        self.messages.append(message)
+
+    info = _capture
+    warning = _capture
+    error = _capture
+    debug = _capture
+
+
 class FakeHit:
     def __init__(self, content: str, distance: float):
         self.distance = distance
@@ -443,6 +456,31 @@ async def test_parse_file_cancellation_marks_file_retryable(monkeypatch):
     assert record.error_message == "File parsing was cancelled"
 
 
+async def test_parse_file_failure_persists_sanitized_error(monkeypatch):
+    secret = "Authorization=secret-api-key provider-body=<private>"
+    captured_logger = CapturedLogger()
+    kb = MilvusKB.__new__(MilvusKB)
+    kb.databases_meta = {"db": {"metadata": {}}}
+    file_repo = FakeKnowledgeFileRepository(
+        {"file-1": make_file_record(markdown_file=None, status=FileStatus.UPLOADED)}
+    )
+    patch_file_repository(monkeypatch, file_repo)
+
+    async def failing_parse(*args, **kwargs):
+        raise RuntimeError(secret)
+
+    monkeypatch.setattr("yuxi.knowledge.parser.unified.Parser.aparse", failing_parse)
+    monkeypatch.setattr("yuxi.knowledge.base.logger", captured_logger)
+
+    with pytest.raises(RuntimeError, match="secret-api-key"):
+        await kb.parse_file("db", "file-1", operator_id="user-1")
+
+    record = file_repo.records["file-1"]
+    assert record.status == FileStatus.ERROR_PARSING
+    assert record.error_message == "File parsing failed"
+    assert secret not in " ".join(captured_logger.messages)
+
+
 async def test_index_file_cancellation_marks_file_retryable(monkeypatch):
     kb = MilvusKB.__new__(MilvusKB)
     kb.databases_meta = {"db": {"embedding_model_spec": "test-provider:test-embedding", "metadata": {}}}
@@ -471,6 +509,34 @@ async def test_index_file_cancellation_marks_file_retryable(monkeypatch):
     record = file_repo.records["file-1"]
     assert record.status == FileStatus.ERROR_INDEXING
     assert record.error_message == "File indexing was cancelled"
+
+
+async def test_index_file_failure_persists_sanitized_error(monkeypatch):
+    secret = "Authorization=secret-api-key provider-body=<private>"
+    captured_logger = CapturedLogger()
+    kb = MilvusKB.__new__(MilvusKB)
+    kb.databases_meta = {"db": {"embedding_model_spec": "test-provider:test-embedding", "metadata": {}}}
+    file_repo = FakeKnowledgeFileRepository({"file-1": make_file_record()})
+    patch_file_repository(monkeypatch, file_repo)
+
+    async def get_collection(kb_id):
+        return FakeCollection()
+
+    async def failing_read(path):
+        raise RuntimeError(secret)
+
+    kb._get_milvus_collection = get_collection
+    kb._get_embedding_function = lambda embedding_model_spec: None
+    kb._read_markdown_from_minio = failing_read
+    monkeypatch.setattr("yuxi.knowledge.implementations.milvus.logger", captured_logger)
+
+    with pytest.raises(RuntimeError, match="secret-api-key"):
+        await kb.index_file("db", "file-1", operator_id="user-1", params={})
+
+    record = file_repo.records["file-1"]
+    assert record.status == FileStatus.ERROR_INDEXING
+    assert record.error_message == "File indexing failed"
+    assert secret not in " ".join(captured_logger.messages)
 
 
 async def test_delete_file_chunks_only_resets_file_stats(monkeypatch):
@@ -637,6 +703,33 @@ async def test_update_content_uses_streaming_chunk_store(monkeypatch):
     assert file_repo.update_calls[0][2]["status"] == FileStatus.INDEXING
     assert file_repo.update_calls[-1][2]["status"] == FileStatus.INDEXED
     assert refreshed_kbs == ["db"]
+
+
+async def test_update_content_returns_sanitized_failure(monkeypatch):
+    secret = "Authorization=secret-api-key provider-body=<private>"
+    captured_logger = CapturedLogger()
+    kb = MilvusKB.__new__(MilvusKB)
+    kb.databases_meta = {"db": {"embedding_model_spec": "test-provider:test-embedding", "metadata": {}}}
+    file_repo = FakeKnowledgeFileRepository({"file-1": make_file_record(status=FileStatus.INDEXED)})
+    patch_file_repository(monkeypatch, file_repo)
+
+    async def get_collection(kb_id):
+        return FakeCollection()
+
+    async def failing_parse(source, params):
+        raise RuntimeError(secret)
+
+    kb._get_milvus_collection = get_collection
+    kb._get_embedding_function = lambda embedding_model_spec: None
+    monkeypatch.setattr("yuxi.knowledge.implementations.milvus.Parser.aparse", failing_parse)
+    monkeypatch.setattr("yuxi.knowledge.implementations.milvus.logger", captured_logger)
+
+    result = await kb.update_content("db", ["file-1"])
+
+    assert result[0]["status"] == FileStatus.ERROR_INDEXING
+    assert result[0]["error"] == "File indexing failed"
+    assert file_repo.records["file-1"].error_message == "File indexing failed"
+    assert secret not in " ".join(captured_logger.messages)
 
 
 async def test_keyword_mode_uses_milvus_bm25_search():

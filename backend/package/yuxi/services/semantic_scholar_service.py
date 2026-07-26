@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+import math
 import os
 import re
 import socket
@@ -19,8 +20,17 @@ SEMANTIC_SCHOLAR_EDGE_PAPER_FIELDS = ",".join(
     f"{{paper_field}}.{field}" for field in SEMANTIC_SCHOLAR_FIELDS.split(",")
 )
 MAX_OPEN_ACCESS_PDF_BYTES = 100 * 1024 * 1024
+MAX_SEMANTIC_SCHOLAR_RETRY_SECONDS = 60.0
 _DOI_PATTERN = re.compile(r"^10\.\d{4,9}/\S+$", re.IGNORECASE)
 _IDENTIFIER_PREFIX_PATTERN = re.compile(r"^(?:doi|arxiv|corpusid|pmid|pmcid|acl|s2paperid):", re.IGNORECASE)
+
+
+def _is_public_ip_address(value: Any) -> bool:
+    try:
+        address = ipaddress.ip_address(str(value).split("%", 1)[0])
+    except ValueError:
+        return False
+    return address.is_global
 
 
 async def _is_private_or_unresolvable_host(hostname: str) -> bool:
@@ -29,20 +39,32 @@ async def _is_private_or_unresolvable_host(hostname: str) -> bool:
     except OSError:
         return True
     for address in addresses:
-        try:
-            parsed = ipaddress.ip_address(address[4][0])
-        except ValueError:
-            return True
-        if (
-            parsed.is_private
-            or parsed.is_loopback
-            or parsed.is_link_local
-            or parsed.is_multicast
-            or parsed.is_reserved
-            or parsed.is_unspecified
-        ):
+        if not _is_public_ip_address(address[4][0]):
             return True
     return False
+
+
+def _response_has_public_peer(response: httpx.Response) -> bool:
+    network_stream = response.extensions.get("network_stream")
+    if network_stream is None:
+        return False
+    try:
+        server_address = network_stream.get_extra_info("server_addr")
+    except Exception:
+        return False
+    if isinstance(server_address, (tuple, list)) and server_address:
+        server_address = server_address[0]
+    return _is_public_ip_address(server_address)
+
+
+def _retry_wait_seconds(value: str | None, fallback: float) -> float:
+    try:
+        parsed = float(value or 0)
+    except (TypeError, ValueError):
+        return fallback
+    if not math.isfinite(parsed) or parsed <= 0:
+        return fallback
+    return min(parsed, MAX_SEMANTIC_SCHOLAR_RETRY_SECONDS)
 
 
 class SemanticScholarError(RuntimeError):
@@ -84,25 +106,28 @@ class SemanticScholarClient:
     async def _get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         max_retries = 3
         backoff_seconds = [10, 30, 60]
-        for attempt in range(max_retries + 1):
-            try:
-                async with httpx.AsyncClient(timeout=self.timeout, headers=self.headers) as client:
+        async with httpx.AsyncClient(
+            timeout=self.timeout,
+            headers=self.headers,
+            trust_env=False,
+        ) as client:
+            for attempt in range(max_retries + 1):
+                try:
                     response = await client.get(f"{self.base_url}{path}", params=params)
-            except httpx.TimeoutException as exc:
-                raise SemanticScholarError("semantic_scholar_timeout", "Semantic Scholar 请求超时") from exc
-            except httpx.HTTPError as exc:
-                raise SemanticScholarError("semantic_scholar_network", "Semantic Scholar 网络请求失败") from exc
-            if response.status_code == 429 and attempt < max_retries:
-                retry_after = float(response.headers.get("Retry-After", 0))
-                wait = retry_after if retry_after > 0 else backoff_seconds[attempt]
-                await asyncio.sleep(wait)
-                continue
-            if response.status_code == 429:
-                raise SemanticScholarError(
-                    "semantic_scholar_rate_limited",
-                    "Semantic Scholar API 触发限流，已重试 3 次仍失败",
-                )
-            break
+                except httpx.TimeoutException as exc:
+                    raise SemanticScholarError("semantic_scholar_timeout", "Semantic Scholar 请求超时") from exc
+                except httpx.HTTPError as exc:
+                    raise SemanticScholarError("semantic_scholar_network", "Semantic Scholar 网络请求失败") from exc
+                if response.status_code == 429 and attempt < max_retries:
+                    wait = _retry_wait_seconds(response.headers.get("Retry-After"), backoff_seconds[attempt])
+                    await asyncio.sleep(wait)
+                    continue
+                if response.status_code == 429:
+                    raise SemanticScholarError(
+                        "semantic_scholar_rate_limited",
+                        "Semantic Scholar API 触发限流，已重试 3 次仍失败",
+                    )
+                break
         if response.status_code == 404:
             raise SemanticScholarError("paper_not_found", "Semantic Scholar 未找到论文")
         if response.status_code >= 400:
@@ -211,15 +236,36 @@ class SemanticScholarClient:
         timeout = httpx.Timeout(60.0, connect=15.0)
         headers = {"User-Agent": "ResearchCompass/1.0 academic-paper-import"}
         try:
-            async with httpx.AsyncClient(timeout=timeout, follow_redirects=False, headers=headers) as client:
+            async with httpx.AsyncClient(
+                timeout=timeout,
+                follow_redirects=False,
+                headers=headers,
+                trust_env=False,
+            ) as client:
                 while True:
-                    parsed = urlparse(current_url)
-                    if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username:
+                    try:
+                        parsed = urlparse(current_url)
+                        hostname = parsed.hostname
+                    except ValueError as exc:
+                        raise SemanticScholarError(
+                            "paper_pdf_invalid_url", "公开 PDF 地址不是安全的 HTTP(S) 地址"
+                        ) from exc
+                    if (
+                        parsed.scheme not in {"http", "https"}
+                        or not hostname
+                        or parsed.username is not None
+                        or parsed.password is not None
+                    ):
                         raise SemanticScholarError("paper_pdf_invalid_url", "公开 PDF 地址不是安全的 HTTP(S) 地址")
-                    if await _is_private_or_unresolvable_host(parsed.hostname):
+                    if await _is_private_or_unresolvable_host(hostname):
                         raise SemanticScholarError("paper_pdf_private_network", "公开 PDF 地址指向私有网络")
 
                     async with client.stream("GET", current_url) as response:
+                        if not _response_has_public_peer(response):
+                            raise SemanticScholarError(
+                                "paper_pdf_private_network",
+                                "公开 PDF 下载连接未落到可验证的公网地址",
+                            )
                         if response.status_code in {301, 302, 303, 307, 308}:
                             if redirect_count >= 5:
                                 raise SemanticScholarError("paper_pdf_redirect_loop", "公开 PDF 重定向次数过多")

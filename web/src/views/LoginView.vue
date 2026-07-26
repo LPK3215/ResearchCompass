@@ -267,9 +267,9 @@
     <!-- 页面底部：版权信息等 -->
     <footer class="page-footer">
       <div class="footer-links">
-        <a href="https://github.com/xerrors" target="_blank">联系我们</a>
+        <a href="https://github.com/LPK3215/ResearchCompass/issues" target="_blank">问题反馈</a>
         <span class="divider">|</span>
-        <a href="https://github.com/xerrors/Yuxi" target="_blank">使用帮助</a>
+        <a href="https://lpk3215.github.io/ResearchCompass/" target="_blank">使用帮助</a>
       </div>
       <div class="copyright">
         &copy; {{ new Date().getFullYear() }} {{ brandName }}. All Rights Reserved.
@@ -314,7 +314,7 @@ const brandOrgName = computed(() => {
 })
 const brandName = computed(() => {
   const orgName = brandOrgName.value
-  const brandNameRaw = infoStore.branding?.name?.trim() || 'Yuxi'
+  const brandNameRaw = infoStore.branding?.name?.trim() || 'ResearchCompass'
 
   if (orgName && brandNameRaw && orgName !== brandNameRaw) {
     return brandNameRaw

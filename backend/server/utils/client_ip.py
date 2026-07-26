@@ -33,20 +33,24 @@ def _is_trusted_proxy(address: str, networks: tuple[ipaddress.IPv4Network | ipad
 def extract_client_ip(request: Request) -> str:
     """Return the direct peer unless it is an explicitly configured proxy."""
     peer = request.client.host if request.client else "unknown"
+    try:
+        normalized_peer = str(ipaddress.ip_address(peer))
+    except ValueError:
+        normalized_peer = peer
     networks = _trusted_proxy_networks()
-    if not networks or not _is_trusted_proxy(peer, networks):
-        return peer
+    if not networks or not _is_trusted_proxy(normalized_peer, networks):
+        return normalized_peer
 
     forwarded_for = request.headers.get("x-forwarded-for", "")
     for value in reversed(forwarded_for.split(",")):
         address = value.strip()
         try:
-            ipaddress.ip_address(address)
+            parsed = ipaddress.ip_address(address)
         except ValueError:
             continue
         if not _is_trusted_proxy(address, networks):
-            return address
-    return peer
+            return str(parsed)
+    return normalized_peer
 
 
 def validate_trusted_proxy_cidrs() -> None:

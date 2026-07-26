@@ -177,6 +177,65 @@ async def test_strict_graph_preflight_runs_before_query_rewrite(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_unexpected_search_failure_does_not_persist_provider_error_details(monkeypatch):
+    run_updates = []
+
+    class FakeRunRepository:
+        async def create(self, **values):
+            return None
+
+        async def update(self, run_id, values):
+            run_updates.append(values)
+
+    class FakeKnowledgeBaseRepository:
+        async def get_by_kb_id(self, kb_id):
+            return SimpleNamespace(kb_type="milvus", llm_model_spec="chat:model")
+
+    class FakeKnowledgeBase:
+        async def check_accessible(self, user_info, kb_id):
+            return True
+
+    async def provider_failure(*args, **kwargs):
+        raise RuntimeError("provider response Authorization=secret-api-key body=<private>")
+
+    monkeypatch.setattr(research_search_service, "ResearchSearchRunRepository", FakeRunRepository)
+    monkeypatch.setattr(research_search_service, "KnowledgeBaseRepository", FakeKnowledgeBaseRepository)
+    monkeypatch.setattr(research_search_service, "knowledge_base", FakeKnowledgeBase())
+    monkeypatch.setattr(research_search_service, "_rewrite_query", provider_failure)
+    monkeypatch.setattr(
+        research_search_service,
+        "_public_model_config",
+        lambda chat_model, reranker_model: {
+            "chat_model": chat_model,
+            "reranker_model": reranker_model,
+            "chat_provider": "test",
+            "reranker_provider": "test",
+        },
+    )
+
+    with pytest.raises(research_search_service.ResearchSearchError) as exc_info:
+        await research_search_service.search_papers(
+            kb_id="kb-1",
+            current_user=SimpleNamespace(uid="user-1", role="user", department_id=1),
+            query="How does local retrieval work?",
+            retrieval_mode=research_search_service.LOCAL_HYBRID_MODE,
+            top_k=10,
+            recall_top_k=50,
+            year_from=None,
+            year_to=None,
+            chat_model=None,
+            reranker_model="rerank:model",
+        )
+
+    assert exc_info.value.error_type == "local_research_failure"
+    failed_run = run_updates[-1]
+    assert failed_run["error_type"] == "local_research_failure"
+    assert failed_run["error_message"] == "科研本地混合检索执行失败"
+    assert "secret-api-key" not in str(run_updates)
+    assert "<private>" not in str(run_updates)
+
+
+@pytest.mark.asyncio
 async def test_get_search_run_rechecks_knowledge_base_access(monkeypatch):
     checked_kb_ids = []
 

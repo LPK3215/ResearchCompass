@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import httpx
 import pytest
 
+from yuxi.knowledge.implementations import notion as notion_module
 from yuxi.knowledge.implementations.notion import NOTION_DEFAULT_VERSION, NotionAPIError, NotionKB
 
 
@@ -190,9 +192,61 @@ async def test_notion_open_file_content_rejects_unknown_parent(monkeypatch, noti
 
 
 @pytest.mark.asyncio
-async def test_notion_kb_aquery_error_returns_empty(monkeypatch, notion_kb):
+async def test_notion_kb_aquery_error_is_explicit(monkeypatch, notion_kb):
     monkeypatch.setattr("yuxi.knowledge.implementations.notion._NotionClient", _FailingNotionClient)
 
-    result = await notion_kb.aquery("reasoning", "kb_notion")
+    with pytest.raises(NotionAPIError, match="Notion 知识库查询失败"):
+        await notion_kb.aquery("reasoning", "kb_notion")
 
-    assert result == []
+
+@pytest.mark.asyncio
+async def test_notion_client_ignores_environment_proxy_and_closes(monkeypatch):
+    captured = {}
+
+    class Client:
+        is_closed = False
+
+        async def aclose(self):
+            self.is_closed = True
+
+    client = Client()
+
+    def async_client(**kwargs):
+        captured.update(kwargs)
+        return client
+
+    monkeypatch.setattr("yuxi.knowledge.implementations.notion.httpx.AsyncClient", async_client)
+
+    from yuxi.knowledge.implementations.notion import _NotionClient
+
+    async with _NotionClient("token", NOTION_DEFAULT_VERSION):
+        pass
+
+    assert captured["trust_env"] is False
+    assert client.is_closed is True
+
+
+@pytest.mark.asyncio
+async def test_notion_http_error_does_not_log_or_raise_response_body(monkeypatch):
+    secret = "Authorization=secret-api-key provider-body=<private>"
+    log_entries: list[tuple] = []
+    request = httpx.Request("GET", "https://api.notion.com/v1/pages/page-1")
+    response = httpx.Response(500, request=request, text=secret)
+
+    class Client:
+        async def request(self, *_args, **_kwargs):
+            return response
+
+    class Logger:
+        def error(self, *args, **kwargs):
+            log_entries.append((args, kwargs))
+
+    client = notion_module._NotionClient("token", NOTION_DEFAULT_VERSION)
+    client._client = Client()
+    monkeypatch.setattr(notion_module, "logger", Logger())
+
+    with pytest.raises(NotionAPIError, match="Notion API 返回 HTTP 500") as exc_info:
+        await client.request("GET", "/pages/page-1", retries=0)
+
+    assert secret not in str(exc_info.value)
+    assert secret not in repr(log_entries)

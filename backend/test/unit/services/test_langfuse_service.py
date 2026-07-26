@@ -10,6 +10,7 @@ class _FakeLangfuseClient:
         self.kwargs = kwargs
         self.scores = []
         self.flush_count = 0
+        self.shutdown_count = 0
         self.raise_on_score = False
         self.__class__.instances.append(self)
 
@@ -28,6 +29,9 @@ class _FakeLangfuseClient:
 
     def flush(self) -> None:
         self.flush_count += 1
+
+    def shutdown(self) -> None:
+        self.shutdown_count += 1
 
 
 class _FakeCallbackHandler:
@@ -218,3 +222,19 @@ def test_submit_user_feedback_score_returns_false_when_langfuse_fails(monkeypatc
 
     assert created is False
     assert client.flush_count == 0
+
+
+def test_close_langfuse_client_flushes_closes_and_clears_cache(monkeypatch):
+    _FakeLangfuseClient.instances.clear()
+    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-test")
+    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-test")
+    monkeypatch.setattr(svc, "Langfuse", _FakeLangfuseClient)
+    monkeypatch.setattr(svc, "CallbackHandler", _FakeCallbackHandler)
+    svc.get_langfuse_client.cache_clear()
+    client = svc.get_langfuse_client()
+
+    svc.close_langfuse_client()
+
+    assert client.flush_count == 1
+    assert client.shutdown_count == 1
+    assert svc.get_langfuse_client.cache_info().currsize == 0

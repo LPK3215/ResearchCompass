@@ -6,7 +6,6 @@ Provides centralized dashboard APIs for monitoring system-wide statistics.
 提供系统级统计和监控的API接口，用于监控系统运行状态、用户活动、工具调用、知识库使用等。
 """
 
-import traceback
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -173,10 +172,9 @@ async def get_all_conversations(
             }
             for conv, stats in results
         ]
-    except Exception as e:
-        logger.error(f"Error getting conversations: {e}")
-        logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Failed to get conversations: {str(e)}")
+    except Exception as exc:
+        logger.error("Error getting conversations: exception_type={}", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="获取对话列表失败") from exc
 
 
 @dashboard.get("/conversations/{thread_id}", response_model=ConversationDetailResponse)
@@ -237,10 +235,9 @@ async def get_conversation_detail(
         }
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Error getting conversation detail: {e}")
-        logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Failed to get conversation detail: {str(e)}")
+    except Exception as exc:
+        logger.error("Error getting conversation detail: exception_type={}", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="获取对话详情失败") from exc
 
 
 # =============================================================================
@@ -308,10 +305,9 @@ async def get_user_activity_stats(
             daily_active_users=list(reversed(daily_active_users)),  # 按时间正序
         )
 
-    except Exception as e:
-        logger.error(f"Error getting user activity stats: {e}")
-        logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Failed to get user activity stats: {str(e)}")
+    except Exception as exc:
+        logger.error("Error getting user activity stats: exception_type={}", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="获取用户活跃统计失败") from exc
 
 
 # =============================================================================
@@ -383,10 +379,9 @@ async def get_tool_call_stats(
             daily_tool_calls=list(reversed(daily_tool_calls)),
         )
 
-    except Exception as e:
-        logger.error(f"Error getting tool call stats: {e}")
-        logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Failed to get tool call stats: {str(e)}")
+    except Exception as exc:
+        logger.error("Error getting tool call stats: exception_type={}", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="获取工具调用统计失败") from exc
 
 
 # =============================================================================
@@ -471,10 +466,9 @@ async def get_knowledge_stats(
             file_type_distribution=files_by_type,
         )
 
-    except Exception as e:
-        logger.error(f"Error getting knowledge stats: {e}")
-        logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Failed to get knowledge stats: {str(e)}")
+    except Exception as exc:
+        logger.error("Error getting knowledge stats: exception_type={}", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="获取知识库统计失败") from exc
 
 
 # =============================================================================
@@ -575,10 +569,9 @@ async def get_agent_analytics(
             agent_names=agent_names,
         )
 
-    except Exception as e:
-        logger.error(f"Error getting agent analytics: {e}")
-        logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Failed to get agent analytics: {str(e)}")
+    except Exception as exc:
+        logger.error("Error getting agent analytics: exception_type={}", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="获取智能体分析失败") from exc
 
 
 # =============================================================================
@@ -632,10 +625,9 @@ async def get_dashboard_stats(
                 "satisfaction_rate": satisfaction_rate,
             },
         }
-    except Exception as e:
-        logger.error(f"Error getting dashboard stats: {e}")
-        logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Failed to get dashboard stats: {str(e)}")
+    except Exception as exc:
+        logger.error("Error getting dashboard stats: exception_type={}", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="获取仪表盘统计失败") from exc
 
 
 # =============================================================================
@@ -708,10 +700,9 @@ async def get_all_feedbacks(
             }
             for feedback, message, conversation, user in results
         ]
-    except Exception as e:
-        logger.error(f"Error getting feedbacks: {e}")
-        logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Failed to get feedbacks: {str(e)}")
+    except Exception as exc:
+        logger.error("Error getting feedbacks: exception_type={}", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="获取反馈列表失败") from exc
 
 
 # =============================================================================
@@ -984,7 +975,6 @@ async def get_call_timeseries_stats(
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Error getting call timeseries stats: {e}")
-        logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Failed to get call timeseries stats: {str(e)}")
+    except Exception as exc:
+        logger.error("Error getting call timeseries stats: exception_type={}", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="获取调用趋势统计失败") from exc

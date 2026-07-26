@@ -52,6 +52,14 @@ class FakeEvaluationRepository:
         self.run_updates.append((run_id, deepcopy(data)))
 
 
+@pytest.fixture(autouse=True)
+def allow_task_creator_for_cancellation_tests(monkeypatch):
+    async def ensure_creator_can_write(self, creator_uid: str, kb_ids: set[str]) -> None:
+        return None
+
+    monkeypatch.setattr(EvaluationService, "_ensure_creator_can_write", ensure_creator_can_write)
+
+
 async def test_dataset_cancellation_updates_build_status(monkeypatch):
     repo = FakeEvaluationRepository()
     service = EvaluationService.__new__(EvaluationService)

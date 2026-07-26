@@ -5,6 +5,7 @@ from urllib.parse import unquote
 
 import pytest
 import pytest_asyncio
+from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 os.environ.setdefault("OPENAI_API_KEY", "dummy")
@@ -101,3 +102,70 @@ async def test_oidc_callback_allows_existing_binding_when_sub_contains_colon(oid
 
     assert response.status_code == 302
     assert unquote(response.headers["location"]).startswith("/auth/oidc/callback?code=")
+
+
+async def test_oidc_discovery_ignores_environment_proxy(monkeypatch):
+    captured = {}
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"authorization_endpoint": "https://issuer.example/authorize"}
+
+    class Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            return False
+
+        async def get(self, _url, **_kwargs):
+            return Response()
+
+    def async_client(**kwargs):
+        captured.update(kwargs)
+        return Client()
+
+    monkeypatch.setattr(oidc_service.httpx, "AsyncClient", async_client)
+
+    metadata = oidc_service.OIDCProviderMetadata()
+    assert await metadata.load("https://issuer.example") is True
+    assert captured["trust_env"] is False
+
+
+async def test_oidc_pending_state_store_is_bounded(monkeypatch):
+    monkeypatch.setattr(oidc_service, "OIDC_MAX_PENDING_STATES", 2)
+    tokens = iter(["state-1", "state-2", "state-3"])
+    monkeypatch.setattr(oidc_service.secrets, "token_urlsafe", lambda _size: next(tokens))
+    oidc_service.OIDCUtils._state_store = {}
+
+    try:
+        oidc_service.OIDCUtils.generate_state("/one")
+        oidc_service.OIDCUtils.generate_state("/two")
+        oidc_service.OIDCUtils.generate_state("/three")
+
+        assert set(oidc_service.OIDCUtils._state_store) == {"state-2", "state-3"}
+    finally:
+        oidc_service.OIDCUtils._state_store = {}
+
+
+async def test_oidc_login_url_does_not_expose_metadata_error(monkeypatch):
+    secret = "Authorization=secret-api-key provider-body=<private>"
+    monkeypatch.setattr(oidc_service.oidc_config, "enabled", True)
+    monkeypatch.setattr(oidc_service.oidc_config, "client_id", "client")
+    monkeypatch.setattr(oidc_service.oidc_config, "authorization_endpoint", "https://issuer.example/auth")
+    monkeypatch.setattr(oidc_service.OIDCUtils, "_last_metadata_error", secret)
+
+    async def fail_build(cls, _redirect_path):
+        return None
+
+    monkeypatch.setattr(oidc_service.OIDCUtils, "build_authorization_url", classmethod(fail_build))
+
+    with pytest.raises(HTTPException) as exc_info:
+        await oidc_service.oidc_login_url_handler("/")
+
+    assert exc_info.value.status_code == 500
+    assert exc_info.value.detail == "生成登录链接失败，请稍后重试或联系管理员"
+    assert secret not in str(exc_info.value.detail)

@@ -139,7 +139,7 @@ class KnowledgeBase(ABC):
         try:
             dt_value = coerce_any_to_utc_datetime(value)
         except (TypeError, ValueError) as exc:  # noqa: BLE001
-            logger.warning(f"Invalid timestamp encountered: {value!r} ({exc})")
+            logger.warning(f"Invalid timestamp encountered (error_type={type(exc).__name__})")
             return None
 
         if not dt_value:
@@ -317,7 +317,7 @@ class KnowledgeBase(ABC):
                     if file_size is not None:
                         metadata["size"] = file_size
             except Exception as exc:
-                logger.warning(f"Failed to stat file size from MinIO for {item}: {exc}")
+                logger.warning(f"Failed to stat file size from MinIO (error_type={type(exc).__name__})")
 
         # Initial status
         metadata["status"] = FileStatus.UPLOADED
@@ -413,13 +413,15 @@ class KnowledgeBase(ABC):
 
             return file_meta
 
-        except (Exception, asyncio.CancelledError) as e:
-            if isinstance(e, asyncio.CancelledError):
+        except (Exception, asyncio.CancelledError) as error:
+            if isinstance(error, asyncio.CancelledError):
                 current_task = asyncio.current_task()
                 if current_task is not None and current_task.cancelling():
                     current_task.uncancel()
-            error_msg = "File parsing was cancelled" if isinstance(e, asyncio.CancelledError) else str(e)
-            logger.error(f"Failed to parse file {file_id}: {error_msg}")
+            error_msg = (
+                "File parsing was cancelled" if isinstance(error, asyncio.CancelledError) else "File parsing failed"
+            )
+            logger.error(f"Failed to parse file (error_type={type(error).__name__})")
 
             file_meta["status"] = FileStatus.ERROR_PARSING
             file_meta["error"] = error_msg
@@ -1008,8 +1010,8 @@ class KnowledgeBase(ABC):
                         try:
                             bucket_name, object_name = parse_minio_url(file_path)
                             await minio_client.adelete_file(bucket_name, object_name)
-                        except Exception as e:
-                            logger.warning(f"Failed to delete MinIO file {file_path}: {e}")
+                        except Exception as error:
+                            logger.warning(f"Failed to delete MinIO file (error_type={type(error).__name__})")
 
                     # 删除解析后的 markdown 文件
                     parsed_object = f"{kb_id}/parsed/{file_id}.md"
@@ -1036,8 +1038,8 @@ class KnowledgeBase(ABC):
                 await AcademicGraphRepository().clear_kb(kb_id)
                 # 删除 Neo4j 投影
                 await AcademicGraphService().delete_kb_projection(kb_id)
-            except Exception as e:
-                logger.error(f"Failed to clean up academic graph for {kb_id}: {e}")
+            except Exception as error:
+                logger.error(f"Failed to clean up academic graph (error_type={type(error).__name__})")
 
             # 4. 删除数据库记录
             del self.databases_meta[kb_id]
@@ -1052,8 +1054,8 @@ class KnowledgeBase(ABC):
 
             try:
                 shutil.rmtree(working_dir)
-            except Exception as e:
-                logger.error(f"Error deleting working directory {working_dir}: {e}")
+            except Exception as error:
+                logger.error(f"Error deleting working directory (error_type={type(error).__name__})")
 
         return {"message": "删除成功"}
 
@@ -1580,7 +1582,7 @@ class KnowledgeBase(ABC):
                 async with semaphore:
                     return file_id, await minio_client.astat_file(bucket_name, obj_name)
             except Exception as exc:
-                logger.warning(f"Failed to fill size for {file_id}: {exc}")
+                logger.warning(f"Failed to fill file size (error_type={type(exc).__name__})")
                 return file_id, None
 
         updates: dict[str, int] = {}

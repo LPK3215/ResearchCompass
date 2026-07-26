@@ -23,6 +23,8 @@ class PPStructureV3Parser(BaseDocumentProcessor):
         self.server_url = server_url or os.getenv("PADDLEX_URI") or "http://localhost:8080"
         self.base_url = self.server_url.rstrip("/")
         self.endpoint = f"{self.base_url}/layout-parsing"
+        self._session = requests.Session()
+        self._session.trust_env = False
 
     def get_service_name(self) -> str:
         return "pp_structure_v3_ocr"
@@ -41,13 +43,13 @@ class PPStructureV3Parser(BaseDocumentProcessor):
         """处理文件输入：本地文件路径、URL或Base64内容"""
         # 检查是否为本地文件路径
         if os.path.exists(file_input):
-            logger.info(f"📁 检测到本地文件: {file_input}")
+            logger.info("📁 检测到本地文件")
             logger.info(f"📏 文件大小: {os.path.getsize(file_input) / 1024 / 1024:.2f} MB")
             return self._encode_file_to_base64(file_input)
 
         # 检查是否为URL
         elif file_input.startswith(("http://", "https://")):
-            logger.info(f"🌐 检测到URL: {file_input}")
+            logger.info("🌐 检测到 URL 输入")
             return file_input
 
         # 否则假设为Base64编码内容
@@ -87,17 +89,30 @@ class PPStructureV3Parser(BaseDocumentProcessor):
             if value is not None:
                 payload[key] = value
 
-        response = requests.post(self.endpoint, json=payload, headers={"Content-Type": "application/json"}, timeout=300)
-
-        if response.status_code == 200:
-            return response.json()
-        else:
-            error_msg = f"PP-Structure-V3 API请求失败: {response.status_code}"
+        with self._session.post(
+            self.endpoint,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=300,
+        ) as response:
+            if response.status_code != 200:
+                raise DocumentParserException(
+                    f"PP-Structure-V3 API请求失败: HTTP {response.status_code}",
+                    self.get_service_name(),
+                    "api_error",
+                )
             try:
-                error_result = response.json()
-                raise DocumentParserException(f"{error_msg}: {error_result}", self.get_service_name(), "api_error")
-            except Exception:
-                raise DocumentParserException(f"{error_msg}: {response.text}", self.get_service_name(), "api_error")
+                result = response.json()
+            except ValueError as error:
+                raise DocumentParserException(
+                    "PP-Structure-V3 响应格式无效", self.get_service_name(), "response_parse_error"
+                ) from error
+
+        if not isinstance(result, dict):
+            raise DocumentParserException(
+                "PP-Structure-V3 响应格式无效", self.get_service_name(), "response_parse_error"
+            )
+        return result
 
     def _parse_api_result(self, api_result: dict[str, Any], file_path: str) -> dict[str, Any]:
         """解析API返回结果"""
@@ -159,38 +174,39 @@ class PPStructureV3Parser(BaseDocumentProcessor):
     def check_health(self) -> dict:
         """检查 PP-Structure-V3 服务健康状态"""
         try:
-            response = requests.get(f"{self.base_url}/health", timeout=5)
+            with self._session.get(f"{self.base_url}/health", timeout=5) as response:
+                status_code = response.status_code
 
-            if response.status_code == 200:
+            if status_code == 200:
                 return {
                     "status": "healthy",
                     "message": "PP-Structure-V3 服务运行正常",
-                    "details": {"server_url": self.server_url},
+                    "details": {},
                 }
             else:
                 return {
                     "status": "unhealthy",
-                    "message": f"PP-Structure-V3 服务响应异常: {response.status_code}",
-                    "details": {"server_url": self.server_url},
+                    "message": f"PP-Structure-V3 服务响应异常: {status_code}",
+                    "details": {"status_code": status_code},
                 }
 
         except requests.exceptions.ConnectionError:
             return {
                 "status": "unavailable",
                 "message": "PP-Structure-V3 服务无法连接,请检查服务是否启动",
-                "details": {"server_url": self.server_url},
+                "details": {},
             }
         except requests.exceptions.Timeout:
             return {
                 "status": "timeout",
                 "message": "PP-Structure-V3 服务连接超时",
-                "details": {"server_url": self.server_url},
+                "details": {},
             }
         except Exception as e:
             return {
                 "status": "error",
-                "message": f"PP-Structure-V3 健康检查失败: {str(e)}",
-                "details": {"server_url": self.server_url, "error": str(e)},
+                "message": "PP-Structure-V3 健康检查失败",
+                "details": {"error_type": type(e).__name__},
             }
 
     def process_file(self, file_path: str, params: dict | None = None) -> str:
@@ -244,7 +260,7 @@ class PPStructureV3Parser(BaseDocumentProcessor):
             # 检查API调用是否成功
             if api_result.get("errorCode") != 0:
                 raise DocumentParserException(
-                    f"PP-Structure-V3 API错误: {api_result.get('errorMsg', '未知错误')}",
+                    "PP-Structure-V3 API返回错误",
                     self.get_service_name(),
                     "api_error",
                 )
@@ -269,6 +285,10 @@ class PPStructureV3Parser(BaseDocumentProcessor):
             raise
         except Exception as e:
             processing_time = time.time() - start_time
-            error_msg = f"PP-Structure-V3 处理失败: {str(e)}"
-            logger.error(f"{error_msg} ({processing_time:.2f}s)")
-            raise DocumentParserException(error_msg, self.get_service_name(), "processing_failed")
+            logger.error(f"PP-Structure-V3 处理失败 (error_type={type(e).__name__}, elapsed={processing_time:.2f}s)")
+            raise DocumentParserException(
+                "PP-Structure-V3 处理失败", self.get_service_name(), "processing_failed"
+            ) from e
+
+    def close(self) -> None:
+        self._session.close()

@@ -1,4 +1,3 @@
-import traceback
 from typing import Any
 
 import httpx
@@ -7,6 +6,10 @@ from yuxi.knowledge.implementations.read_only_connectors import ReadOnlyConnecto
 from yuxi.utils import logger
 
 DIFY_REQUIRED_PARAMS = ("dify_api_url", "dify_token", "dify_dataset_id")
+
+
+class DifyAPIError(RuntimeError):
+    """Dify 查询失败，且不向调用方暴露供应商响应细节。"""
 
 
 class DifyKB(ReadOnlyConnectors):
@@ -71,8 +74,8 @@ class DifyKB(ReadOnlyConnectors):
         dataset_id = str(metadata.get("dify_dataset_id") or "").strip()
 
         if not api_url or not token or not dataset_id:
-            logger.error(f"Dify config incomplete for kb_id={kb_id}")
-            return []
+            logger.error("Dify 知识库配置不完整")
+            raise DifyAPIError("Dify 知识库配置不完整")
 
         query_params = self._get_query_params(kb_id)
         merged = {**query_params, **kwargs}
@@ -108,25 +111,23 @@ class DifyKB(ReadOnlyConnectors):
 
         try:
             response_json = await self._request_dify(client_payload=payload, request_url=request_url, headers=headers)
-        except Exception as e:  # noqa: BLE001
-            logger.error(f"Dify query failed for kb_id={kb_id}: {e}, {traceback.format_exc()}")
+        except DifyAPIError:
             # 一些 Dify 部署版本对 retrieval_model 兼容性较差，失败时降级为仅 query 请求重试一次
+            logger.warning("Dify 查询使用兼容模式重试")
             try:
                 response_json = await self._request_dify(
                     client_payload={"query": query_text},
                     request_url=request_url,
                     headers=headers,
                 )
-                logger.warning(f"Dify query fallback to query-only succeeded for kb_id={kb_id}")
-            except Exception as fallback_error:  # noqa: BLE001
-                logger.error(
-                    f"Dify query fallback failed for kb_id={kb_id}: {fallback_error}, {traceback.format_exc()}"
-                )
-                return []
+                logger.warning("Dify 查询兼容模式重试成功")
+            except DifyAPIError as fallback_error:
+                logger.error("Dify 查询及兼容模式重试均失败")
+                raise DifyAPIError("Dify 知识库查询失败") from fallback_error
 
-        records = response_json.get("records", []) if isinstance(response_json, dict) else []
+        records = response_json.get("records", [])
         if not isinstance(records, list):
-            return []
+            raise DifyAPIError("Dify 知识库响应格式无效")
 
         results = []
         for record in records:
@@ -143,10 +144,15 @@ class DifyKB(ReadOnlyConnectors):
             if not content:
                 continue
 
+            try:
+                score = float(record.get("score") or 0.0)
+            except (TypeError, ValueError) as error:
+                raise DifyAPIError("Dify 知识库响应格式无效") from error
+
             results.append(
                 {
                     "content": content,
-                    "score": float(record.get("score") or 0.0),
+                    "score": score,
                     "metadata": {
                         "source": document.get("name") or "Dify",
                         "file_id": document.get("id"),
@@ -159,18 +165,19 @@ class DifyKB(ReadOnlyConnectors):
         return results
 
     async def _request_dify(self, client_payload: dict[str, Any], request_url: str, headers: dict[str, str]) -> dict:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(request_url, json=client_payload, headers=headers)
-            try:
+        try:
+            async with httpx.AsyncClient(timeout=30.0, trust_env=False) as client:
+                response = await client.post(request_url, json=client_payload, headers=headers)
                 response.raise_for_status()
-            except httpx.HTTPStatusError as e:
-                body_preview = response.text[:1000] if response.text else ""
-                logger.error(
-                    f"Dify HTTP error: status={response.status_code}, url={request_url}, "
-                    f"payload_keys={list(client_payload.keys())}, body={body_preview}"
-                )
-                raise e
-            return response.json()
+                response_json = response.json()
+        except Exception as error:  # noqa: BLE001
+            logger.error(f"Dify 请求失败: {type(error).__name__}")
+            raise DifyAPIError("Dify 知识库查询失败") from error
+
+        if not isinstance(response_json, dict):
+            logger.error("Dify 响应不是 JSON 对象")
+            raise DifyAPIError("Dify 知识库响应格式无效")
+        return response_json
 
     def get_query_params_config(self, kb_id: str, **kwargs) -> dict:
         del kb_id, kwargs

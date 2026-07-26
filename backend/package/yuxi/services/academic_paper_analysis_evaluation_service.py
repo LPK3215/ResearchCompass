@@ -8,14 +8,20 @@ from datetime import UTC, datetime
 from statistics import mean
 from typing import Any
 
+from fastapi import HTTPException
 from yuxi.models.providers.cache import model_cache
 from yuxi.repositories.academic_paper_analysis_evaluation_repository import AcademicPaperAnalysisEvaluationRepository
 from yuxi.repositories.academic_paper_analysis_repository import AcademicPaperAnalysisRepository
 from yuxi.repositories.academic_paper_repository import AcademicPaperRepository
 from yuxi.repositories.knowledge_chunk_repository import KnowledgeChunkRepository
-from yuxi.services.academic_paper_analysis_service import ANALYSIS_STRATEGIES, _run_analysis
+from yuxi.repositories.user_repository import UserRepository
+from yuxi.services.academic_paper_analysis_service import (
+    ANALYSIS_STRATEGIES,
+    AcademicPaperAnalysisError,
+    _run_analysis,
+)
 from yuxi.services.research_paper_service import _ensure_access
-from yuxi.services.task_service import TaskContext, tasker
+from yuxi.services.task_service import PublicTaskError, TaskContext, tasker
 from yuxi.storage.postgres.models_business import User
 
 
@@ -29,7 +35,7 @@ RUBRIC_DIMENSIONS = (
 BLIND_LABELS = ("A", "B")
 
 
-class AcademicPaperAnalysisEvaluationError(RuntimeError):
+class AcademicPaperAnalysisEvaluationError(PublicTaskError):
     def __init__(self, error_type: str, message: str):
         super().__init__(message)
         self.error_type = error_type
@@ -159,9 +165,6 @@ class AcademicPaperAnalysisEvaluationService:
             items,
         )
 
-        async def run(context: TaskContext):
-            return await self._run_evaluation(context, evaluation_id=evaluation_id)
-
         try:
             task, created = await tasker.enqueue_unique_by_payload(
                 name=f"单/多 Agent 分析对比 ({name.strip()})",
@@ -169,14 +172,14 @@ class AcademicPaperAnalysisEvaluationService:
                 payload={"evaluation_id": evaluation_id, "kb_id": kb_id},
                 payload_match={"evaluation_id": evaluation_id},
                 statuses={"pending", "running"},
-                coroutine=run,
+                coroutine=_resume_paper_analysis_evaluation_task,
             )
             if not created:
                 raise RuntimeError("分析对比任务已存在")
         except Exception as exc:
             await self.repo.update_evaluation(
                 evaluation_id,
-                {"status": "failed", "error_message": str(exc), "completed_at": _now()},
+                {"status": "failed", "error_message": "分析对比任务提交失败", "completed_at": _now()},
             )
             raise AcademicPaperAnalysisEvaluationError("task_enqueue_failed", "分析对比任务提交失败") from exc
         await self.repo.update_evaluation(evaluation_id, {"task_id": task.id})
@@ -234,6 +237,14 @@ class AcademicPaperAnalysisEvaluationService:
         evaluation = await self.repo.get(evaluation_id)
         if evaluation is None:
             raise AcademicPaperAnalysisEvaluationError("evaluation_not_found", "分析对比不存在")
+        try:
+            await self._ensure_owner_can_write(evaluation)
+        except AcademicPaperAnalysisEvaluationError as exc:
+            await self.repo.update_evaluation(
+                evaluation_id,
+                {"status": "failed", "error_message": exc.message, "completed_at": _now()},
+            )
+            raise
         await self.repo.update_evaluation(
             evaluation_id, {"status": "running", "started_at": _now(), "error_message": None}
         )
@@ -241,6 +252,7 @@ class AcademicPaperAnalysisEvaluationService:
         try:
             for index, item in enumerate(items):
                 await context.raise_if_cancelled()
+                await self._ensure_owner_can_write(evaluation)
                 if item.status == "completed":
                     continue
                 pair_start = index * 100 / len(items)
@@ -271,10 +283,19 @@ class AcademicPaperAnalysisEvaluationService:
                     )
                 except asyncio.CancelledError:
                     raise
-                except Exception as exc:
+                except (AcademicPaperAnalysisError, AcademicPaperAnalysisEvaluationError) as exc:
                     await self.repo.update_item(
                         item.item_id,
-                        {"status": "failed", "error_message": str(exc), "completed_at": _now()},
+                        {"status": "failed", "error_message": exc.message, "completed_at": _now()},
+                    )
+                except Exception:
+                    await self.repo.update_item(
+                        item.item_id,
+                        {
+                            "status": "failed",
+                            "error_message": "论文分析对比项执行失败",
+                            "completed_at": _now(),
+                        },
                     )
                 else:
                     await self.repo.update_item(
@@ -291,6 +312,7 @@ class AcademicPaperAnalysisEvaluationService:
                 await self.repo.update_evaluation(evaluation_id, {"completed_pairs": completed})
 
             final_items = await self.repo.list_items(evaluation_id)
+            await self._ensure_owner_can_write(evaluation)
             final_status = (
                 "completed_with_failures" if any(item.status == "failed" for item in final_items) else "completed"
             )
@@ -302,14 +324,40 @@ class AcademicPaperAnalysisEvaluationService:
             await context.set_result(result)
             await context.set_progress(100, "单/多 Agent 对比报告已生成，等待人工盲审")
             return result
-        except (Exception, asyncio.CancelledError) as exc:
-            message = "任务已取消" if isinstance(exc, asyncio.CancelledError) else str(exc)
-            if isinstance(exc, asyncio.CancelledError) and context.cancellation_reason == "shutdown":
+        except asyncio.CancelledError:
+            if context.cancellation_reason == "shutdown":
                 raise
+            message = "分析对比任务执行超时" if context.cancellation_reason == "timeout" else "分析对比任务已取消"
             await self.repo.update_evaluation(
                 evaluation_id, {"status": "failed", "error_message": message, "completed_at": _now()}
             )
             raise
+        except Exception as exc:
+            if isinstance(exc, AcademicPaperAnalysisEvaluationError):
+                failure = exc
+            elif isinstance(exc, AcademicPaperAnalysisError):
+                failure = AcademicPaperAnalysisEvaluationError(exc.error_type, exc.message)
+            else:
+                failure = AcademicPaperAnalysisEvaluationError(
+                    "analysis_evaluation_failed", "分析对比任务执行失败"
+                )
+            await self.repo.update_evaluation(
+                evaluation_id,
+                {"status": "failed", "error_message": failure.message, "completed_at": _now()},
+            )
+            if failure is exc:
+                raise
+            raise failure from exc
+
+    async def _ensure_owner_can_write(self, evaluation: Any) -> User:
+        user = await UserRepository().get_by_uid(str(evaluation.created_by))
+        if user is None or bool(user.is_deleted):
+            raise AcademicPaperAnalysisEvaluationError("forbidden", "分析对比任务所有者不存在或已删除")
+        try:
+            await _ensure_access(user, str(evaluation.kb_id), write=True)
+        except HTTPException as exc:
+            raise AcademicPaperAnalysisEvaluationError("forbidden", "分析对比任务所有者已失去知识库写入权限") from exc
+        return user
 
     async def _get_evaluation(self, *, kb_id: str, evaluation_id: str, current_user: User, write: bool = False):
         await _ensure_access(current_user, kb_id, write=write)
@@ -527,19 +575,51 @@ class AcademicPaperAnalysisEvaluationService:
     async def recover_evaluations(self) -> int:
         recovered = 0
         for evaluation in await self.repo.list_recoverable():
-            async def run(context: TaskContext, item_id=str(evaluation.evaluation_id)):
-                return await self._run_evaluation(context, evaluation_id=item_id)
-
-            _, created = await tasker.enqueue_unique_by_payload(
-                name=f"恢复单/多 Agent 分析对比 ({evaluation.name})",
-                task_type="academic_paper_analysis_evaluation",
-                payload={"evaluation_id": evaluation.evaluation_id, "kb_id": evaluation.kb_id},
-                payload_match={"evaluation_id": evaluation.evaluation_id},
-                statuses={"pending", "running"},
-                coroutine=run,
-            )
+            try:
+                await self._ensure_owner_can_write(evaluation)
+            except AcademicPaperAnalysisEvaluationError as exc:
+                await self.repo.update_evaluation(
+                    str(evaluation.evaluation_id),
+                    {"status": "failed", "error_message": exc.message, "completed_at": _now()},
+                )
+                continue
+            try:
+                _, created = await tasker.enqueue_unique_by_payload(
+                    name=f"恢复单/多 Agent 分析对比 ({evaluation.name})",
+                    task_type="academic_paper_analysis_evaluation",
+                    payload={"evaluation_id": evaluation.evaluation_id, "kb_id": evaluation.kb_id},
+                    payload_match={"evaluation_id": evaluation.evaluation_id},
+                    statuses={"pending", "running"},
+                    coroutine=_resume_paper_analysis_evaluation_task,
+                )
+            except Exception:
+                await self.repo.update_evaluation(
+                    str(evaluation.evaluation_id),
+                    {
+                        "status": "failed",
+                        "error_message": "分析对比恢复任务提交失败",
+                        "completed_at": _now(),
+                    },
+                )
+                continue
             recovered += int(created)
         return recovered
+
+
+async def _resume_paper_analysis_evaluation_task(context: TaskContext) -> dict[str, Any]:
+    evaluation_id = str(context.payload.get("evaluation_id") or "").strip()
+    if not evaluation_id:
+        raise ValueError("分析对比恢复缺少评测标识")
+    return await AcademicPaperAnalysisEvaluationService()._run_evaluation(
+        context,
+        evaluation_id=evaluation_id,
+    )
+
+
+tasker.register_resumable_handler(
+    "academic_paper_analysis_evaluation",
+    _resume_paper_analysis_evaluation_task,
+)
 
 
 __all__ = [

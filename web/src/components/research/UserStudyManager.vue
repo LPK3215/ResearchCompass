@@ -20,7 +20,7 @@
       </a-form><a-alert type="info" show-icon message="创建后将只显示一次明文链接" description="请立即复制并发送给参与者；数据库只保存不可逆 token 哈希。" />
     </a-modal>
 
-    <a-modal v-model:open="inviteVisible" title="匿名评测链接" :footer="null" width="760px"><p>请复制以下链接发送给参与者。关闭后无法再次显示相同 token。</p>
+    <a-modal v-model:open="inviteVisible" title="匿名评测链接" :footer="null" width="760px" @afterClose="clearCreatedInvites"><p>请复制以下链接发送给参与者。关闭后无法再次显示相同 token。</p>
       <div v-for="(invite, index) in createdInvites" :key="invite.invite_id" class="invite-row"><span>参与者 {{ index + 1 }}</span><a-input :value="publicLink(invite.token)" readonly><template #addonAfter><a @click="copy(publicLink(invite.token))">复制</a></template></a-input></div>
     </a-modal>
 
@@ -33,7 +33,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import { Plus } from 'lucide-vue-next'
 import { researchApi } from '@/apis/research_api'
@@ -50,12 +50,119 @@ const feedbacks = computed(() => (report.value?.responses || []).map((item) => i
 const format = (value) => Number.isFinite(value) ? value.toFixed(2) : '-'
 const publicLink = (token) => `${window.location.origin}/research-study#token=${encodeURIComponent(token)}`
 const copy = async (value) => { try { await navigator.clipboard.writeText(value); message.success('链接已复制') } catch { message.error('复制失败，请手动复制') } }
-const load = async () => { loading.value = true; try { studies.value = await researchApi.listUserStudies(props.kbId) } catch (error) { message.error(error.message || '加载用户评测失败') } finally { loading.value = false } }
+let kbGeneration = 0
+let loadGeneration = 0
+let reportGeneration = 0
+
+const clearCreatedInvites = () => { createdInvites.value = [] }
+const load = async () => {
+  const requestGeneration = ++loadGeneration
+  const kbId = props.kbId
+  loading.value = true
+  try {
+    const result = await researchApi.listUserStudies(kbId)
+    if (requestGeneration === loadGeneration && kbId === props.kbId) studies.value = result
+  } catch (error) {
+    if (requestGeneration === loadGeneration && kbId === props.kbId) message.error(error.message || '加载用户评测失败')
+  } finally {
+    if (requestGeneration === loadGeneration) loading.value = false
+  }
+}
 const openCreate = () => { createVisible.value = true }
-const createStudy = async () => { if (!createForm.name.trim()) return message.warning('请填写评测名称'); creating.value = true; try { const result = await researchApi.createUserStudy(props.kbId, { ...createForm, name: createForm.name.trim(), description: createForm.description.trim() }); createdInvites.value = result.invites || []; createVisible.value = false; inviteVisible.value = true; await load() } catch (error) { message.error(error.message || '创建用户评测失败') } finally { creating.value = false } }
-const viewReport = async (study) => { reportVisible.value = true; reportLoading.value = true; try { report.value = await researchApi.getUserStudy(props.kbId, study.study_id) } catch (error) { message.error(error.message || '加载评测报告失败') } finally { reportLoading.value = false } }
-const closeStudy = (study) => Modal.confirm({ title: '关闭用户评测？', content: '关闭后未使用的匿名链接将不能再提交。', onOk: async () => { try { await researchApi.closeUserStudy(props.kbId, study.study_id); await load(); if (report.value?.study_id === study.study_id) await viewReport(study) } catch (error) { message.error(error.message || '关闭失败') } } })
-const downloadReport = async () => { try { const response = await researchApi.exportUserStudy(props.kbId, report.value.study_id); const blob = await response.blob(); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `${report.value.study_id}-anonymous-responses.csv`; link.click(); URL.revokeObjectURL(url) } catch (error) { message.error(error.message || '导出失败') } }
+const createStudy = async () => {
+  if (!createForm.name.trim()) return message.warning('请填写评测名称')
+  const requestGeneration = kbGeneration
+  const kbId = props.kbId
+  creating.value = true
+  try {
+    const result = await researchApi.createUserStudy(kbId, {
+      ...createForm,
+      name: createForm.name.trim(),
+      description: createForm.description.trim()
+    })
+    if (requestGeneration !== kbGeneration || kbId !== props.kbId) return
+    createdInvites.value = result.invites || []
+    createVisible.value = false
+    inviteVisible.value = true
+    await load()
+  } catch (error) {
+    if (requestGeneration === kbGeneration && kbId === props.kbId) message.error(error.message || '创建用户评测失败')
+  } finally {
+    creating.value = false
+  }
+}
+const viewReport = async (study) => {
+  const requestGeneration = ++reportGeneration
+  const kbId = props.kbId
+  reportVisible.value = true
+  reportLoading.value = true
+  report.value = null
+  try {
+    const result = await researchApi.getUserStudy(kbId, study.study_id)
+    if (requestGeneration === reportGeneration && kbId === props.kbId) report.value = result
+  } catch (error) {
+    if (requestGeneration === reportGeneration && kbId === props.kbId) message.error(error.message || '加载评测报告失败')
+  } finally {
+    if (requestGeneration === reportGeneration) reportLoading.value = false
+  }
+}
+const closeStudy = (study) => {
+  const kbId = props.kbId
+  Modal.confirm({
+    title: '关闭用户评测？',
+    content: '关闭后未使用的匿名链接将不能再提交。',
+    onOk: async () => {
+      try {
+        await researchApi.closeUserStudy(kbId, study.study_id)
+        if (kbId !== props.kbId) return
+        await load()
+        if (report.value?.study_id === study.study_id) await viewReport(study)
+      } catch (error) {
+        if (kbId === props.kbId) message.error(error.message || '关闭失败')
+      }
+    }
+  })
+}
+const downloadReport = async () => {
+  const kbId = props.kbId
+  const studyId = report.value?.study_id
+  if (!studyId) return
+  try {
+    const response = await researchApi.exportUserStudy(kbId, studyId)
+    if (kbId !== props.kbId) return
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${studyId}-anonymous-responses.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    if (kbId === props.kbId) message.error(error.message || '导出失败')
+  }
+}
+
+watch(() => props.kbId, () => {
+  kbGeneration += 1
+  loadGeneration += 1
+  reportGeneration += 1
+  loading.value = false
+  reportLoading.value = false
+  createVisible.value = false
+  inviteVisible.value = false
+  reportVisible.value = false
+  report.value = null
+  studies.value = []
+  clearCreatedInvites()
+  load()
+})
+
+onBeforeUnmount(() => {
+  kbGeneration += 1
+  loadGeneration += 1
+  reportGeneration += 1
+  clearCreatedInvites()
+})
 onMounted(load)
 </script>
 

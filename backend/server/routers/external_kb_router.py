@@ -87,11 +87,11 @@ async def retrieve_external(
         options["file_name"] = payload.file_name
     try:
         return await knowledge_base.retrieve(kb_id, payload.query, **options)
-    except KBNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
-    except Exception as e:
-        logger.exception(f"external 知识库查询失败 {e}")
-        raise HTTPException(status_code=400, detail=f"知识库查询失败: {e}") from e
+    except KBNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error("External knowledge retrieval failed: exception_type={}", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="知识库查询失败") from exc
 
 
 @external_kb.get("/databases/external/{kb_id}/files/{file_id}/open")
@@ -106,11 +106,11 @@ async def open_external_file(
     await _require_accessible_kb(kb_id, current_user.uid, require_documents=True, operation="文档查看")
     try:
         return await knowledge_base.open_document(kb_id, file_id, offset=offset, limit=limit)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except Exception as e:
-        logger.exception(f"external 打开知识库文件失败 {e}")
-        raise HTTPException(status_code=400, detail="打开知识库文件失败") from e
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error("External knowledge file open failed: exception_type={}", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="打开知识库文件失败") from exc
 
 
 @external_kb.post("/databases/external/{kb_id}/files/{file_id}/find")
@@ -134,11 +134,11 @@ async def find_external_file(
             max_windows=payload.max_windows,
             window_size=payload.window_size,
         )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except Exception as e:
-        logger.exception(f"external 知识库文件内检索失败 {e}")
-        raise HTTPException(status_code=400, detail="知识库文件内检索失败") from e
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error("External knowledge file search failed: exception_type={}", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="知识库文件内检索失败") from exc
 
 
 async def _require_accessible_kb(
