@@ -246,7 +246,11 @@
           </div>
 
           <div v-if="isMilvus && activeTab === 'experiments'" class="tab-panel">
-            <EvaluationExperimentTab v-if="kbId" :kb-id="kbId" />
+            <EvaluationExperimentTab
+              v-if="kbId"
+              :kb-id="kbId"
+              :initial-experiment-id="String(route.query.experiment || '')"
+            />
           </div>
 
           <div v-if="isMilvus && activeTab === 'benchmarks'" class="tab-panel">
@@ -487,13 +491,26 @@ const tabs = computed(() => {
 const visibleTabs = computed(() => tabs.value)
 const activeTab = ref('filetable')
 
+const requestedTab = () => {
+  const tab = typeof route.query.tab === 'string' ? route.query.tab : ''
+  return tabs.value.some((item) => item.key === tab) ? tab : ''
+}
+
 watch(
   () => [kbId.value, isMilvus.value],
   ([newDbId, isMilvusType]) => {
     if (!newDbId) return
-    activeTab.value = isMilvusType ? 'filetable' : 'query'
+    activeTab.value = requestedTab() || (isMilvusType ? 'filetable' : 'query')
   },
   { immediate: true }
+)
+
+watch(
+  () => route.query.tab,
+  () => {
+    const tab = requestedTab()
+    if (tab) activeTab.value = tab
+  }
 )
 
 watch(visibleTabs, (nextTabs) => {

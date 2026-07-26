@@ -210,14 +210,17 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { FileDown, FileUp, FlaskConical, ListChecks, Plus, Trash2 } from 'lucide-vue-next'
 import { databaseApi, evaluationApi } from '@/apis/knowledge_api'
 import ModelSelectorComponent from '@/components/ModelSelectorComponent.vue'
 import ResourceEmptyState from '@/components/shared/ResourceEmptyState.vue'
 
-const props = defineProps({ kbId: { type: String, required: true } })
+const props = defineProps({
+  kbId: { type: String, required: true },
+  initialExperimentId: { type: String, default: '' }
+})
 
 const loading = ref(false)
 const datasets = ref([])
@@ -556,6 +559,13 @@ const deleteExperiment = async (record) => {
 
 onMounted(async () => {
   await Promise.all([loadDatasets(), loadDatabases(), loadExperiments()])
+  const initial = experiments.value.find((item) => item.experiment_id === props.initialExperimentId)
+  if (initial) await viewExperiment(initial)
+})
+watch(() => props.initialExperimentId, async (experimentId) => {
+  if (!experimentId || selectedExperiment.value?.experiment_id === experimentId) return
+  const experiment = experiments.value.find((item) => item.experiment_id === experimentId)
+  if (experiment) await viewExperiment(experiment)
 })
 onUnmounted(() => refreshTimer && window.clearInterval(refreshTimer))
 </script>

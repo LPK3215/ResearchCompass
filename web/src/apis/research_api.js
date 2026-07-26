@@ -11,6 +11,60 @@ const buildQuery = (params = {}) => {
 }
 
 export const researchApi = {
+  createProject: (kbId, payload) =>
+    apiRequest(`/api/research/databases/${encodeURIComponent(kbId)}/projects`, {
+      method: 'POST', body: JSON.stringify(payload)
+    }),
+
+  listProjects: (kbId, params = {}) => {
+    const query = buildQuery(params)
+    return apiGet(
+      `/api/research/databases/${encodeURIComponent(kbId)}/projects${query ? `?${query}` : ''}`
+    )
+  },
+
+  getProject: (projectId) =>
+    apiGet(`/api/research/projects/${encodeURIComponent(projectId)}`),
+
+  updateProject: (projectId, payload) =>
+    apiRequest(`/api/research/projects/${encodeURIComponent(projectId)}`, {
+      method: 'PATCH', body: JSON.stringify(payload)
+    }),
+
+  deleteProject: (projectId) =>
+    apiRequest(`/api/research/projects/${encodeURIComponent(projectId)}`, { method: 'DELETE' }),
+
+  listProjectAssetCandidates: (projectId, params = {}) => {
+    const query = buildQuery(params)
+    return apiGet(
+      `/api/research/projects/${encodeURIComponent(projectId)}/asset-candidates${query ? `?${query}` : ''}`
+    )
+  },
+
+  addProjectAssets: (projectId, payload) =>
+    apiRequest(`/api/research/projects/${encodeURIComponent(projectId)}/assets`, {
+      method: 'POST', body: JSON.stringify(payload)
+    }),
+
+  listProjectAssets: (projectId, params = {}) => {
+    const query = buildQuery(params)
+    return apiGet(
+      `/api/research/projects/${encodeURIComponent(projectId)}/assets${query ? `?${query}` : ''}`
+    )
+  },
+
+  updateProjectAsset: (projectId, assetId, payload) =>
+    apiRequest(
+      `/api/research/projects/${encodeURIComponent(projectId)}/assets/${encodeURIComponent(assetId)}`,
+      { method: 'PATCH', body: JSON.stringify(payload) }
+    ),
+
+  removeProjectAsset: (projectId, assetId) =>
+    apiRequest(
+      `/api/research/projects/${encodeURIComponent(projectId)}/assets/${encodeURIComponent(assetId)}`,
+      { method: 'DELETE' }
+    ),
+
   listPapers: (kbId, params = {}) => {
     const query = buildQuery(params)
     return apiGet(`/api/research/databases/${encodeURIComponent(kbId)}/papers${query ? `?${query}` : ''}`)

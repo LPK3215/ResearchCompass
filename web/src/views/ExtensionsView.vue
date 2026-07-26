@@ -96,6 +96,7 @@ const activeChildLoading = computed(() => {
 watch(
   () => [route.query.tab, userStore.isAdmin],
   ([tab]) => {
+    if (isDetailPage.value) return
     const nextTab = normalizeTab(tab)
     if (activeTab.value !== nextTab) activeTab.value = nextTab
     if (tab && tab !== nextTab) replaceTabQuery(nextTab)
@@ -104,6 +105,7 @@ watch(
 )
 
 watch(activeTab, (tab) => {
+  if (isDetailPage.value) return
   if (!tab) return
   const nextTab = normalizeTab(tab)
   if (nextTab !== tab) {

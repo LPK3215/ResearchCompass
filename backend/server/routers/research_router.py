@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -9,6 +9,19 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from server.utils.auth_middleware import get_required_user
 from server.utils.client_ip import extract_client_ip
+from yuxi.services.research_project_service import (
+    ResearchProjectError,
+    add_project_assets,
+    create_research_project,
+    delete_research_project,
+    get_research_project,
+    list_project_asset_candidates,
+    list_project_assets,
+    list_research_projects,
+    remove_project_asset,
+    update_project_asset_notes,
+    update_research_project,
+)
 from yuxi.services.research_paper_service import (
     add_paper_tag_view,
     export_papers_bibtex,
@@ -85,6 +98,106 @@ class PaperTagRequest(BaseModel):
         if not normalized:
             raise ValueError("标签不能为空")
         return normalized
+
+
+class CreateResearchProjectRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=255)
+    research_question: str = Field(..., min_length=1, max_length=8000)
+    description: str = Field(default="", max_length=12000)
+    tags: list[str] = Field(default_factory=list, max_length=20)
+    target_date: date | None = None
+    next_action: str = Field(default="", max_length=4000)
+
+    @field_validator("title", "research_question")
+    @classmethod
+    def normalize_required_project_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("字段不能为空")
+        return normalized
+
+    @field_validator("description", "next_action")
+    @classmethod
+    def normalize_optional_project_text(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("tags")
+    @classmethod
+    def normalize_project_tags(cls, value: list[str]) -> list[str]:
+        normalized = [item.strip() for item in value]
+        if any(not item or len(item) > 64 for item in normalized):
+            raise ValueError("项目标签不能为空且不能超过 64 个字符")
+        return list(dict.fromkeys(normalized))
+
+
+class UpdateResearchProjectRequest(BaseModel):
+    title: str | None = Field(default=None, max_length=255)
+    research_question: str | None = Field(default=None, max_length=8000)
+    description: str | None = Field(default=None, max_length=12000)
+    status: str | None = Field(default=None, pattern=r"^(active|completed|archived)$")
+    progress: int | None = Field(default=None, ge=0, le=100)
+    next_action: str | None = Field(default=None, max_length=4000)
+    tags: list[str] | None = Field(default=None, max_length=20)
+    target_date: date | None = None
+
+    @field_validator("title", "research_question", "description", "next_action")
+    @classmethod
+    def normalize_project_update_text(cls, value: str | None) -> str | None:
+        return value.strip() if isinstance(value, str) else value
+
+    @field_validator("tags")
+    @classmethod
+    def normalize_project_update_tags(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        normalized = [item.strip() for item in value]
+        if any(not item or len(item) > 64 for item in normalized):
+            raise ValueError("项目标签不能为空且不能超过 64 个字符")
+        return list(dict.fromkeys(normalized))
+
+    @model_validator(mode="after")
+    def validate_project_update(self):
+        if not self.model_fields_set:
+            raise ValueError("至少提供一个需要更新的字段")
+        for field in ("title", "research_question", "status", "progress", "tags"):
+            if field in self.model_fields_set and getattr(self, field) is None:
+                raise ValueError(f"{field} 不能为 null")
+        if "title" in self.model_fields_set and not self.title:
+            raise ValueError("项目标题不能为空")
+        if "research_question" in self.model_fields_set and not self.research_question:
+            raise ValueError("研究问题不能为空")
+        return self
+
+
+class AddResearchProjectAssetsRequest(BaseModel):
+    asset_type: str = Field(
+        ...,
+        pattern=r"^(paper|search_run|synthesis_run|analysis_run|evaluation_experiment)$",
+    )
+    reference_ids: list[str] = Field(..., min_length=1, max_length=100)
+    notes: str = Field(default="", max_length=4000)
+
+    @field_validator("reference_ids")
+    @classmethod
+    def normalize_project_reference_ids(cls, value: list[str]) -> list[str]:
+        normalized = [item.strip() for item in value]
+        if any(not item or len(item) > 64 for item in normalized):
+            raise ValueError("成果标识无效")
+        return list(dict.fromkeys(normalized))
+
+    @field_validator("notes")
+    @classmethod
+    def normalize_asset_notes(cls, value: str) -> str:
+        return value.strip()
+
+
+class UpdateResearchProjectAssetRequest(BaseModel):
+    notes: str = Field(default="", max_length=4000)
+
+    @field_validator("notes")
+    @classmethod
+    def normalize_project_asset_notes(cls, value: str) -> str:
+        return value.strip()
 
 
 class PaperMetadataUpdate(BaseModel):
@@ -409,6 +522,190 @@ def _user_study_http_error(exc: ResearchUserStudyError) -> HTTPException:
 
 def _public_request_client_key(request: Request) -> str:
     return extract_client_ip(request)
+
+
+def _project_http_error(exc: ResearchProjectError) -> HTTPException:
+    status = {
+        "forbidden": 403,
+        "project_not_found": 404,
+        "asset_not_found": 404,
+        "asset_already_linked": 409,
+        "project_archived": 409,
+        "project_read_only": 409,
+        "invalid_project_status": 422,
+        "invalid_asset_type": 422,
+    }.get(exc.error_type, 502)
+    return HTTPException(status_code=status, detail={"error": exc.error_type, "message": exc.message})
+
+
+@research.post("/databases/{kb_id}/projects", status_code=201)
+async def create_project(
+    kb_id: str,
+    payload: CreateResearchProjectRequest,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await create_research_project(
+            kb_id=kb_id,
+            current_user=current_user,
+            **payload.model_dump(),
+        )
+    except ResearchProjectError as exc:
+        raise _project_http_error(exc) from exc
+
+
+@research.get("/databases/{kb_id}/projects")
+async def list_projects(
+    kb_id: str,
+    status: str | None = Query(default=None, pattern=r"^(active|completed|archived)$"),
+    query: str | None = Query(default=None, max_length=500),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await list_research_projects(
+            kb_id=kb_id,
+            current_user=current_user,
+            status=status,
+            query=query.strip() if query else None,
+            offset=offset,
+            limit=limit,
+        )
+    except ResearchProjectError as exc:
+        raise _project_http_error(exc) from exc
+
+
+@research.get("/projects/{project_id}")
+async def project_detail(project_id: str, current_user: User = Depends(get_required_user)):
+    try:
+        return await get_research_project(project_id=project_id, current_user=current_user)
+    except ResearchProjectError as exc:
+        raise _project_http_error(exc) from exc
+
+
+@research.patch("/projects/{project_id}")
+async def update_project(
+    project_id: str,
+    payload: UpdateResearchProjectRequest,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await update_research_project(
+            project_id=project_id,
+            current_user=current_user,
+            values=payload.model_dump(exclude_unset=True),
+        )
+    except ResearchProjectError as exc:
+        raise _project_http_error(exc) from exc
+
+
+@research.delete("/projects/{project_id}", status_code=204)
+async def remove_project(project_id: str, current_user: User = Depends(get_required_user)):
+    try:
+        await delete_research_project(project_id=project_id, current_user=current_user)
+    except ResearchProjectError as exc:
+        raise _project_http_error(exc) from exc
+
+
+@research.get("/projects/{project_id}/asset-candidates")
+async def project_asset_candidates(
+    project_id: str,
+    asset_type: str = Query(
+        ...,
+        pattern=r"^(paper|search_run|synthesis_run|analysis_run|evaluation_experiment)$",
+    ),
+    query: str | None = Query(default=None, max_length=500),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await list_project_asset_candidates(
+            project_id=project_id,
+            current_user=current_user,
+            asset_type=asset_type,
+            query=query.strip() if query else None,
+            offset=offset,
+            limit=limit,
+        )
+    except ResearchProjectError as exc:
+        raise _project_http_error(exc) from exc
+
+
+@research.post("/projects/{project_id}/assets", status_code=201)
+async def add_assets_to_project(
+    project_id: str,
+    payload: AddResearchProjectAssetsRequest,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await add_project_assets(
+            project_id=project_id,
+            current_user=current_user,
+            **payload.model_dump(),
+        )
+    except ResearchProjectError as exc:
+        raise _project_http_error(exc) from exc
+
+
+@research.get("/projects/{project_id}/assets")
+async def project_assets(
+    project_id: str,
+    asset_type: str | None = Query(
+        default=None,
+        pattern=r"^(paper|search_run|synthesis_run|analysis_run|evaluation_experiment)$",
+    ),
+    query: str | None = Query(default=None, max_length=500),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await list_project_assets(
+            project_id=project_id,
+            current_user=current_user,
+            asset_type=asset_type,
+            query=query.strip() if query else None,
+            offset=offset,
+            limit=limit,
+        )
+    except ResearchProjectError as exc:
+        raise _project_http_error(exc) from exc
+
+
+@research.patch("/projects/{project_id}/assets/{asset_id}")
+async def update_project_asset(
+    project_id: str,
+    asset_id: str,
+    payload: UpdateResearchProjectAssetRequest,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await update_project_asset_notes(
+            project_id=project_id,
+            asset_id=asset_id,
+            current_user=current_user,
+            notes=payload.notes,
+        )
+    except ResearchProjectError as exc:
+        raise _project_http_error(exc) from exc
+
+
+@research.delete("/projects/{project_id}/assets/{asset_id}")
+async def remove_asset_from_project(
+    project_id: str,
+    asset_id: str,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await remove_project_asset(
+            project_id=project_id,
+            asset_id=asset_id,
+            current_user=current_user,
+        )
+    except ResearchProjectError as exc:
+        raise _project_http_error(exc) from exc
 
 
 @research.get("/databases/{kb_id}/papers")
@@ -975,9 +1272,7 @@ async def create_paper_analysis_evaluation(
 @research.get("/databases/{kb_id}/paper-analysis-evaluations")
 async def list_paper_analysis_evaluations(kb_id: str, current_user: User = Depends(get_required_user)):
     try:
-        return await AcademicPaperAnalysisEvaluationService().list_evaluations(
-            kb_id=kb_id, current_user=current_user
-        )
+        return await AcademicPaperAnalysisEvaluationService().list_evaluations(kb_id=kb_id, current_user=current_user)
     except AcademicPaperAnalysisEvaluationError as exc:
         raise _analysis_evaluation_http_error(exc) from exc
 
@@ -1051,9 +1346,7 @@ async def add_paper_tag(
     payload: PaperTagRequest,
     current_user: User = Depends(get_required_user),
 ):
-    return await add_paper_tag_view(
-        kb_id=kb_id, paper_id=paper_id, tag=payload.tag, current_user=current_user
-    )
+    return await add_paper_tag_view(kb_id=kb_id, paper_id=paper_id, tag=payload.tag, current_user=current_user)
 
 
 @research.delete("/databases/{kb_id}/papers/{paper_id}/tags")
@@ -1063,9 +1356,7 @@ async def remove_paper_tag(
     tag: str = Query(..., min_length=1, max_length=64),
     current_user: User = Depends(get_required_user),
 ):
-    return await remove_paper_tag_view(
-        kb_id=kb_id, paper_id=paper_id, tag=tag, current_user=current_user
-    )
+    return await remove_paper_tag_view(kb_id=kb_id, paper_id=paper_id, tag=tag, current_user=current_user)
 
 
 @research.patch("/databases/{kb_id}/papers/{paper_id}")

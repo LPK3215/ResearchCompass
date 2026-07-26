@@ -299,6 +299,7 @@ import { researchApi } from '@/apis/research_api'
 
 const props = defineProps({
   kbId: { type: String, default: '' },
+  focusRunId: { type: String, default: '' },
   databaseOptions: { type: Array, default: () => [] },
   databasesLoading: { type: Boolean, default: false },
   maxPublicationYear: { type: Number, required: true }
@@ -559,6 +560,13 @@ const resetWorkspace = () => {
 }
 
 watch(() => props.kbId, resetWorkspace)
+watch(
+  () => [props.focusRunId, props.kbId],
+  ([runId, kbId]) => {
+    if (runId && kbId) void selectHistoryRun({ run_id: runId })
+  },
+  { immediate: true }
+)
 onMounted(loadHistory)
 onBeforeUnmount(() => { requestGeneration += 1 })
 </script>

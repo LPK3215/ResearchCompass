@@ -5,6 +5,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     Column,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -139,6 +140,92 @@ class AcademicPaper(Base):
     indexed_revision = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime(timezone=True), default=utc_now_naive)
     updated_at = Column(DateTime(timezone=True), default=utc_now_naive, onupdate=utc_now_naive)
+
+
+class ResearchProject(Base):
+    """用户围绕一个论文知识库持续推进的研究课题。"""
+
+    __tablename__ = "research_projects"
+    __table_args__ = (
+        UniqueConstraint("project_id", name="uq_research_projects_project_id"),
+        Index("ix_research_projects_uid_status_updated", "uid", "status", "updated_at"),
+        Index("ix_research_projects_kb_uid", "kb_id", "uid"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    project_id = Column(String(64), nullable=False, unique=True, index=True)
+    kb_id = Column(String(80), ForeignKey("knowledge_bases.kb_id", ondelete="CASCADE"), nullable=False, index=True)
+    uid = Column(String(64), nullable=False, index=True)
+    title = Column(String(255), nullable=False)
+    research_question = Column(Text, nullable=False)
+    description = Column(Text)
+    status = Column(String(32), nullable=False, default="active", index=True)
+    progress = Column(Integer, nullable=False, default=0)
+    next_action = Column(Text)
+    tags = Column(JSON_VALUE, nullable=False, default=list)
+    target_date = Column(Date)
+    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
+    updated_at = Column(DateTime(timezone=True), default=utc_now_naive, onupdate=utc_now_naive)
+    completed_at = Column(DateTime(timezone=True))
+    archived_at = Column(DateTime(timezone=True))
+
+
+class ResearchProjectAsset(Base):
+    """项目内经过源对象权限校验的论文或研究运行引用。"""
+
+    __tablename__ = "research_project_assets"
+    __table_args__ = (
+        UniqueConstraint("asset_id", name="uq_research_project_assets_asset_id"),
+        UniqueConstraint(
+            "project_id",
+            "asset_type",
+            "reference_id",
+            name="uq_research_project_assets_reference",
+        ),
+        Index("ix_research_project_assets_project_type_added", "project_id", "asset_type", "added_at"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    asset_id = Column(String(64), nullable=False, unique=True, index=True)
+    project_id = Column(
+        String(64),
+        ForeignKey("research_projects.project_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    asset_type = Column(String(32), nullable=False, index=True)
+    reference_id = Column(String(64), nullable=False, index=True)
+    title_snapshot = Column(Text, nullable=False)
+    summary_snapshot = Column(Text)
+    status_snapshot = Column(String(32))
+    metadata_snapshot = Column(JSON_VALUE, nullable=False, default=dict)
+    notes = Column(Text)
+    added_at = Column(DateTime(timezone=True), default=utc_now_naive)
+    updated_at = Column(DateTime(timezone=True), default=utc_now_naive, onupdate=utc_now_naive)
+
+
+class ResearchProjectActivity(Base):
+    """用于项目时间线的用户可见变更记录。"""
+
+    __tablename__ = "research_project_activities"
+    __table_args__ = (
+        UniqueConstraint("activity_id", name="uq_research_project_activities_activity_id"),
+        Index("ix_research_project_activities_project_created", "project_id", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    activity_id = Column(String(64), nullable=False, unique=True, index=True)
+    project_id = Column(
+        String(64),
+        ForeignKey("research_projects.project_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    activity_type = Column(String(64), nullable=False, index=True)
+    asset_type = Column(String(32))
+    reference_id = Column(String(64))
+    payload = Column(JSON_VALUE, nullable=False, default=dict)
+    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
 
 
 class ResearchSearchRun(Base):

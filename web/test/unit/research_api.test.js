@@ -57,6 +57,67 @@ test('searchPapers sends the selected retrieval contract as JSON', async () => {
   ])
 })
 
+test('research project APIs encode project and asset identifiers', async () => {
+  const createPayload = { title: 'Project', research_question: 'Question?' }
+  const assetPayload = { asset_type: 'paper', reference_ids: ['paper/1'] }
+  await researchApi.createProject('kb/team one', createPayload)
+  await researchApi.listProjects('kb/team one', { status: 'active', query: 'graph RAG', offset: 0, limit: 20 })
+  await researchApi.getProject('project/1')
+  await researchApi.updateProject('project/1', { progress: 60 })
+  await researchApi.listProjectAssetCandidates('project/1', { asset_type: 'paper', limit: 20 })
+  await researchApi.addProjectAssets('project/1', assetPayload)
+  await researchApi.listProjectAssets('project/1', { asset_type: 'paper', offset: 0, limit: 20 })
+  await researchApi.updateProjectAsset('project/1', 'asset/1', { notes: 'Important' })
+  await researchApi.removeProjectAsset('project/1', 'asset/1')
+  await researchApi.deleteProject('project/1')
+
+  assert.deepEqual(calls, [
+    {
+      method: 'apiRequest',
+      args: [
+        '/api/research/databases/kb%2Fteam%20one/projects',
+        { method: 'POST', body: JSON.stringify(createPayload) }
+      ]
+    },
+    {
+      method: 'apiGet',
+      args: ['/api/research/databases/kb%2Fteam%20one/projects?status=active&query=graph+RAG&offset=0&limit=20']
+    },
+    { method: 'apiGet', args: ['/api/research/projects/project%2F1'] },
+    {
+      method: 'apiRequest',
+      args: ['/api/research/projects/project%2F1', { method: 'PATCH', body: JSON.stringify({ progress: 60 }) }]
+    },
+    {
+      method: 'apiGet',
+      args: ['/api/research/projects/project%2F1/asset-candidates?asset_type=paper&limit=20']
+    },
+    {
+      method: 'apiRequest',
+      args: [
+        '/api/research/projects/project%2F1/assets',
+        { method: 'POST', body: JSON.stringify(assetPayload) }
+      ]
+    },
+    {
+      method: 'apiGet',
+      args: ['/api/research/projects/project%2F1/assets?asset_type=paper&offset=0&limit=20']
+    },
+    {
+      method: 'apiRequest',
+      args: [
+        '/api/research/projects/project%2F1/assets/asset%2F1',
+        { method: 'PATCH', body: JSON.stringify({ notes: 'Important' }) }
+      ]
+    },
+    {
+      method: 'apiRequest',
+      args: ['/api/research/projects/project%2F1/assets/asset%2F1', { method: 'DELETE' }]
+    },
+    { method: 'apiRequest', args: ['/api/research/projects/project%2F1', { method: 'DELETE' }] }
+  ])
+})
+
 test('search history APIs encode ids and preserve management contracts', async () => {
   await researchApi.listSearchRuns('kb/team one', { offset: 20, limit: 20 })
   await researchApi.getSearchRun('run/1')

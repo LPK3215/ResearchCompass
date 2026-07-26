@@ -11,6 +11,9 @@ from yuxi.storage.postgres.manager import pg_manager
 from yuxi.storage.postgres.models_business import Department, TaskRecord, User
 from yuxi.storage.postgres.models_knowledge import (
     AcademicPaper,
+    AcademicPaperAnalysisRun,
+    EvaluationDataset,
+    EvaluationExperiment,
     KnowledgeChunk,
     KnowledgeFile,
     ResearchSearchRun,
@@ -384,12 +387,24 @@ async def _exercise_research_compass_core_business(
         pending_run_id=pending_run_id,
         pending_task_id=pending_task_id,
     )
+    await _exercise_research_project_api(
+        test_client,
+        admin_headers=admin_headers,
+        admin_uid=admin_uid,
+        kb_id=kb_id,
+        seeded=seeded,
+        synthesis_run_id=success_run_id,
+    )
     await _assert_active_synthesis_unique_constraint(kb_id=kb_id, uid=admin_uid)
-    return [success_run_id, pending_run_id], [pending_task_id], {
-        "study_id": study["study_id"],
-        "invite_id": study["invites"][0]["invite_id"],
-        "response_id": response_id,
-    }
+    return (
+        [success_run_id, pending_run_id],
+        [pending_task_id],
+        {
+            "study_id": study["study_id"],
+            "invite_id": study["invites"][0]["invite_id"],
+            "response_id": response_id,
+        },
+    )
 
 
 async def _exercise_research_search_history_api(
@@ -659,9 +674,10 @@ async def _exercise_research_synthesis_api(
     detail = detail_response.json()
     assert detail["status"] == "success"
     assert detail["result"]["validation"]["status"] == "verified"
-    assert detail["result"]["claims"][0]["evidence"][0]["chunk_id"] == detail["result"]["sources"][0][
-        "evidence_chunk_ids"
-    ][0]
+    assert (
+        detail["result"]["claims"][0]["evidence"][0]["chunk_id"]
+        == detail["result"]["sources"][0]["evidence_chunk_ids"][0]
+    )
 
     markdown_response = await test_client.get(
         f"/api/research/synthesis-runs/{success_run_id}/export",
@@ -710,6 +726,260 @@ async def _exercise_research_synthesis_api(
         task = await session.get(TaskRecord, pending_task_id)
         assert task is not None
         task.status = "cancelled"
+
+
+async def _exercise_research_project_api(
+    test_client,
+    *,
+    admin_headers: dict[str, str],
+    admin_uid: str,
+    kb_id: str,
+    seeded: dict[str, str],
+    synthesis_run_id: str,
+) -> None:
+    suffix = uuid.uuid4().hex[:12]
+    search_run_id = f"project_search_{suffix}"
+    analysis_run_id = f"project_analysis_{suffix}"
+    dataset_id = f"project_dataset_{suffix}"
+    experiment_id = f"project_experiment_{suffix}"
+    async with pg_manager.get_async_session_context() as session:
+        paper = await session.scalar(
+            select(AcademicPaper).where(
+                AcademicPaper.kb_id == kb_id,
+                AcademicPaper.paper_id == seeded["paper_id"],
+            )
+        )
+        assert paper is not None
+        session.add_all(
+            [
+                ResearchSearchRun(
+                    run_id=search_run_id,
+                    kb_id=kb_id,
+                    uid=admin_uid,
+                    raw_query="Project-scoped evidence search",
+                    rewritten_query="project evidence",
+                    model_config_json={},
+                    retrieval_config={"mode": "local_hybrid"},
+                    status="success",
+                    stage_timings={},
+                    result_count=1,
+                    result_snapshot={"items": []},
+                ),
+                AcademicPaperAnalysisRun(
+                    run_id=analysis_run_id,
+                    kb_id=kb_id,
+                    academic_paper_id=paper.id,
+                    uid=admin_uid,
+                    model_config_json={},
+                    strategy="multi_agent",
+                    status="success",
+                    stage="completed",
+                    result={"summary": "Verified paper analysis"},
+                ),
+                EvaluationDataset(
+                    dataset_id=dataset_id,
+                    kb_id=kb_id,
+                    name="Project evaluation dataset",
+                    description="Dataset for research project integration coverage",
+                    item_count=1,
+                    has_gold_chunks=True,
+                    has_gold_answers=False,
+                    created_by=admin_uid,
+                ),
+            ]
+        )
+        await session.flush()
+        session.add(
+            EvaluationExperiment(
+                experiment_id=experiment_id,
+                name="Project ablation experiment",
+                description="Reproducible experiment linked to the project",
+                source_kb_id=kb_id,
+                dataset_id=dataset_id,
+                status="completed",
+                dataset_fingerprint=f"sha256:{suffix}",
+                corpus_snapshot={},
+                shared_config={},
+                comparison_report={"overall_score": 0.82},
+                total_variants=2,
+                completed_variants=2,
+                created_by=admin_uid,
+            )
+        )
+
+    create_response = await test_client.post(
+        f"/api/research/databases/{kb_id}/projects",
+        json={
+            "title": "Evidence-grounded project workspace",
+            "research_question": "How can a complete evidence trail support this research question?",
+            "description": "Integration coverage for a consumer research project.",
+            "tags": ["evidence", "reproducibility"],
+            "target_date": "2027-06-30",
+            "next_action": "Collect the first evidence set",
+        },
+        headers=admin_headers,
+    )
+    assert create_response.status_code == 201, create_response.text
+    project = create_response.json()
+    project_id = project["project_id"]
+    assert project["status"] == "active"
+    assert project["asset_counts"]["total"] == 0
+
+    list_response = await test_client.get(
+        f"/api/research/databases/{kb_id}/projects",
+        params={"status": "active", "query": "evidence-grounded", "offset": 0, "limit": 20},
+        headers=admin_headers,
+    )
+    assert list_response.status_code == 200, list_response.text
+    listed = list_response.json()
+    assert listed["total"] == 1
+    assert listed["items"][0]["project_id"] == project_id
+    assert listed["has_more"] is False
+
+    references = {
+        "paper": seeded["paper_id"],
+        "search_run": search_run_id,
+        "synthesis_run": synthesis_run_id,
+        "analysis_run": analysis_run_id,
+        "evaluation_experiment": experiment_id,
+    }
+    for asset_type, reference_id in references.items():
+        candidates_response = await test_client.get(
+            f"/api/research/projects/{project_id}/asset-candidates",
+            params={"asset_type": asset_type, "offset": 0, "limit": 100},
+            headers=admin_headers,
+        )
+        assert candidates_response.status_code == 200, candidates_response.text
+        candidate = next(item for item in candidates_response.json()["items"] if item["reference_id"] == reference_id)
+        assert candidate["linked"] is False
+
+        add_response = await test_client.post(
+            f"/api/research/projects/{project_id}/assets",
+            json={"asset_type": asset_type, "reference_ids": [reference_id], "notes": f"{asset_type} note"},
+            headers=admin_headers,
+        )
+        assert add_response.status_code == 201, add_response.text
+        assert add_response.json()["items"][0]["available"] is True
+
+    duplicate_response = await test_client.post(
+        f"/api/research/projects/{project_id}/assets",
+        json={"asset_type": "paper", "reference_ids": [seeded["paper_id"]]},
+        headers=admin_headers,
+    )
+    assert duplicate_response.status_code == 409
+    assert duplicate_response.json()["detail"]["error"] == "asset_already_linked"
+
+    assets_response = await test_client.get(
+        f"/api/research/projects/{project_id}/assets",
+        params={"offset": 0, "limit": 3},
+        headers=admin_headers,
+    )
+    assert assets_response.status_code == 200, assets_response.text
+    assets_page = assets_response.json()
+    assert assets_page["total"] == 5
+    assert len(assets_page["items"]) == 3
+    assert assets_page["has_more"] is True
+
+    paper_assets_response = await test_client.get(
+        f"/api/research/projects/{project_id}/assets",
+        params={"asset_type": "paper", "query": "Evidence-grounded", "offset": 0, "limit": 20},
+        headers=admin_headers,
+    )
+    assert paper_assets_response.status_code == 200, paper_assets_response.text
+    paper_asset = paper_assets_response.json()["items"][0]
+    assert paper_asset["reference_id"] == seeded["paper_id"]
+
+    detail_response = await test_client.get(f"/api/research/projects/{project_id}", headers=admin_headers)
+    assert detail_response.status_code == 200, detail_response.text
+    detail = detail_response.json()
+    assert detail["asset_counts"]["total"] == 5
+    activity_types = [item["activity_type"] for item in detail["activities"]]
+    assert activity_types.count("asset_added") == 5
+    assert "project_created" in activity_types
+
+    async with _temporary_superadmin(test_client) as other_admin:
+        isolated_response = await test_client.get(
+            f"/api/research/projects/{project_id}",
+            headers=other_admin["headers"],
+        )
+        assert isolated_response.status_code == 404
+
+    update_response = await test_client.patch(
+        f"/api/research/projects/{project_id}",
+        json={"progress": 75, "next_action": "Validate the linked synthesis", "tags": ["evidence", "validated"]},
+        headers=admin_headers,
+    )
+    assert update_response.status_code == 200, update_response.text
+    assert update_response.json()["progress"] == 75
+
+    complete_response = await test_client.patch(
+        f"/api/research/projects/{project_id}",
+        json={"status": "completed"},
+        headers=admin_headers,
+    )
+    assert complete_response.status_code == 200, complete_response.text
+    assert complete_response.json()["progress"] == 100
+    assert complete_response.json()["completed_at"] is not None
+
+    read_only_response = await test_client.delete(
+        f"/api/research/projects/{project_id}/assets/{paper_asset['asset_id']}",
+        headers=admin_headers,
+    )
+    assert read_only_response.status_code == 409
+    assert read_only_response.json()["detail"]["error"] == "project_read_only"
+
+    archive_response = await test_client.patch(
+        f"/api/research/projects/{project_id}",
+        json={"status": "archived"},
+        headers=admin_headers,
+    )
+    assert archive_response.status_code == 200, archive_response.text
+    blocked_edit = await test_client.patch(
+        f"/api/research/projects/{project_id}",
+        json={"title": "Archived projects are read only"},
+        headers=admin_headers,
+    )
+    assert blocked_edit.status_code == 409
+    assert blocked_edit.json()["detail"]["error"] == "project_archived"
+
+    reactivate_response = await test_client.patch(
+        f"/api/research/projects/{project_id}",
+        json={"status": "active", "progress": 80},
+        headers=admin_headers,
+    )
+    assert reactivate_response.status_code == 200, reactivate_response.text
+    assert reactivate_response.json()["completed_at"] is None
+    assert reactivate_response.json()["archived_at"] is None
+
+    async with pg_manager.get_async_session_context() as session:
+        paper = await session.scalar(
+            select(AcademicPaper).where(
+                AcademicPaper.kb_id == kb_id,
+                AcademicPaper.paper_id == seeded["paper_id"],
+            )
+        )
+        assert paper is not None
+        await session.delete(paper)
+
+    notes_response = await test_client.patch(
+        f"/api/research/projects/{project_id}/assets/{paper_asset['asset_id']}",
+        json={"notes": "Source removed; retain this snapshot for provenance"},
+        headers=admin_headers,
+    )
+    assert notes_response.status_code == 200, notes_response.text
+    assert notes_response.json()["available"] is False
+    assert notes_response.json()["title"] == "Evidence-grounded Research Opportunity Discovery"
+
+    delete_response = await test_client.delete(f"/api/research/projects/{project_id}", headers=admin_headers)
+    assert delete_response.status_code == 204, delete_response.text
+    missing_response = await test_client.get(f"/api/research/projects/{project_id}", headers=admin_headers)
+    assert missing_response.status_code == 404
+
+    source_response = await test_client.get(
+        f"/api/research/synthesis-runs/{synthesis_run_id}",
+        headers=admin_headers,
+    )
+    assert source_response.status_code == 200, source_response.text
 
 
 async def _assert_active_synthesis_unique_constraint(*, kb_id: str, uid: str) -> None:

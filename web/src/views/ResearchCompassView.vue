@@ -53,6 +53,7 @@
 
     <main class="research-content">
       <a-tabs v-model:active-key="activeMode" class="research-tabs">
+        <a-tab-pane key="projects" tab="研究项目" />
         <a-tab-pane key="library" tab="论文库" />
         <a-tab-pane key="search" tab="智能检索" />
         <a-tab-pane key="synthesis" tab="证据综述" />
@@ -62,6 +63,15 @@
         <a-tab-pane key="analysis-evaluations" tab="分析对比" />
         <a-tab-pane v-if="userStore.isAdmin" key="user-studies" tab="用户评测" />
       </a-tabs>
+
+      <ResearchProjectWorkspace
+        v-if="activeMode === 'projects'"
+        :kb-id="selectedKbId"
+        :database-options="databaseOptions"
+        :databases-loading="databasesLoading"
+        @change-database="handleDatabaseChange"
+        @continue-asset="continueProjectAsset"
+      />
 
       <section v-if="activeMode === 'user-studies'" class="user-studies-workspace">
         <div class="toolbar-field database-field">
@@ -100,6 +110,7 @@
       <ResearchSearchWorkspace
         v-if="activeMode === 'search'"
         :kb-id="selectedKbId"
+        :focus-run-id="projectSearchRunId"
         :database-options="databaseOptions"
         :databases-loading="databasesLoading"
         :max-publication-year="maxPublicationYear"
@@ -794,7 +805,7 @@
           <p class="opportunity-limitation">{{ opportunityData.methodology.limitation }}</p>
         </div>
       </section>
-      <template v-else>
+      <template v-else-if="activeMode === 'library'">
       <section class="research-toolbar" aria-label="论文筛选">
         <div class="toolbar-field database-field">
           <label for="research-database">论文知识库</label>
@@ -1153,6 +1164,7 @@ import { databaseApi } from '@/apis/knowledge_api'
 import { researchApi } from '@/apis/research_api'
 import { downloadWorkspaceKnowledgeFile } from '@/apis/workspace_api'
 import PaperDetailDrawer from '@/components/research/PaperDetailDrawer.vue'
+import ResearchProjectWorkspace from '@/components/research/ResearchProjectWorkspace.vue'
 import ResearchSearchWorkspace from '@/components/research/ResearchSearchWorkspace.vue'
 import UserStudyManager from '@/components/research/UserStudyManager.vue'
 import PaperAnalysisEvaluationManager from '@/components/research/PaperAnalysisEvaluationManager.vue'
@@ -1218,7 +1230,8 @@ const externalSearchPerformed = ref(false)
 const externalImportError = ref('')
 const externalImportingId = ref('')
 const maxPublicationYear = new Date().getFullYear() + 1
-const activeMode = ref('library')
+const activeMode = ref('projects')
+const projectSearchRunId = ref('')
 const synthesisQuery = ref('')
 const synthesisRuns = ref([])
 const synthesisTotal = ref(0)
@@ -2273,6 +2286,44 @@ const startSynthesisFromSearch = ({ query, yearFrom, yearTo, topK, recallTopK })
   synthesisQuery.value = query || ''
   Object.assign(synthesisFilters, { yearFrom, yearTo, topK, recallTopK })
   activeMode.value = 'synthesis'
+}
+
+const continueProjectAsset = async (asset) => {
+  if (!asset?.available) return
+  if (asset.asset_type === 'paper') {
+    openPaper({ paper_id: asset.reference_id })
+    return
+  }
+  if (asset.asset_type === 'search_run') {
+    projectSearchRunId.value = asset.reference_id
+    activeMode.value = 'search'
+    return
+  }
+  if (asset.asset_type === 'synthesis_run') {
+    activeMode.value = 'synthesis'
+    selectedSynthesisRunId.value = asset.reference_id
+    await nextTick()
+    await loadSynthesisRun(asset.reference_id)
+    return
+  }
+  if (asset.asset_type === 'analysis_run') {
+    const paperId = asset.metadata?.paper_id
+    if (!paperId) {
+      message.error('该分析记录缺少论文标识')
+      return
+    }
+    await router.push({
+      name: 'ResearchPaperAnalysis',
+      params: { kbId: selectedKbId.value, paperId }
+    })
+    return
+  }
+  if (asset.asset_type === 'evaluation_experiment') {
+    await router.push({
+      path: `/extensions/knowledgebase/${encodeURIComponent(selectedKbId.value)}`,
+      query: { tab: 'experiments', experiment: asset.reference_id }
+    })
+  }
 }
 
 const applyFilters = () => {
