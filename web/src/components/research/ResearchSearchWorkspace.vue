@@ -19,6 +19,15 @@
           <span class="search-mode-help">{{ selectedSearchMode.description }}</span>
         </div>
 
+        <a-alert
+          v-if="strictModeBlocked"
+          type="warning"
+          show-icon
+          message="引用图谱尚未同步"
+          :description="'严格图谱模式要求知识库已同步引用图谱且包含引用关系。请先在「引用图谱」标签页执行同步，或切换为「本地混合」模式。'"
+          class="strict-mode-warning"
+        />
+
         <div class="search-options">
           <div class="toolbar-field">
             <label for="search-database">论文知识库</label>
@@ -343,7 +352,28 @@ const selectedRun = ref(null)
 const detailLoading = ref(false)
 const pinningRunId = ref('')
 const deletingRunId = ref('')
+const graphCounts = ref(null)
 let requestGeneration = 0
+
+const strictModeBlocked = computed(() => {
+  if (filters.retrievalMode !== strictHybridGraphMode) return false
+  const counts = graphCounts.value
+  if (!counts) return true
+  return (counts.papers || 0) <= 0 || (counts.citations || 0) <= 0
+})
+
+const loadGraphStatus = async () => {
+  if (!props.kbId || filters.retrievalMode !== strictHybridGraphMode) {
+    graphCounts.value = null
+    return
+  }
+  try {
+    const result = await researchApi.getAcademicGraph(props.kbId, { limit: 1 })
+    graphCounts.value = result?.counts || null
+  } catch {
+    graphCounts.value = null
+  }
+}
 
 const filters = reactive({
   yearFrom: null,
@@ -456,6 +486,10 @@ const runResearchSearch = async () => {
     searchError.value = '候选证据数不能小于返回论文数'
     return
   }
+  if (strictModeBlocked.value) {
+    searchError.value = '当前知识库的引用图谱尚未同步（论文或引用关系为空），请先在"引用图谱"标签页同步图谱，或切换为"本地混合"模式'
+    return
+  }
   const generation = requestGeneration
   const kbId = props.kbId
   searchLoading.value = true
@@ -565,11 +599,14 @@ const resetWorkspace = () => {
   historyRuns.value = []
   historyTotal.value = 0
   historyPage.value = 1
+  graphCounts.value = null
   emit('selection-change', null)
   void loadHistory()
+  void loadGraphStatus()
 }
 
 watch(() => props.kbId, resetWorkspace)
+watch(() => filters.retrievalMode, () => { void loadGraphStatus() })
 watch(
   () => [props.focusRunId, props.kbId],
   ([runId, kbId]) => {
@@ -652,6 +689,10 @@ onBeforeUnmount(() => { requestGeneration += 1 })
   font-size: 12px;
   line-height: 32px;
   text-align: right;
+}
+
+.strict-mode-warning {
+  margin-bottom: 12px;
 }
 
 .search-form > label {

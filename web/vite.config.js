@@ -29,6 +29,14 @@ export default defineConfig(({ mode }) => {
         ignored: ['**/node_modules/**', '**/dist/**']
       },
       host: '0.0.0.0'
+    },
+    optimizeDeps: {
+      include: [
+        'echarts/core',
+        'echarts/charts',
+        'echarts/components',
+        'echarts/renderers'
+      ]
     }
   }
 })

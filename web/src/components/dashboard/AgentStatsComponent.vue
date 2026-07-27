@@ -90,7 +90,7 @@
 
 <script setup>
 import { ref, onMounted, watch, nextTick, computed } from 'vue'
-import * as echarts from 'echarts'
+import echarts from '@/utils/echarts'
 import { getColorByIndex } from '@/utils/chartColors'
 import { useThemeStore } from '@/stores/theme'
 

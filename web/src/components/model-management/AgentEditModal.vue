@@ -297,6 +297,7 @@ defineExpose({
     :width="editingAgentId ? 820 : 740"
     :footer="null"
     :closable="false"
+    :mask-closable="!saving && !agentIconUploading"
     @cancel="closeAgentModal"
     @after-open-change="handleAgentModalAfterOpenChange"
   >
@@ -304,7 +305,7 @@ defineExpose({
       <div class="agent-modal-titlebar">
         <span class="agent-modal-title">{{ agentModalTitle }}</span>
         <div class="agent-modal-actions">
-          <a-button :disabled="saving" @click="closeAgentModal">取消</a-button>
+          <a-button :disabled="saving || agentIconUploading" @click="closeAgentModal">取消</a-button>
           <a-button type="primary" :loading="saving" @click="saveAgent">
             {{ agentStore.hasConfigChanges ? '保存（有修改）' : '保存' }}
           </a-button>

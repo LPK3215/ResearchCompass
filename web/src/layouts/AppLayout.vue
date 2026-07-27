@@ -12,6 +12,7 @@ import {
   PanelLeftOpen,
   Radar,
   MessageCirclePlus,
+  Plus,
   Search
 } from 'lucide-vue-next'
 
@@ -223,6 +224,11 @@ const openConversationSearch = () => {
   conversationSearchOpen.value = true
 }
 
+const handleCreateConversation = () => {
+  chatThreadsStore.setCurrentThreadId(null)
+  router.push({ name: 'AgentComp' })
+}
+
 const initAgentNavigation = async () => {
   try {
     if (!agentStore.isInitialized) {
@@ -248,11 +254,6 @@ const handleSearchSelectThread = (thread) => {
   if (!thread?.id) return
   chatThreadsStore.upsertThread(thread)
   handleSelectChat(thread.id)
-}
-
-const handleCreateConversationFromSearch = () => {
-  chatThreadsStore.setCurrentThreadId(null)
-  router.push({ name: 'AgentComp' })
 }
 
 const handleDeleteChat = async (threadId) => {
@@ -373,6 +374,20 @@ provide('settingsModal', {
           <span class="nav-text">搜索对话</span>
         </button>
 
+        <button
+          v-if="isAgentRoute"
+          type="button"
+          class="nav-item nav-item-action"
+          aria-label="新对话"
+          @click.stop="handleCreateConversation"
+        >
+          <a-tooltip placement="right" :open="sidebarCollapsed ? undefined : false">
+            <template #title>新对话</template>
+            <Plus class="icon" size="18" />
+          </a-tooltip>
+          <span class="nav-text">新对话</span>
+        </button>
+
         <template v-for="(item, index) in secondaryNavItems" :key="item.path">
           <div
             v-if="item.section === 'management' && secondaryNavItems[index - 1]?.section !== 'management'"
@@ -464,7 +479,7 @@ provide('settingsModal', {
       v-model:open="conversationSearchOpen"
       :recent-threads="threads"
       @select-thread="handleSearchSelectThread"
-      @create-thread="handleCreateConversationFromSearch"
+      @create-thread="handleCreateConversation"
       @thread-found="handleSearchThreadFound"
     />
 
@@ -726,6 +741,15 @@ div.header,
         background-color: var(--gray-0);
         color: var(--main-color);
         box-shadow: 0 3px 4px rgba(0, 10, 20, 0.07);
+      }
+    }
+
+    &.nav-item-action {
+      color: var(--main-color);
+
+      &:hover {
+        background-color: var(--main-color);
+        color: #fff;
       }
     }
 

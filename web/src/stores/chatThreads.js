@@ -33,14 +33,19 @@ export const useChatThreadsStore = defineStore('chatThreads', () => {
   const loadThreads = async (agentId = null) => {
     try {
       const fetchedThreads = await threadApi.getThreads(agentId, PAGE_SIZE, 0)
-      threads.value = fetchedThreads || []
+      const list = fetchedThreads || []
+      // 后端会按 source 过滤（如 research_copilot 不在通用列表中），
+      // 因此 upsertThread 注入的当前会话可能不在 fetchedThreads 里。
+      // 这里保留当前选中的会话，避免 loadThreads 覆盖后清空 currentThreadId。
+      const fetchedIds = new Set(list.map((thread) => thread.id))
+      const currentThread = currentThreadId.value
+        ? threads.value.find((thread) => thread.id === currentThreadId.value)
+        : null
+      threads.value =
+        currentThread && !fetchedIds.has(currentThread.id)
+          ? [currentThread, ...list]
+          : list
       hasMoreThreads.value = Boolean(fetchedThreads && fetchedThreads.length >= PAGE_SIZE)
-      if (
-        currentThreadId.value &&
-        !threads.value.find((thread) => thread.id === currentThreadId.value)
-      ) {
-        currentThreadId.value = null
-      }
       return threads.value
     } catch (error) {
       console.error('Failed to fetch threads:', error)

@@ -3,8 +3,10 @@ import { defineStore } from 'pinia'
 import { theme } from 'ant-design-vue'
 
 export const useThemeStore = defineStore('theme', () => {
-  // 从 localStorage 读取保存的主题，默认为浅色
-  const isDark = ref(localStorage.getItem('theme') === 'dark')
+  // 从 localStorage 读取保存的主题；未保存时检测系统暗色模式偏好
+  const savedTheme = localStorage.getItem('theme')
+  const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false
+  const isDark = ref(savedTheme ? savedTheme === 'dark' : prefersDark)
 
   // 公共主题配置
   const commonTheme = {

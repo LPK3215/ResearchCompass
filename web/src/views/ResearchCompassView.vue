@@ -1208,7 +1208,7 @@ let echartsPromise
 let pdfJsPromise
 
 const loadEcharts = () => {
-  if (!echartsPromise) echartsPromise = import('echarts')
+  if (!echartsPromise) echartsPromise = import('@/utils/echarts')
   return echartsPromise
 }
 

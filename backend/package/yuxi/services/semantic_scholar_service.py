@@ -100,7 +100,9 @@ class SemanticScholarClient:
     def __init__(self) -> None:
         self.base_url = os.getenv("SEMANTIC_SCHOLAR_API_BASE", "https://api.semanticscholar.org/graph/v1").rstrip("/")
         api_key = os.getenv("SEMANTIC_SCHOLAR_API_KEY", "").strip()
-        self.headers = {"x-api-key": api_key} if api_key else {}
+        self.headers = {"User-Agent": "ResearchCompass/0.11"}
+        if api_key:
+            self.headers["x-api-key"] = api_key
         self.timeout = httpx.Timeout(45.0, connect=10.0)
 
     async def _get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:

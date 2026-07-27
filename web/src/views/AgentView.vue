@@ -225,8 +225,11 @@ const consumeRouteAgentSelection = async () => {
 
 watch(
   () => route.params.thread_id,
-  () => {
-    syncSelectedThreadFromRoute()
+  async () => {
+    await syncSelectedThreadFromRoute()
+    if (!getRouteThreadId() && isResearchCopilotSelected.value && researchKbId.value) {
+      ensureResearchThread()
+    }
   },
   { immediate: true }
 )

@@ -82,4 +82,6 @@ docs/vibe
 /models
 
 .taskr/
+.codebuddy/
+v011-*.png
 web/src/utils/__tests__/

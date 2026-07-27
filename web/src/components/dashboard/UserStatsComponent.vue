@@ -29,7 +29,7 @@
 
 <script setup>
 import { ref, onMounted, watch, nextTick } from 'vue'
-import * as echarts from 'echarts'
+import echarts from '@/utils/echarts'
 import { useThemeStore } from '@/stores/theme'
 
 // CSS 变量解析工具函数
