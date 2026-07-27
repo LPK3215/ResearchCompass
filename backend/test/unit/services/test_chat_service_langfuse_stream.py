@@ -259,7 +259,10 @@ async def test_stream_agent_chat_commits_before_stream_and_persists_langfuse_con
             return FakeGraph()
 
     async def fake_resolve_agent_runtime(**_kwargs):
-        return SimpleNamespace(slug="test-agent", backend_id="ChatbotAgent"), FakeAgent(), {"temperature": 0.1}
+        return SimpleNamespace(slug="research-copilot", backend_id="ChatbotAgent"), FakeAgent(), {"temperature": 0.1}
+
+    async def _fake_ensure_thread_bound_agent(**_kwargs):
+        return
 
     async def fake_save_messages_from_langgraph_state(
         *, agent_instance, thread_id, conv_repo, config_dict, context, trace_info, run_id=None, request_id=None
@@ -287,6 +290,7 @@ async def test_stream_agent_chat_commits_before_stream_and_persists_langfuse_con
     monkeypatch.setattr(svc, "_resolve_agent_runtime", fake_resolve_agent_runtime)
     monkeypatch.setattr(svc, "normalize_agent_context_config", _fake_normalize_agent_context_config)
     monkeypatch.setattr(svc, "ConversationRepository", _FakeConvRepo)
+    monkeypatch.setattr(svc, "_ensure_thread_bound_agent", _fake_ensure_thread_bound_agent)
     monkeypatch.setattr(svc, "save_messages_from_langgraph_state", fake_save_messages_from_langgraph_state)
     monkeypatch.setattr(svc.content_guard, "check", fake_guard_check)
     monkeypatch.setattr(svc.content_guard, "check_with_keywords", fake_guard_check_with_keywords)
@@ -313,7 +317,7 @@ async def test_stream_agent_chat_commits_before_stream_and_persists_langfuse_con
 
     chunks = []
     async for chunk in svc.stream_agent_chat(
-        agent_slug="test-agent",
+        agent_slug="research-copilot",
         thread_id="thread-1",
         meta={
             "request_id": "req-1",
