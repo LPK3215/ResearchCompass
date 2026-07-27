@@ -66,7 +66,8 @@
               <em>{{ project.progress }}%</em>
             </span>
             <span class="project-item-meta">
-              <span><Paperclip :size="13" />{{ project.asset_counts?.total || 0 }}</span>
+              <span class="health-label" :class="`health-${project.health}`">{{ healthLabel(project.health) }}</span>
+              <span><ListTodo :size="13" />{{ project.plan_summary?.tasks?.open || 0 }}</span>
               <time>{{ formatCompactDate(project.updated_at) }}</time>
             </span>
           </button>
@@ -145,6 +146,19 @@
                   归档
                 </a-button>
               </a-popconfirm>
+              <a-dropdown :trigger="['click']">
+                <a-button class="lucide-icon-btn" :loading="reportDownloading">
+                  <template #icon><Download :size="15" /></template>
+                  导出报告
+                  <ChevronDown :size="14" />
+                </a-button>
+                <template #overlay>
+                  <a-menu @click="downloadReport">
+                    <a-menu-item key="markdown">Markdown 报告</a-menu-item>
+                    <a-menu-item key="docx">Word 报告</a-menu-item>
+                  </a-menu>
+                </template>
+              </a-dropdown>
               <a-popconfirm
                 title="删除项目？论文和研究运行不会被删除。"
                 ok-text="删除项目"
@@ -161,10 +175,13 @@
           <section class="project-overview">
             <div class="progress-block">
               <div class="overview-heading">
-                <span>项目进度</span>
+                <span>项目进度 · {{ projectDetail.progress_source === 'tasks' ? '任务自动计算' : '手动维护' }}</span>
                 <strong>{{ projectDetail.progress }}%</strong>
               </div>
               <a-progress :percent="projectDetail.progress" :show-info="false" stroke-color="var(--main-color)" />
+              <span class="health-label overview-health" :class="`health-${projectDetail.health}`">
+                {{ healthLabel(projectDetail.health) }}
+              </span>
             </div>
             <div class="next-action-block">
               <div class="overview-heading"><span>下一步行动</span><ListTodo :size="16" /></div>
@@ -177,7 +194,12 @@
           </section>
 
           <div class="project-work-area">
-            <section class="assets-panel">
+            <a-tabs v-model:active-key="detailTab" class="detail-tabs">
+              <a-tab-pane key="plan" tab="执行计划">
+                <ResearchProjectPlan class="plan-panel" :project="projectDetail" @changed="handlePlanChanged" />
+              </a-tab-pane>
+              <a-tab-pane key="assets" tab="研究成果">
+                <section class="assets-panel">
               <header class="section-heading">
                 <div>
                   <h3>研究成果</h3>
@@ -304,24 +326,28 @@
                 class="assets-pagination"
                 @change="loadAssets"
               />
-            </section>
+                </section>
+              </a-tab-pane>
 
-            <aside class="activity-panel">
-              <header class="section-heading">
-                <div><h3>最近活动</h3><span>{{ projectDetail.activities?.length || 0 }} 条</span></div>
-              </header>
-              <ol v-if="projectDetail.activities?.length" class="activity-list">
-                <li v-for="activity in projectDetail.activities" :key="activity.activity_id">
-                  <span class="activity-marker"><component :is="activityIcon(activity)" :size="13" /></span>
-                  <div>
-                    <strong>{{ activityLabel(activity) }}</strong>
-                    <p v-if="activity.payload?.title">{{ activity.payload.title }}</p>
-                    <time>{{ formatDateTime(activity.created_at) }}</time>
-                  </div>
-                </li>
-              </ol>
-              <div v-else class="activity-empty">暂无活动记录</div>
-            </aside>
+              <a-tab-pane key="activity" tab="最近活动">
+                <aside class="activity-panel">
+                  <header class="section-heading">
+                    <div><h3>最近活动</h3><span>{{ projectDetail.activities?.length || 0 }} 条</span></div>
+                  </header>
+                  <ol v-if="projectDetail.activities?.length" class="activity-list">
+                    <li v-for="activity in projectDetail.activities" :key="activity.activity_id">
+                      <span class="activity-marker"><component :is="activityIcon(activity)" :size="13" /></span>
+                      <div>
+                        <strong>{{ activityLabel(activity) }}</strong>
+                        <p v-if="activity.payload?.title">{{ activity.payload.title }}</p>
+                        <time>{{ formatDateTime(activity.created_at) }}</time>
+                      </div>
+                    </li>
+                  </ol>
+                  <div v-else class="activity-empty">暂无活动记录</div>
+                </aside>
+              </a-tab-pane>
+            </a-tabs>
           </div>
         </div>
         <div v-else class="detail-empty">
@@ -344,21 +370,37 @@
     >
       <a-form layout="vertical" class="project-form">
         <a-form-item label="项目名称" required>
-          <a-input v-model:value="projectForm.title" :maxlength="255" show-count />
+          <a-input
+            v-model:value="projectForm.title"
+            :disabled="editingProject && projectDetail?.status === 'completed'"
+            :maxlength="255"
+            show-count
+          />
         </a-form-item>
         <a-form-item label="核心研究问题" required>
-          <a-textarea v-model:value="projectForm.researchQuestion" :rows="4" :maxlength="8000" show-count />
+          <a-textarea
+            v-model:value="projectForm.researchQuestion"
+            :disabled="editingProject && projectDetail?.status === 'completed'"
+            :rows="4"
+            :maxlength="8000"
+            show-count
+          />
         </a-form-item>
         <a-form-item label="项目说明">
           <a-textarea v-model:value="projectForm.description" :rows="3" :maxlength="12000" show-count />
         </a-form-item>
         <div class="form-grid">
           <a-form-item label="目标日期">
-            <a-input v-model:value="projectForm.targetDate" type="date" />
+            <a-input
+              v-model:value="projectForm.targetDate"
+              :disabled="editingProject && projectDetail?.status === 'completed'"
+              type="date"
+            />
           </a-form-item>
           <a-form-item label="标签">
             <a-select
               v-model:value="projectForm.tags"
+              :disabled="editingProject && projectDetail?.status === 'completed'"
               mode="tags"
               :max-tag-count="4"
               :token-separators="[',', '，']"
@@ -367,9 +409,18 @@
           </a-form-item>
         </div>
         <a-form-item label="下一步行动">
-          <a-textarea v-model:value="projectForm.nextAction" :rows="2" :maxlength="4000" show-count />
+          <a-textarea
+            v-model:value="projectForm.nextAction"
+            :disabled="editingProject && projectDetail?.status === 'completed'"
+            :rows="2"
+            :maxlength="4000"
+            show-count
+          />
         </a-form-item>
-        <a-form-item v-if="editingProject && projectDetail?.status === 'active'" label="当前进度">
+        <a-form-item
+          v-if="editingProject && projectDetail?.status === 'active' && projectDetail?.progress_source !== 'tasks'"
+          label="当前进度"
+        >
           <div class="progress-editor">
             <a-slider v-model:value="projectForm.progress" :min="0" :max="100" />
             <a-input-number v-model:value="projectForm.progress" :min="0" :max="100" :formatter="value => `${value}%`" />
@@ -475,10 +526,13 @@ import {
   ArrowRight,
   BookOpen,
   CalendarDays,
+  ChevronDown,
   CircleCheck,
   Clock3,
+  Download,
   FileSearch,
   FileText,
+  Flag,
   FlaskConical,
   FolderKanban,
   FolderOpen,
@@ -496,6 +550,7 @@ import {
 } from 'lucide-vue-next'
 import { researchApi } from '@/apis/research_api'
 import { useUserStore } from '@/stores/user'
+import ResearchProjectPlan from './ResearchProjectPlan.vue'
 
 const props = defineProps({
   kbId: { type: String, default: '' },
@@ -536,6 +591,8 @@ const editingProject = ref(false)
 const projectSaving = ref(false)
 const projectDeleting = ref(false)
 const statusUpdating = ref('')
+const reportDownloading = ref(false)
+const detailTab = ref('plan')
 const assetType = ref('paper')
 const assets = ref([])
 const assetsTotal = ref(0)
@@ -582,6 +639,9 @@ const canAddCurrentAssetType = computed(() => (
 ))
 
 const statusLabel = (status) => ({ active: '进行中', completed: '已完成', archived: '已归档' })[status] || status
+const healthLabel = (health) => ({
+  completed: '已完成', overdue: '已逾期', at_risk: '有风险', on_track: '进展正常', not_planned: '尚未规划'
+})[health] || '尚未规划'
 const assetStatusLabel = (status) => ({
   success: '已完成', completed: '已完成', verified: '已校正', extracted: '已提取',
   running: '运行中', pending: '等待中', queued: '等待中', failed: '失败', cancelled: '已取消'
@@ -616,7 +676,19 @@ const activityLabel = (activity) => ({
   project_status_changed: '变更项目状态',
   asset_added: '归集研究成果',
   asset_removed: '移除研究成果',
-  asset_notes_updated: '更新成果备注'
+  asset_notes_updated: '更新成果备注',
+  milestone_created: '创建里程碑',
+  milestone_updated: '更新里程碑',
+  milestone_deleted: '删除里程碑',
+  milestone_status_changed: '变更里程碑状态',
+  milestones_reordered: '调整里程碑顺序',
+  task_created: '创建任务',
+  task_updated: '更新任务',
+  task_deleted: '删除任务',
+  task_status_changed: '变更任务状态',
+  tasks_reordered: '调整任务顺序',
+  plan_asset_linked: '关联执行证据',
+  plan_asset_unlinked: '解除执行证据'
 })[activity.activity_type] || '更新项目'
 const activityIcon = (activity) => ({
   project_created: FolderKanban,
@@ -624,7 +696,19 @@ const activityIcon = (activity) => ({
   project_status_changed: CircleCheck,
   asset_added: Plus,
   asset_removed: X,
-  asset_notes_updated: StickyNote
+  asset_notes_updated: StickyNote,
+  milestone_created: Flag,
+  milestone_updated: Flag,
+  milestone_deleted: Flag,
+  milestone_status_changed: Flag,
+  milestones_reordered: Flag,
+  task_created: ListTodo,
+  task_updated: ListTodo,
+  task_deleted: ListTodo,
+  task_status_changed: CircleCheck,
+  tasks_reordered: ListTodo,
+  plan_asset_linked: Paperclip,
+  plan_asset_unlinked: Paperclip
 })[activity.activity_type] || History
 
 const loadProjects = async ({ preserveSelection = true } = {}) => {
@@ -689,6 +773,7 @@ const selectProject = async (projectId) => {
   assetType.value = 'paper'
   assetPage.value = 1
   assetQuery.value = ''
+  detailTab.value = 'plan'
   projectDetail.value = null
   await loadProjectDetail()
 }
@@ -796,7 +881,18 @@ const saveProject = async () => {
     }
     let saved
     if (editingProject.value) {
-      if (projectDetail.value?.status === 'active') payload.progress = projectForm.progress
+      if (projectDetail.value?.status === 'completed') {
+        saved = await researchApi.updateProject(selectedProjectId.value, {
+          description: projectForm.description.trim()
+        })
+        message.success('项目说明已更新')
+        projectModalOpen.value = false
+        await loadProjects()
+        return
+      }
+      if (projectDetail.value?.status === 'active' && projectDetail.value?.progress_source !== 'tasks') {
+        payload.progress = projectForm.progress
+      }
       saved = await researchApi.updateProject(selectedProjectId.value, payload)
       message.success('项目已更新')
     } else {
@@ -827,6 +923,34 @@ const changeProjectStatus = async (status) => {
     message.error(error.message || '项目状态更新失败')
   } finally {
     statusUpdating.value = ''
+  }
+}
+
+const handlePlanChanged = async () => {
+  await loadProjects()
+}
+
+const downloadReport = async ({ key }) => {
+  if (!selectedProjectId.value) return
+  reportDownloading.value = true
+  try {
+    const response = await researchApi.exportProjectReport(selectedProjectId.value, key)
+    const blob = await response.blob()
+    const disposition = response.headers.get('Content-Disposition') || ''
+    const filename = disposition.match(/filename="?([^";]+)"?/)?.[1] || `research-project.${key === 'docx' ? 'docx' : 'md'}`
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+    message.success('项目报告已导出')
+  } catch (error) {
+    message.error(error.message || '项目报告导出失败')
+  } finally {
+    reportDownloading.value = false
   }
 }
 
@@ -985,6 +1109,7 @@ const resetWorkspace = () => {
   workspaceError.value = ''
   projectPage.value = 1
   projectStatus.value = 'all'
+  detailTab.value = 'plan'
   projectQuery.value = ''
   candidateDrawerOpen.value = false
   if (props.kbId) void loadProjects({ preserveSelection: false })
@@ -1106,6 +1231,12 @@ onBeforeUnmount(() => { requestGeneration += 1 })
 .project-item-progress em { color: var(--color-text-tertiary); font-size: 11px; font-style: normal; text-align: right; }
 .project-item-meta { justify-content: space-between; color: var(--color-text-tertiary); font-size: 11px; }
 .project-item-meta span { display: inline-flex; align-items: center; gap: 4px; }
+.health-label { display: inline-flex; align-items: center; gap: 4px; color: var(--color-text-secondary); font-size: 11px; font-weight: 500; }
+.health-label::before { width: 6px; height: 6px; border-radius: 50%; background: var(--gray-400); content: ''; }
+.health-on_track::before,
+.health-completed::before { background: var(--color-success-500); }
+.health-at_risk::before { background: var(--color-warning-500); }
+.health-overdue::before { background: var(--color-error-500); }
 .project-list-empty,
 .detail-empty,
 .assets-empty { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-height: 220px; color: var(--color-text-tertiary); }
@@ -1131,12 +1262,16 @@ onBeforeUnmount(() => { requestGeneration += 1 })
 .project-overview > div:last-child { border-right: 0; }
 .overview-heading { justify-content: space-between; gap: 10px; margin-bottom: 9px; color: var(--color-text-tertiary); font-size: 12px; }
 .overview-heading strong { color: var(--main-700); font-size: 14px; }
+.overview-health { margin-top: 3px; }
 .next-action-block p,
 .description-block p { margin: 0; color: var(--color-text); font-size: 13px; line-height: 1.55; white-space: pre-wrap; }
 
-.project-work-area { display: grid; grid-template-columns: minmax(0, 1fr) 270px; min-width: 0; }
+.project-work-area { min-width: 0; }
+.detail-tabs :deep(.ant-tabs-nav) { margin: 0; padding: 0 24px; border-bottom: 1px solid var(--gray-150); }
+.detail-tabs :deep(.ant-tabs-tab) { padding-block: 13px; }
+.plan-panel { padding: 20px 24px 24px; }
 .assets-panel { min-width: 0; padding: 20px 24px 24px; }
-.activity-panel { min-width: 0; padding: 20px; border-left: 1px solid var(--gray-150); background: var(--gray-10); }
+.activity-panel { min-width: 0; padding: 20px 24px 24px; }
 .section-heading { justify-content: space-between; gap: 16px; margin-bottom: 15px; }
 .section-heading h3 { margin: 0; color: var(--color-text); font-size: 16px; font-weight: 600; }
 .section-heading span { color: var(--color-text-tertiary); font-size: 12px; }
@@ -1200,8 +1335,6 @@ onBeforeUnmount(() => { requestGeneration += 1 })
   .project-layout { grid-template-columns: 260px minmax(0, 1fr); }
   .project-overview { grid-template-columns: 1fr 1fr; }
   .description-block { grid-column: 1 / -1; border-top: 1px solid var(--gray-150); }
-  .project-work-area { grid-template-columns: minmax(0, 1fr); }
-  .activity-panel { border-top: 1px solid var(--gray-150); border-left: 0; }
   .activity-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
   .activity-list li:nth-last-child(-n + 2) { padding-bottom: 0; }
 }
@@ -1219,11 +1352,15 @@ onBeforeUnmount(() => { requestGeneration += 1 })
   .project-toolbar .lucide-icon-btn { align-self: end; }
   .project-layout { min-height: 0; }
   .project-detail-header,
-  .assets-panel { padding: 16px; }
+  .assets-panel,
+  .activity-panel,
+  .plan-panel { padding: 16px; }
+  .detail-tabs :deep(.ant-tabs-nav) { padding-inline: 16px; }
   .project-title-line { align-items: flex-start; flex-direction: column; }
   .project-title-line h2 { font-size: 18px; }
   .project-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
   .project-actions :deep(.ant-btn) { width: 100%; }
+  .project-actions > .icon-only-action { grid-column: 1 / -1; justify-self: end; width: 42px; }
   .project-overview { grid-template-columns: 1fr; }
   .project-overview > div { border-right: 0; border-bottom: 1px solid var(--gray-150); }
   .project-overview > div:last-child { border-bottom: 0; }

@@ -118,6 +118,88 @@ test('research project APIs encode project and asset identifiers', async () => {
   ])
 })
 
+test('research project execution APIs preserve plan contracts and blob responses', async () => {
+  await researchApi.getProjectPlan('project/1')
+  await researchApi.createProjectMilestone('project/1', { title: 'Milestone' })
+  await researchApi.updateProjectMilestone('project/1', 'milestone/1', { status: 'active' })
+  await researchApi.reorderProjectMilestones('project/1', ['milestone/1'])
+  await researchApi.createProjectTask('project/1', { title: 'Task', milestone_id: 'milestone/1' })
+  await researchApi.updateProjectTask('project/1', 'task/1', { status: 'done' })
+  await researchApi.reorderProjectTasks('project/1', {
+    milestone_id: 'milestone/1', task_ids: ['task/1']
+  })
+  await researchApi.createProjectPlanAssetLink('project/1', {
+    asset_id: 'asset/1', task_id: 'task/1'
+  })
+  await researchApi.deleteProjectPlanAssetLink('project/1', 'link/1')
+  await researchApi.deleteProjectTask('project/1', 'task/1')
+  await researchApi.deleteProjectMilestone('project/1', 'milestone/1')
+  await researchApi.exportProjectReport('project/1', 'docx')
+
+  assert.deepEqual(calls, [
+    { method: 'apiGet', args: ['/api/research/projects/project%2F1/plan'] },
+    {
+      method: 'apiRequest',
+      args: ['/api/research/projects/project%2F1/milestones', {
+        method: 'POST', body: JSON.stringify({ title: 'Milestone' })
+      }]
+    },
+    {
+      method: 'apiRequest',
+      args: ['/api/research/projects/project%2F1/milestones/milestone%2F1', {
+        method: 'PATCH', body: JSON.stringify({ status: 'active' })
+      }]
+    },
+    {
+      method: 'apiRequest',
+      args: ['/api/research/projects/project%2F1/milestones/order', {
+        method: 'PUT', body: JSON.stringify({ milestone_ids: ['milestone/1'] })
+      }]
+    },
+    {
+      method: 'apiRequest',
+      args: ['/api/research/projects/project%2F1/tasks', {
+        method: 'POST', body: JSON.stringify({ title: 'Task', milestone_id: 'milestone/1' })
+      }]
+    },
+    {
+      method: 'apiRequest',
+      args: ['/api/research/projects/project%2F1/tasks/task%2F1', {
+        method: 'PATCH', body: JSON.stringify({ status: 'done' })
+      }]
+    },
+    {
+      method: 'apiRequest',
+      args: ['/api/research/projects/project%2F1/tasks/order', {
+        method: 'PUT',
+        body: JSON.stringify({ milestone_id: 'milestone/1', task_ids: ['task/1'] })
+      }]
+    },
+    {
+      method: 'apiRequest',
+      args: ['/api/research/projects/project%2F1/plan/asset-links', {
+        method: 'POST', body: JSON.stringify({ asset_id: 'asset/1', task_id: 'task/1' })
+      }]
+    },
+    {
+      method: 'apiRequest',
+      args: ['/api/research/projects/project%2F1/plan/asset-links/link%2F1', { method: 'DELETE' }]
+    },
+    {
+      method: 'apiRequest',
+      args: ['/api/research/projects/project%2F1/tasks/task%2F1', { method: 'DELETE' }]
+    },
+    {
+      method: 'apiRequest',
+      args: ['/api/research/projects/project%2F1/milestones/milestone%2F1', { method: 'DELETE' }]
+    },
+    {
+      method: 'apiRequest',
+      args: ['/api/research/projects/project%2F1/report?format=docx', { method: 'GET' }, true, 'blob']
+    }
+  ])
+})
+
 test('search history APIs encode ids and preserve management contracts', async () => {
   await researchApi.listSearchRuns('kb/team one', { offset: 20, limit: 20 })
   await researchApi.getSearchRun('run/1')

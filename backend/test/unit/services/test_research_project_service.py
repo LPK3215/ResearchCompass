@@ -1,10 +1,26 @@
 from types import SimpleNamespace
+from collections import defaultdict
 
 import pytest
 from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 
 from yuxi.services import research_project_service
+
+
+@pytest.fixture(autouse=True)
+def stub_empty_plan_repository(monkeypatch):
+    class EmptyPlanRepository:
+        async def list_summary_records(self, project_ids):
+            return defaultdict(list), defaultdict(list)
+
+        async def get_plan_records(self, project_id):
+            return [], [], []
+
+        async def count_open_tasks(self, project_id, *, milestone_id=None):
+            return 0
+
+    monkeypatch.setattr(research_project_service, "ResearchProjectPlanRepository", EmptyPlanRepository)
 
 
 def _user(*, role: str = "user", uid: str = "user-1") -> SimpleNamespace:

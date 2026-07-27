@@ -22,7 +22,7 @@ from yuxi.storage.postgres.models_knowledge import (
 ASSET_TYPES = {"paper", "search_run", "synthesis_run", "analysis_run", "evaluation_experiment"}
 
 
-def _activity(
+def build_project_activity(
     project_id: str,
     activity_type: str,
     *,
@@ -48,7 +48,7 @@ class ResearchProjectRepository:
         record = ResearchProject(**values)
         async with pg_manager.get_async_session_context() as session:
             session.add(record)
-            session.add(_activity(record.project_id, "project_created", payload={"title": record.title}))
+            session.add(build_project_activity(record.project_id, "project_created", payload={"title": record.title}))
             await session.flush()
         return record
 
@@ -117,7 +117,7 @@ class ResearchProjectRepository:
                 return None
             for key, value in values.items():
                 setattr(record, key, value)
-            session.add(_activity(project_id, activity_type, payload=values))
+            session.add(build_project_activity(project_id, activity_type, payload=values))
             await session.flush()
             return record
 
@@ -174,7 +174,7 @@ class ResearchProjectRepository:
             session.add_all(records)
             for record in records:
                 session.add(
-                    _activity(
+                    build_project_activity(
                         project_id,
                         "asset_added",
                         asset_type=record.asset_type,
@@ -212,7 +212,7 @@ class ResearchProjectRepository:
                 return None
             record.notes = notes
             session.add(
-                _activity(
+                build_project_activity(
                     project_id,
                     "asset_notes_updated",
                     asset_type=record.asset_type,
@@ -234,7 +234,7 @@ class ResearchProjectRepository:
             if record is None:
                 return None
             session.add(
-                _activity(
+                build_project_activity(
                     project_id,
                     "asset_removed",
                     asset_type=record.asset_type,
@@ -252,6 +252,15 @@ class ResearchProjectRepository:
                 .where(ResearchProjectActivity.project_id == project_id)
                 .order_by(ResearchProjectActivity.created_at.desc(), ResearchProjectActivity.id.desc())
                 .limit(limit)
+            )
+            return list(result.scalars().all())
+
+    async def list_all_assets(self, project_id: str) -> list[ResearchProjectAsset]:
+        async with pg_manager.get_async_session_context() as session:
+            result = await session.execute(
+                select(ResearchProjectAsset)
+                .where(ResearchProjectAsset.project_id == project_id)
+                .order_by(ResearchProjectAsset.asset_type, ResearchProjectAsset.added_at.desc())
             )
             return list(result.scalars().all())
 
@@ -486,4 +495,4 @@ class ResearchProjectRepository:
         }
 
 
-__all__ = ["ASSET_TYPES", "ResearchProjectRepository"]
+__all__ = ["ASSET_TYPES", "ResearchProjectRepository", "build_project_activity"]

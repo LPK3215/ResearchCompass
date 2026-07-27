@@ -889,6 +889,66 @@ async def _exercise_research_project_api(
     paper_asset = paper_assets_response.json()["items"][0]
     assert paper_asset["reference_id"] == seeded["paper_id"]
 
+    milestone_response = await test_client.post(
+        f"/api/research/projects/{project_id}/milestones",
+        json={
+            "title": "Validate the evidence base",
+            "description": "Complete the provenance review before delivery.",
+            "status": "active",
+            "target_date": "2027-05-31",
+        },
+        headers=admin_headers,
+    )
+    assert milestone_response.status_code == 201, milestone_response.text
+    milestone_id = milestone_response.json()["milestone_id"]
+
+    task_response = await test_client.post(
+        f"/api/research/projects/{project_id}/tasks",
+        json={
+            "title": "Verify the strongest source",
+            "description": "Check the source against the synthesis claims.",
+            "status": "in_progress",
+            "priority": "high",
+            "due_date": "2027-05-15",
+            "milestone_id": milestone_id,
+        },
+        headers=admin_headers,
+    )
+    assert task_response.status_code == 201, task_response.text
+    task_id = task_response.json()["task_id"]
+
+    link_response = await test_client.post(
+        f"/api/research/projects/{project_id}/plan/asset-links",
+        json={"asset_id": paper_asset["asset_id"], "task_id": task_id},
+        headers=admin_headers,
+    )
+    assert link_response.status_code == 201, link_response.text
+    assert link_response.json()["asset"]["reference_id"] == seeded["paper_id"]
+    duplicate_link = await test_client.post(
+        f"/api/research/projects/{project_id}/plan/asset-links",
+        json={"asset_id": paper_asset["asset_id"], "task_id": task_id},
+        headers=admin_headers,
+    )
+    assert duplicate_link.status_code == 409
+    assert duplicate_link.json()["detail"]["error"] == "plan_asset_already_linked"
+
+    plan_response = await test_client.get(
+        f"/api/research/projects/{project_id}/plan",
+        headers=admin_headers,
+    )
+    assert plan_response.status_code == 200, plan_response.text
+    plan = plan_response.json()
+    assert plan["summary"]["progress"] == 0
+    assert plan["summary"]["progress_source"] == "tasks"
+    assert plan["milestones"][0]["tasks"][0]["asset_links"][0]["asset"]["available"] is True
+
+    blocked_milestone_delete = await test_client.delete(
+        f"/api/research/projects/{project_id}/milestones/{milestone_id}",
+        headers=admin_headers,
+    )
+    assert blocked_milestone_delete.status_code == 409
+    assert blocked_milestone_delete.json()["detail"]["error"] == "milestone_has_tasks"
+
     detail_response = await test_client.get(f"/api/research/projects/{project_id}", headers=admin_headers)
     assert detail_response.status_code == 200, detail_response.text
     detail = detail_response.json()
@@ -910,7 +970,32 @@ async def _exercise_research_project_api(
         headers=admin_headers,
     )
     assert update_response.status_code == 200, update_response.text
-    assert update_response.json()["progress"] == 75
+    assert update_response.json()["progress"] == 0
+    assert update_response.json()["progress_source"] == "tasks"
+
+    blocked_complete_response = await test_client.patch(
+        f"/api/research/projects/{project_id}",
+        json={"status": "completed"},
+        headers=admin_headers,
+    )
+    assert blocked_complete_response.status_code == 409
+    assert blocked_complete_response.json()["detail"]["error"] == "project_has_open_tasks"
+
+    task_done_response = await test_client.patch(
+        f"/api/research/projects/{project_id}/tasks/{task_id}",
+        json={"status": "done"},
+        headers=admin_headers,
+    )
+    assert task_done_response.status_code == 200, task_done_response.text
+    assert task_done_response.json()["completed_at"] is not None
+
+    completed_plan_response = await test_client.get(
+        f"/api/research/projects/{project_id}/plan",
+        headers=admin_headers,
+    )
+    assert completed_plan_response.status_code == 200, completed_plan_response.text
+    assert completed_plan_response.json()["summary"]["progress"] == 100
+    assert completed_plan_response.json()["milestones"][0]["status"] == "completed"
 
     complete_response = await test_client.patch(
         f"/api/research/projects/{project_id}",
@@ -920,6 +1005,25 @@ async def _exercise_research_project_api(
     assert complete_response.status_code == 200, complete_response.text
     assert complete_response.json()["progress"] == 100
     assert complete_response.json()["completed_at"] is not None
+
+    markdown_report = await test_client.get(
+        f"/api/research/projects/{project_id}/report",
+        params={"format": "markdown"},
+        headers=admin_headers,
+    )
+    assert markdown_report.status_code == 200, markdown_report.text
+    report_text = markdown_report.content.decode("utf-8")
+    assert "Validate the evidence base" in report_text
+    assert "Verify the strongest source" in report_text
+    assert "Evidence-grounded Research Opportunity Discovery" in report_text
+
+    docx_report = await test_client.get(
+        f"/api/research/projects/{project_id}/report",
+        params={"format": "docx"},
+        headers=admin_headers,
+    )
+    assert docx_report.status_code == 200, docx_report.text
+    assert docx_report.content.startswith(b"PK")
 
     read_only_response = await test_client.delete(
         f"/api/research/projects/{project_id}/assets/{paper_asset['asset_id']}",
@@ -969,6 +1073,14 @@ async def _exercise_research_project_api(
     assert notes_response.status_code == 200, notes_response.text
     assert notes_response.json()["available"] is False
     assert notes_response.json()["title"] == "Evidence-grounded Research Opportunity Discovery"
+
+    stale_report = await test_client.get(
+        f"/api/research/projects/{project_id}/report",
+        params={"format": "markdown"},
+        headers=admin_headers,
+    )
+    assert stale_report.status_code == 200, stale_report.text
+    assert "源成果已失效" in stale_report.content.decode("utf-8")
 
     delete_response = await test_client.delete(f"/api/research/projects/{project_id}", headers=admin_headers)
     assert delete_response.status_code == 204, delete_response.text

@@ -26,6 +26,72 @@ export const researchApi = {
   getProject: (projectId) =>
     apiGet(`/api/research/projects/${encodeURIComponent(projectId)}`),
 
+  getProjectPlan: (projectId) =>
+    apiGet(`/api/research/projects/${encodeURIComponent(projectId)}/plan`),
+
+  createProjectMilestone: (projectId, payload) =>
+    apiRequest(`/api/research/projects/${encodeURIComponent(projectId)}/milestones`, {
+      method: 'POST', body: JSON.stringify(payload)
+    }),
+
+  updateProjectMilestone: (projectId, milestoneId, payload) =>
+    apiRequest(
+      `/api/research/projects/${encodeURIComponent(projectId)}/milestones/${encodeURIComponent(milestoneId)}`,
+      { method: 'PATCH', body: JSON.stringify(payload) }
+    ),
+
+  deleteProjectMilestone: (projectId, milestoneId) =>
+    apiRequest(
+      `/api/research/projects/${encodeURIComponent(projectId)}/milestones/${encodeURIComponent(milestoneId)}`,
+      { method: 'DELETE' }
+    ),
+
+  reorderProjectMilestones: (projectId, milestoneIds) =>
+    apiRequest(`/api/research/projects/${encodeURIComponent(projectId)}/milestones/order`, {
+      method: 'PUT', body: JSON.stringify({ milestone_ids: milestoneIds })
+    }),
+
+  createProjectTask: (projectId, payload) =>
+    apiRequest(`/api/research/projects/${encodeURIComponent(projectId)}/tasks`, {
+      method: 'POST', body: JSON.stringify(payload)
+    }),
+
+  updateProjectTask: (projectId, taskId, payload) =>
+    apiRequest(
+      `/api/research/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}`,
+      { method: 'PATCH', body: JSON.stringify(payload) }
+    ),
+
+  deleteProjectTask: (projectId, taskId) =>
+    apiRequest(
+      `/api/research/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}`,
+      { method: 'DELETE' }
+    ),
+
+  reorderProjectTasks: (projectId, payload) =>
+    apiRequest(`/api/research/projects/${encodeURIComponent(projectId)}/tasks/order`, {
+      method: 'PUT', body: JSON.stringify(payload)
+    }),
+
+  createProjectPlanAssetLink: (projectId, payload) =>
+    apiRequest(`/api/research/projects/${encodeURIComponent(projectId)}/plan/asset-links`, {
+      method: 'POST', body: JSON.stringify(payload)
+    }),
+
+  deleteProjectPlanAssetLink: (projectId, linkId) =>
+    apiRequest(
+      `/api/research/projects/${encodeURIComponent(projectId)}/plan/asset-links/${encodeURIComponent(linkId)}`,
+      { method: 'DELETE' }
+    ),
+
+  exportProjectReport: (projectId, format = 'markdown') => {
+    const query = buildQuery({ format })
+    return apiRequest(
+      `/api/research/projects/${encodeURIComponent(projectId)}/report?${query}`,
+      { method: 'GET' }, true, 'blob'
+    )
+  },
+
   updateProject: (projectId, payload) =>
     apiRequest(`/api/research/projects/${encodeURIComponent(projectId)}`, {
       method: 'PATCH', body: JSON.stringify(payload)

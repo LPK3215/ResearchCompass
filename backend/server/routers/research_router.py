@@ -22,6 +22,20 @@ from yuxi.services.research_project_service import (
     update_project_asset_notes,
     update_research_project,
 )
+from yuxi.services.research_project_plan_service import (
+    create_project_milestone,
+    create_project_plan_asset_link,
+    create_project_task,
+    delete_project_milestone,
+    delete_project_plan_asset_link,
+    delete_project_task,
+    get_research_project_plan,
+    reorder_project_milestones,
+    reorder_project_tasks,
+    update_project_milestone,
+    update_project_task,
+)
+from yuxi.services.research_project_report_service import export_research_project_report
 from yuxi.services.research_paper_service import (
     add_paper_tag_view,
     export_papers_bibtex,
@@ -198,6 +212,112 @@ class UpdateResearchProjectAssetRequest(BaseModel):
     @classmethod
     def normalize_project_asset_notes(cls, value: str) -> str:
         return value.strip()
+
+
+class CreateResearchProjectMilestoneRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=255)
+    description: str = Field(default="", max_length=12000)
+    status: str = Field(default="planned", pattern=r"^(planned|active|completed)$")
+    target_date: date | None = None
+
+    @field_validator("title", "description")
+    @classmethod
+    def normalize_milestone_text(cls, value: str) -> str:
+        return value.strip()
+
+
+class UpdateResearchProjectMilestoneRequest(BaseModel):
+    title: str | None = Field(default=None, max_length=255)
+    description: str | None = Field(default=None, max_length=12000)
+    status: str | None = Field(default=None, pattern=r"^(planned|active|completed)$")
+    target_date: date | None = None
+
+    @field_validator("title", "description")
+    @classmethod
+    def normalize_milestone_update_text(cls, value: str | None) -> str | None:
+        return value.strip() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def validate_milestone_update(self):
+        if not self.model_fields_set:
+            raise ValueError("至少提供一个需要更新的字段")
+        if "title" in self.model_fields_set and not self.title:
+            raise ValueError("里程碑名称不能为空")
+        if "status" in self.model_fields_set and self.status is None:
+            raise ValueError("里程碑状态不能为 null")
+        return self
+
+
+class ResearchProjectMilestoneOrderRequest(BaseModel):
+    milestone_ids: list[str] = Field(..., min_length=1, max_length=500)
+
+    @field_validator("milestone_ids")
+    @classmethod
+    def validate_milestone_ids(cls, value: list[str]) -> list[str]:
+        if any(not item.strip() for item in value) or len(set(value)) != len(value):
+            raise ValueError("里程碑 ID 不能为空或重复")
+        return value
+
+
+class CreateResearchProjectTaskRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=255)
+    description: str = Field(default="", max_length=12000)
+    status: str = Field(default="todo", pattern=r"^(todo|in_progress|blocked|done)$")
+    priority: str = Field(default="medium", pattern=r"^(low|medium|high)$")
+    due_date: date | None = None
+    milestone_id: str | None = Field(default=None, max_length=64)
+
+    @field_validator("title", "description")
+    @classmethod
+    def normalize_task_text(cls, value: str) -> str:
+        return value.strip()
+
+
+class UpdateResearchProjectTaskRequest(BaseModel):
+    title: str | None = Field(default=None, max_length=255)
+    description: str | None = Field(default=None, max_length=12000)
+    status: str | None = Field(default=None, pattern=r"^(todo|in_progress|blocked|done)$")
+    priority: str | None = Field(default=None, pattern=r"^(low|medium|high)$")
+    due_date: date | None = None
+    milestone_id: str | None = Field(default=None, max_length=64)
+
+    @field_validator("title", "description")
+    @classmethod
+    def normalize_task_update_text(cls, value: str | None) -> str | None:
+        return value.strip() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def validate_task_update(self):
+        if not self.model_fields_set:
+            raise ValueError("至少提供一个需要更新的字段")
+        for field in ("title", "status", "priority"):
+            if field in self.model_fields_set and not getattr(self, field):
+                raise ValueError(f"{field} 不能为空")
+        return self
+
+
+class ResearchProjectTaskOrderRequest(BaseModel):
+    milestone_id: str | None = Field(default=None, max_length=64)
+    task_ids: list[str] = Field(..., min_length=1, max_length=1000)
+
+    @field_validator("task_ids")
+    @classmethod
+    def validate_task_ids(cls, value: list[str]) -> list[str]:
+        if any(not item.strip() for item in value) or len(set(value)) != len(value):
+            raise ValueError("任务 ID 不能为空或重复")
+        return value
+
+
+class CreateResearchProjectPlanAssetLinkRequest(BaseModel):
+    asset_id: str = Field(..., min_length=1, max_length=64)
+    milestone_id: str | None = Field(default=None, max_length=64)
+    task_id: str | None = Field(default=None, max_length=64)
+
+    @model_validator(mode="after")
+    def validate_target(self):
+        if bool(self.milestone_id) == bool(self.task_id):
+            raise ValueError("必须且只能指定一个里程碑或任务")
+        return self
 
 
 class PaperMetadataUpdate(BaseModel):
@@ -532,8 +652,23 @@ def _project_http_error(exc: ResearchProjectError) -> HTTPException:
         "asset_already_linked": 409,
         "project_archived": 409,
         "project_read_only": 409,
+        "project_has_open_tasks": 409,
+        "milestone_has_open_tasks": 409,
+        "milestone_has_tasks": 409,
+        "plan_asset_already_linked": 409,
+        "milestone_not_found": 404,
+        "task_not_found": 404,
+        "plan_asset_link_not_found": 404,
+        "plan_asset_target_not_found": 404,
         "invalid_project_status": 422,
         "invalid_asset_type": 422,
+        "invalid_milestone_status": 422,
+        "invalid_task_status": 422,
+        "invalid_task_priority": 422,
+        "invalid_milestone_order": 422,
+        "invalid_task_order": 422,
+        "invalid_plan_asset_target": 422,
+        "invalid_report_format": 422,
     }.get(exc.error_type, 502)
     return HTTPException(status_code=status, detail={"error": exc.error_type, "message": exc.message})
 
@@ -604,6 +739,196 @@ async def update_project(
 async def remove_project(project_id: str, current_user: User = Depends(get_required_user)):
     try:
         await delete_research_project(project_id=project_id, current_user=current_user)
+    except ResearchProjectError as exc:
+        raise _project_http_error(exc) from exc
+
+
+@research.get("/projects/{project_id}/plan")
+async def project_plan(project_id: str, current_user: User = Depends(get_required_user)):
+    try:
+        return await get_research_project_plan(project_id=project_id, current_user=current_user)
+    except ResearchProjectError as exc:
+        raise _project_http_error(exc) from exc
+
+
+@research.post("/projects/{project_id}/milestones", status_code=201)
+async def create_milestone(
+    project_id: str,
+    payload: CreateResearchProjectMilestoneRequest,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await create_project_milestone(
+            project_id=project_id,
+            current_user=current_user,
+            **payload.model_dump(),
+        )
+    except ResearchProjectError as exc:
+        raise _project_http_error(exc) from exc
+
+
+@research.patch("/projects/{project_id}/milestones/{milestone_id}")
+async def update_milestone(
+    project_id: str,
+    milestone_id: str,
+    payload: UpdateResearchProjectMilestoneRequest,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await update_project_milestone(
+            project_id=project_id,
+            milestone_id=milestone_id,
+            current_user=current_user,
+            values=payload.model_dump(exclude_unset=True),
+        )
+    except ResearchProjectError as exc:
+        raise _project_http_error(exc) from exc
+
+
+@research.delete("/projects/{project_id}/milestones/{milestone_id}", status_code=204)
+async def remove_milestone(
+    project_id: str,
+    milestone_id: str,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        await delete_project_milestone(
+            project_id=project_id,
+            milestone_id=milestone_id,
+            current_user=current_user,
+        )
+    except ResearchProjectError as exc:
+        raise _project_http_error(exc) from exc
+
+
+@research.put("/projects/{project_id}/milestones/order", status_code=204)
+async def reorder_milestones(
+    project_id: str,
+    payload: ResearchProjectMilestoneOrderRequest,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        await reorder_project_milestones(
+            project_id=project_id,
+            current_user=current_user,
+            milestone_ids=payload.milestone_ids,
+        )
+    except ResearchProjectError as exc:
+        raise _project_http_error(exc) from exc
+
+
+@research.post("/projects/{project_id}/tasks", status_code=201)
+async def create_task(
+    project_id: str,
+    payload: CreateResearchProjectTaskRequest,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await create_project_task(
+            project_id=project_id,
+            current_user=current_user,
+            **payload.model_dump(),
+        )
+    except ResearchProjectError as exc:
+        raise _project_http_error(exc) from exc
+
+
+@research.patch("/projects/{project_id}/tasks/{task_id}")
+async def update_task(
+    project_id: str,
+    task_id: str,
+    payload: UpdateResearchProjectTaskRequest,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await update_project_task(
+            project_id=project_id,
+            task_id=task_id,
+            current_user=current_user,
+            values=payload.model_dump(exclude_unset=True),
+        )
+    except ResearchProjectError as exc:
+        raise _project_http_error(exc) from exc
+
+
+@research.delete("/projects/{project_id}/tasks/{task_id}", status_code=204)
+async def remove_task(
+    project_id: str,
+    task_id: str,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        await delete_project_task(project_id=project_id, task_id=task_id, current_user=current_user)
+    except ResearchProjectError as exc:
+        raise _project_http_error(exc) from exc
+
+
+@research.put("/projects/{project_id}/tasks/order", status_code=204)
+async def reorder_tasks(
+    project_id: str,
+    payload: ResearchProjectTaskOrderRequest,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        await reorder_project_tasks(
+            project_id=project_id,
+            current_user=current_user,
+            milestone_id=payload.milestone_id,
+            task_ids=payload.task_ids,
+        )
+    except ResearchProjectError as exc:
+        raise _project_http_error(exc) from exc
+
+
+@research.post("/projects/{project_id}/plan/asset-links", status_code=201)
+async def create_plan_asset_link(
+    project_id: str,
+    payload: CreateResearchProjectPlanAssetLinkRequest,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await create_project_plan_asset_link(
+            project_id=project_id,
+            current_user=current_user,
+            **payload.model_dump(),
+        )
+    except ResearchProjectError as exc:
+        raise _project_http_error(exc) from exc
+
+
+@research.delete("/projects/{project_id}/plan/asset-links/{link_id}", status_code=204)
+async def remove_plan_asset_link(
+    project_id: str,
+    link_id: str,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        await delete_project_plan_asset_link(
+            project_id=project_id,
+            link_id=link_id,
+            current_user=current_user,
+        )
+    except ResearchProjectError as exc:
+        raise _project_http_error(exc) from exc
+
+
+@research.get("/projects/{project_id}/report")
+async def project_report(
+    project_id: str,
+    format: str = Query(default="markdown", pattern=r"^(markdown|docx)$"),
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        filename, content, media_type = await export_research_project_report(
+            project_id=project_id,
+            current_user=current_user,
+            export_format=format,
+        )
+        return Response(
+            content=content,
+            media_type=media_type,
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
     except ResearchProjectError as exc:
         raise _project_http_error(exc) from exc
 

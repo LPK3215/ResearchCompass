@@ -9,6 +9,8 @@ from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 
 from yuxi.repositories.research_project_repository import ASSET_TYPES, ResearchProjectRepository
+from yuxi.repositories.research_project_plan_repository import ResearchProjectPlanRepository
+from yuxi.services.research_project_plan_utils import build_project_plan_summary
 from yuxi.services.research_paper_service import _ensure_access
 from yuxi.storage.postgres.models_business import User
 from yuxi.storage.postgres.models_knowledge import ResearchProject, ResearchProjectActivity, ResearchProjectAsset
@@ -28,7 +30,7 @@ def _now() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
-async def _owned_project(project_id: str, current_user: User) -> ResearchProject:
+async def get_owned_project(project_id: str, current_user: User) -> ResearchProject:
     project = await ResearchProjectRepository().get(project_id, uid=str(current_user.uid))
     if project is None:
         raise ResearchProjectError("project_not_found", "研究项目不存在")
@@ -41,8 +43,12 @@ async def _owned_project(project_id: str, current_user: User) -> ResearchProject
     return project
 
 
-def _serialize_project(project: ResearchProject, counts: dict[str, int]) -> dict[str, Any]:
-    return {
+def serialize_project(
+    project: ResearchProject,
+    counts: dict[str, int],
+    plan_summary: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload = {
         "project_id": project.project_id,
         "kb_id": project.kb_id,
         "title": project.title,
@@ -59,9 +65,23 @@ def _serialize_project(project: ResearchProject, counts: dict[str, int]) -> dict
         "completed_at": project.completed_at.isoformat() if project.completed_at else None,
         "archived_at": project.archived_at.isoformat() if project.archived_at else None,
     }
+    if plan_summary is not None:
+        payload.update(
+            {
+                "progress": plan_summary["progress"],
+                "progress_source": plan_summary["progress_source"],
+                "health": plan_summary["health"],
+                "next_due_date": plan_summary["next_due_date"],
+                "plan_summary": {
+                    "milestones": plan_summary["milestones"],
+                    "tasks": plan_summary["tasks"],
+                },
+            }
+        )
+    return payload
 
 
-def _serialize_asset(asset: ResearchProjectAsset, *, available: bool) -> dict[str, Any]:
+def serialize_project_asset(asset: ResearchProjectAsset, *, available: bool) -> dict[str, Any]:
     return {
         "asset_id": asset.asset_id,
         "asset_type": asset.asset_type,
@@ -77,7 +97,7 @@ def _serialize_asset(asset: ResearchProjectAsset, *, available: bool) -> dict[st
     }
 
 
-def _serialize_activity(activity: ResearchProjectActivity) -> dict[str, Any]:
+def serialize_project_activity(activity: ResearchProjectActivity) -> dict[str, Any]:
     return {
         "activity_id": activity.activity_id,
         "activity_type": activity.activity_type,
@@ -115,7 +135,13 @@ async def create_research_project(
             "target_date": target_date,
         }
     )
-    return _serialize_project(project, {**{item: 0 for item in ASSET_TYPES}, "total": 0})
+    summary = build_project_plan_summary(
+        project_status=project.status,
+        manual_progress=int(project.progress or 0),
+        milestones=[],
+        tasks=[],
+    )
+    return serialize_project(project, {**{item: 0 for item in ASSET_TYPES}, "total": 0}, summary)
 
 
 async def list_research_projects(
@@ -137,8 +163,23 @@ async def list_research_projects(
         offset=offset,
         limit=limit,
     )
+    milestone_records, task_records = await ResearchProjectPlanRepository().list_summary_records(
+        [str(project.project_id) for project in projects]
+    )
     return {
-        "items": [_serialize_project(project, counts[project.project_id]) for project in projects],
+        "items": [
+            serialize_project(
+                project,
+                counts[project.project_id],
+                build_project_plan_summary(
+                    project_status=project.status,
+                    manual_progress=int(project.progress or 0),
+                    milestones=milestone_records[project.project_id],
+                    tasks=task_records[project.project_id],
+                ),
+            )
+            for project in projects
+        ],
         "total": total,
         "offset": offset,
         "limit": limit,
@@ -147,12 +188,19 @@ async def list_research_projects(
 
 
 async def get_research_project(*, project_id: str, current_user: User) -> dict[str, Any]:
-    project = await _owned_project(project_id, current_user)
+    project = await get_owned_project(project_id, current_user)
     repository = ResearchProjectRepository()
     counts = await repository.get_asset_counts(project_id)
     activities = await repository.list_activities(project_id, limit=30)
-    payload = _serialize_project(project, counts)
-    payload["activities"] = [_serialize_activity(item) for item in activities]
+    milestones, tasks, _ = await ResearchProjectPlanRepository().get_plan_records(project_id)
+    summary = build_project_plan_summary(
+        project_status=project.status,
+        manual_progress=int(project.progress or 0),
+        milestones=milestones,
+        tasks=tasks,
+    )
+    payload = serialize_project(project, counts, summary)
+    payload["activities"] = [serialize_project_activity(item) for item in activities]
     return payload
 
 
@@ -162,14 +210,30 @@ async def update_research_project(
     current_user: User,
     values: dict[str, Any],
 ) -> dict[str, Any]:
-    project = await _owned_project(project_id, current_user)
+    project = await get_owned_project(project_id, current_user)
     if project.status == "archived" and values.get("status") != "active":
         raise ResearchProjectError("project_archived", "归档项目需先恢复为进行中才能编辑")
+    if project.status == "completed" and values.get("status", "completed") == "completed":
+        disallowed = set(values) - {"description", "progress"}
+        if disallowed:
+            raise ResearchProjectError("project_read_only", "已完成项目只能修订项目说明、归档或恢复为进行中")
+        values.pop("progress", None)
 
     status = values.get("status", project.status)
     if status not in PROJECT_STATUSES:
         raise ResearchProjectError("invalid_project_status", "不支持的研究项目状态")
     activity_type = "project_status_changed" if status != project.status else "project_updated"
+    plan_repository = ResearchProjectPlanRepository()
+    if status == "completed":
+        open_tasks = await plan_repository.count_open_tasks(project_id)
+        if open_tasks:
+            raise ResearchProjectError(
+                "project_has_open_tasks",
+                f"项目仍有 {open_tasks} 个未完成任务，完成全部任务后才能标记项目完成",
+            )
+    milestones, tasks, _ = await plan_repository.get_plan_records(project_id)
+    if tasks:
+        values.pop("progress", None)
     if status == "completed" and "progress" in values:
         values["progress"] = 100
     if status != project.status:
@@ -190,11 +254,17 @@ async def update_research_project(
     )
     if updated is None:
         raise ResearchProjectError("project_not_found", "研究项目不存在")
-    return _serialize_project(updated, await ResearchProjectRepository().get_asset_counts(project_id))
+    summary = build_project_plan_summary(
+        project_status=updated.status,
+        manual_progress=int(updated.progress or 0),
+        milestones=milestones,
+        tasks=tasks,
+    )
+    return serialize_project(updated, await ResearchProjectRepository().get_asset_counts(project_id), summary)
 
 
 async def delete_research_project(*, project_id: str, current_user: User) -> None:
-    await _owned_project(project_id, current_user)
+    await get_owned_project(project_id, current_user)
     if not await ResearchProjectRepository().delete(project_id, uid=str(current_user.uid)):
         raise ResearchProjectError("project_not_found", "研究项目不存在")
 
@@ -208,7 +278,7 @@ async def list_project_asset_candidates(
     offset: int,
     limit: int,
 ) -> dict[str, Any]:
-    project = await _owned_project(project_id, current_user)
+    project = await get_owned_project(project_id, current_user)
     _validate_asset_type(asset_type, current_user)
     items, total = await ResearchProjectRepository().list_candidates(
         project_id=project_id,
@@ -230,8 +300,8 @@ async def add_project_assets(
     reference_ids: list[str],
     notes: str,
 ) -> dict[str, Any]:
-    project = await _owned_project(project_id, current_user)
-    _ensure_project_accepts_assets(project)
+    project = await get_owned_project(project_id, current_user)
+    ensure_project_writable(project)
     _validate_asset_type(asset_type, current_user)
     repository = ResearchProjectRepository()
     linked = await repository.get_linked_reference_ids(project_id, asset_type)
@@ -268,7 +338,7 @@ async def add_project_assets(
     except IntegrityError as exc:
         raise ResearchProjectError("asset_already_linked", "所选成果已存在于当前研究项目") from exc
     return {
-        "items": [_serialize_asset(record, available=True) for record in records],
+        "items": [serialize_project_asset(record, available=True) for record in records],
         "asset_counts": await repository.get_asset_counts(project_id),
     }
 
@@ -282,7 +352,7 @@ async def list_project_assets(
     offset: int,
     limit: int,
 ) -> dict[str, Any]:
-    project = await _owned_project(project_id, current_user)
+    project = await get_owned_project(project_id, current_user)
     if asset_type:
         _validate_asset_type(asset_type, current_user, require_role=False)
     repository = ResearchProjectRepository()
@@ -293,23 +363,10 @@ async def list_project_assets(
         offset=offset,
         limit=limit,
     )
-    grouped: dict[str, list[ResearchProjectAsset]] = defaultdict(list)
-    for record in records:
-        grouped[record.asset_type].append(record)
-    available: dict[str, set[str]] = {}
-    for current_type, type_records in grouped.items():
-        if current_type == "evaluation_experiment" and current_user.role not in {"admin", "superadmin"}:
-            available[current_type] = set()
-            continue
-        available[current_type] = await repository.available_reference_ids(
-            kb_id=str(project.kb_id),
-            uid=str(current_user.uid),
-            asset_type=current_type,
-            reference_ids=[record.reference_id for record in type_records],
-        )
+    available = await get_available_project_asset_ids(project, current_user, records, repository=repository)
     return {
         "items": [
-            _serialize_asset(record, available=record.reference_id in available.get(record.asset_type, set()))
+            serialize_project_asset(record, available=record.asset_id in available)
             for record in records
         ],
         "total": total,
@@ -326,8 +383,8 @@ async def update_project_asset_notes(
     current_user: User,
     notes: str,
 ) -> dict[str, Any]:
-    project = await _owned_project(project_id, current_user)
-    _ensure_project_accepts_assets(project)
+    project = await get_owned_project(project_id, current_user)
+    ensure_project_writable(project)
     repository = ResearchProjectRepository()
     record = await repository.update_asset_notes(
         project_id,
@@ -342,7 +399,7 @@ async def update_project_asset_notes(
         asset_type=record.asset_type,
         reference_ids=[record.reference_id],
     )
-    return _serialize_asset(record, available=record.reference_id in available)
+    return serialize_project_asset(record, available=record.reference_id in available)
 
 
 async def remove_project_asset(
@@ -351,8 +408,8 @@ async def remove_project_asset(
     asset_id: str,
     current_user: User,
 ) -> dict[str, Any]:
-    project = await _owned_project(project_id, current_user)
-    _ensure_project_accepts_assets(project)
+    project = await get_owned_project(project_id, current_user)
+    ensure_project_writable(project)
     repository = ResearchProjectRepository()
     record = await repository.remove_asset(project_id, asset_id)
     if record is None:
@@ -360,9 +417,34 @@ async def remove_project_asset(
     return {"removed": True, "asset_counts": await repository.get_asset_counts(project_id)}
 
 
-def _ensure_project_accepts_assets(project: ResearchProject) -> None:
+def ensure_project_writable(project: ResearchProject) -> None:
     if project.status != "active":
         raise ResearchProjectError("project_read_only", "已完成或归档项目需恢复为进行中后才能修改成果")
+
+
+async def get_available_project_asset_ids(
+    project: ResearchProject,
+    current_user: User,
+    records: list[ResearchProjectAsset],
+    *,
+    repository: ResearchProjectRepository | None = None,
+) -> set[str]:
+    grouped: dict[str, list[ResearchProjectAsset]] = defaultdict(list)
+    for record in records:
+        grouped[record.asset_type].append(record)
+    resolved: set[str] = set()
+    asset_repository = repository or ResearchProjectRepository()
+    for asset_type, type_records in grouped.items():
+        if asset_type == "evaluation_experiment" and current_user.role not in {"admin", "superadmin"}:
+            continue
+        available_references = await asset_repository.available_reference_ids(
+            kb_id=str(project.kb_id),
+            uid=str(current_user.uid),
+            asset_type=asset_type,
+            reference_ids=[record.reference_id for record in type_records],
+        )
+        resolved.update(record.asset_id for record in type_records if record.reference_id in available_references)
+    return resolved
 
 
 def _validate_asset_type(asset_type: str, current_user: User, *, require_role: bool = True) -> None:
@@ -378,11 +460,17 @@ __all__ = [
     "add_project_assets",
     "create_research_project",
     "delete_research_project",
+    "ensure_project_writable",
+    "get_available_project_asset_ids",
+    "get_owned_project",
     "get_research_project",
     "list_project_asset_candidates",
     "list_project_assets",
     "list_research_projects",
     "remove_project_asset",
+    "serialize_project",
+    "serialize_project_activity",
+    "serialize_project_asset",
     "update_project_asset_notes",
     "update_research_project",
 ]

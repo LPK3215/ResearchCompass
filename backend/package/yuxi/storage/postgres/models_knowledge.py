@@ -4,6 +4,7 @@ from sqlalchemy import (
     JSON,
     BigInteger,
     Boolean,
+    CheckConstraint,
     Column,
     Date,
     DateTime,
@@ -202,6 +203,121 @@ class ResearchProjectAsset(Base):
     notes = Column(Text)
     added_at = Column(DateTime(timezone=True), default=utc_now_naive)
     updated_at = Column(DateTime(timezone=True), default=utc_now_naive, onupdate=utc_now_naive)
+
+
+class ResearchProjectMilestone(Base):
+    """研究项目中按顺序推进的阶段性交付目标。"""
+
+    __tablename__ = "research_project_milestones"
+    __table_args__ = (
+        UniqueConstraint("milestone_id", name="uq_research_project_milestones_id"),
+        CheckConstraint("status IN ('planned', 'active', 'completed')", name="ck_research_project_milestones_status"),
+        Index("ix_research_project_milestones_project_order", "project_id", "sort_order", "id"),
+        Index("ix_research_project_milestones_project_status_date", "project_id", "status", "target_date"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    milestone_id = Column(String(64), nullable=False, unique=True, index=True)
+    project_id = Column(
+        String(64),
+        ForeignKey("research_projects.project_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    title = Column(String(255), nullable=False)
+    description = Column(Text)
+    status = Column(String(32), nullable=False, default="planned", index=True)
+    target_date = Column(Date)
+    sort_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
+    updated_at = Column(DateTime(timezone=True), default=utc_now_naive, onupdate=utc_now_naive)
+    completed_at = Column(DateTime(timezone=True))
+
+
+class ResearchProjectTask(Base):
+    """研究项目中的个人可执行行动。"""
+
+    __tablename__ = "research_project_tasks"
+    __table_args__ = (
+        UniqueConstraint("task_id", name="uq_research_project_tasks_id"),
+        CheckConstraint(
+            "status IN ('todo', 'in_progress', 'blocked', 'done')",
+            name="ck_research_project_tasks_status",
+        ),
+        CheckConstraint("priority IN ('low', 'medium', 'high')", name="ck_research_project_tasks_priority"),
+        Index("ix_research_project_tasks_project_milestone_order", "project_id", "milestone_id", "sort_order", "id"),
+        Index("ix_research_project_tasks_project_status_due", "project_id", "status", "due_date"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    task_id = Column(String(64), nullable=False, unique=True, index=True)
+    project_id = Column(
+        String(64),
+        ForeignKey("research_projects.project_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    milestone_id = Column(
+        String(64),
+        ForeignKey("research_project_milestones.milestone_id", ondelete="SET NULL"),
+        index=True,
+    )
+    title = Column(String(255), nullable=False)
+    description = Column(Text)
+    status = Column(String(32), nullable=False, default="todo", index=True)
+    priority = Column(String(32), nullable=False, default="medium", index=True)
+    due_date = Column(Date)
+    sort_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
+    updated_at = Column(DateTime(timezone=True), default=utc_now_naive, onupdate=utc_now_naive)
+    completed_at = Column(DateTime(timezone=True))
+
+
+class ResearchProjectPlanAssetLink(Base):
+    """项目成果与一个里程碑或任务之间的计划关联。"""
+
+    __tablename__ = "research_project_plan_asset_links"
+    __table_args__ = (
+        UniqueConstraint("link_id", name="uq_research_project_plan_asset_links_id"),
+        UniqueConstraint(
+            "asset_id",
+            "milestone_id",
+            name="uq_research_project_plan_asset_links_asset_milestone",
+        ),
+        UniqueConstraint("asset_id", "task_id", name="uq_research_project_plan_asset_links_asset_task"),
+        CheckConstraint(
+            "(milestone_id IS NOT NULL AND task_id IS NULL) OR "
+            "(milestone_id IS NULL AND task_id IS NOT NULL)",
+            name="ck_research_project_plan_asset_links_target",
+        ),
+        Index("ix_research_project_plan_asset_links_project", "project_id", "id"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    link_id = Column(String(64), nullable=False, unique=True, index=True)
+    project_id = Column(
+        String(64),
+        ForeignKey("research_projects.project_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    asset_id = Column(
+        String(64),
+        ForeignKey("research_project_assets.asset_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    milestone_id = Column(
+        String(64),
+        ForeignKey("research_project_milestones.milestone_id", ondelete="CASCADE"),
+        index=True,
+    )
+    task_id = Column(
+        String(64),
+        ForeignKey("research_project_tasks.task_id", ondelete="CASCADE"),
+        index=True,
+    )
+    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
 
 
 class ResearchProjectActivity(Base):
