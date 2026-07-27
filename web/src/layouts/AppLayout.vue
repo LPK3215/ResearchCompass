@@ -134,7 +134,7 @@ const mainList = computed(() => {
   }
 
   items.push({
-    name: '通用助手',
+    name: '科研助手',
     path: AGENT_ENTRY_PATH,
     icon: MessageCirclePlus,
     activeIcon: MessageCirclePlus,

@@ -414,19 +414,16 @@ const handleResearchProjectChange = () => {
   ensureResearchThread()
 }
 
-// 切换到 research-copilot 时自动选择第一个知识库
-watch(isResearchCopilotSelected, (isSelected) => {
-  if (!isSelected) return
-  if (researchKbId.value) {
-    ensureResearchThread()
-    return
-  }
+// research-copilot 选中或知识库列表加载后，自动选择第一个知识库并确保会话
+watch([isResearchCopilotSelected, knowledgeBaseOptions], () => {
+  if (!isResearchCopilotSelected.value) return
+  if (researchKbId.value) return
   const firstKb = knowledgeBaseOptions.value[0]
   if (firstKb) {
     researchKbId.value = firstKb.value
     handleResearchKbChange(firstKb.value)
   }
-})
+}, { immediate: true })
 
 useOutsidePointerdown(agentDropdownOpen, [agentDropdownTriggerRef, agentDropdownPanelRef])
 </script>

@@ -19,8 +19,8 @@ test('lite mode accepts supported boolean environment values', () => {
   }
 })
 
-test('product entry follows the selected product mode', () => {
-  assert.equal(resolveProductEntry(false), RESEARCH_ENTRY_PATH)
+test('product entry always resolves to the agent conversation page', () => {
+  assert.equal(resolveProductEntry(false), AGENT_ENTRY_PATH)
   assert.equal(resolveProductEntry(true), AGENT_ENTRY_PATH)
 })
 

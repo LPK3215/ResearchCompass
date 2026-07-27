@@ -18,7 +18,9 @@ export const getPreferredAgentId = (agents, persistedId) => {
   if (persistedId && chatAgents.some((agent) => agent.id === persistedId)) {
     return persistedId
   }
-  return chatAgents.find(isDefaultBuiltinAgent)?.id
+  // 默认使用科研助手，复用框架原生对话页的工具调用展示能力
+  return chatAgents.find(isResearchCopilotAgent)?.id
+    || chatAgents.find(isDefaultBuiltinAgent)?.id
     || chatAgents.find((agent) => !isBuiltinAgent(agent))?.id
     || null
 }

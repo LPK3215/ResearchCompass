@@ -6,8 +6,8 @@ export const isLiteModeEnabled = (value) => {
   return normalized === 'true' || normalized === '1'
 }
 
-export const resolveProductEntry = (liteMode) =>
-  liteMode ? AGENT_ENTRY_PATH : RESEARCH_ENTRY_PATH
+// 对话页作为主交互入口，科研能力通过 research-copilot agent 工具调用
+export const resolveProductEntry = () => AGENT_ENTRY_PATH
 
 export const isResearchProductPath = (path) =>
   path === RESEARCH_ENTRY_PATH || path.startsWith(`${RESEARCH_ENTRY_PATH}/`)
@@ -16,4 +16,4 @@ export const getProductEntryRedirect = (path, liteMode) =>
   liteMode && isResearchProductPath(path) ? AGENT_ENTRY_PATH : null
 
 export const IS_LITE_MODE = isLiteModeEnabled(import.meta.env?.VITE_LITE_MODE)
-export const DEFAULT_PRODUCT_ENTRY = resolveProductEntry(IS_LITE_MODE)
+export const DEFAULT_PRODUCT_ENTRY = resolveProductEntry()
