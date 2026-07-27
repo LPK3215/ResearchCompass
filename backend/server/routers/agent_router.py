@@ -11,6 +11,8 @@ from yuxi.agents.buildin import agent_manager
 from yuxi.agents.context import filter_config_by_role
 from yuxi.repositories.agent_repository import (
     AgentRepository,
+    RESEARCH_COPILOT_AGENT_SLUG,
+    RESEARCH_COPILOT_TOOL_SLUGS,
     is_builtin_agent,
     user_can_access_agent,
     user_can_manage_agent,
@@ -34,6 +36,11 @@ from yuxi.services.agent_run_service import (
     stream_agent_run_events,
 )
 from yuxi.services.input_message_service import build_chat_input_message
+from yuxi.services.research_copilot_service import (
+    RESEARCH_COPILOT_SOURCE,
+    ResearchCopilotError,
+    prepare_research_copilot_run_meta,
+)
 from yuxi.storage.postgres.manager import pg_manager
 from yuxi.storage.postgres.models_business import User
 
@@ -88,7 +95,22 @@ def _backend_info(info: dict) -> dict:
 def _filter_agent_config_json(backend_id: str, config_json: dict | None, role: str | None) -> dict:
     backend = agent_manager.get_agent(backend_id)
     context_schema = backend.context_schema if backend else None
-    return filter_config_by_role(config_json or {}, role, context_schema=context_schema)
+    filtered = filter_config_by_role(config_json or {}, role, context_schema=context_schema)
+    context = filtered.get("context")
+    if not isinstance(context, dict):
+        return filtered
+
+    sanitized_context = dict(context)
+    sanitized_context.pop("research_context", None)
+    sanitized_context.pop("runtime_agent_slug", None)
+    sanitized_context.pop("research_tools_enabled", None)
+    if isinstance(sanitized_context.get("tools"), list):
+        research_tools = set(RESEARCH_COPILOT_TOOL_SLUGS)
+        sanitized_context["tools"] = [
+            tool_name for tool_name in sanitized_context["tools"] if tool_name not in research_tools
+        ]
+    filtered["context"] = sanitized_context
+    return filtered
 
 
 async def _serialize_agent(
@@ -204,6 +226,8 @@ async def update_agent(
         raise HTTPException(status_code=404, detail="智能体不存在")
     if not user_can_manage_agent(current_user, item):
         raise HTTPException(status_code=403, detail="不能编辑非自己创建的智能体")
+    if item.slug == RESEARCH_COPILOT_AGENT_SLUG:
+        raise HTTPException(status_code=409, detail="内置智能体不能编辑")
 
     try:
         fields_set = payload.model_fields_set
@@ -272,6 +296,31 @@ async def create_agent_run(
     current_user: User = Depends(get_required_user),
     db: AsyncSession = Depends(get_db),
 ):
+    try:
+        meta = await prepare_research_copilot_run_meta(
+            agent_slug=payload.agent_slug,
+            thread_id=payload.thread_id,
+            meta=dict(payload.meta or {}),
+            current_user=current_user,
+            db=db,
+        )
+    except ResearchCopilotError as exc:
+        status_code = {
+            "forbidden": 403,
+            "knowledge_base_not_found": 404,
+            "project_not_found": 404,
+            "thread_not_found": 404,
+            "invalid_copilot_thread": 409,
+            "project_scope_mismatch": 409,
+        }.get(exc.error_type, 422)
+        raise HTTPException(
+            status_code=status_code,
+            detail={"error": exc.error_type, "message": exc.message},
+        ) from exc
+
+    is_research_copilot = payload.agent_slug == RESEARCH_COPILOT_AGENT_SLUG
+    tool_approval_mode = "default" if is_research_copilot else payload.tool_approval_mode
+
     # resume 路径：恢复已有 LangGraph 状态，跳过 request 入队与派发，直接新建 run。
     if payload.resume is not None:
         input_message = None
@@ -281,9 +330,10 @@ async def create_agent_run(
             input_message=input_message,
             agent_slug=payload.agent_slug,
             thread_id=payload.thread_id,
-            meta=dict(payload.meta or {}),
+            meta=meta,
             model_spec=payload.model_spec,
-            tool_approval_mode=payload.tool_approval_mode,
+            tool_approval_mode=tool_approval_mode,
+            force_tool_approval_mode=tool_approval_mode if is_research_copilot else None,
             current_uid=str(current_user.uid),
             db=db,
             resume=payload.resume,
@@ -291,7 +341,6 @@ async def create_agent_run(
         )
 
     # 普通 chat 路径：写入 request + message，立即派发或入队等待。
-    meta = dict(payload.meta or {})
     request_id = meta.get("request_id") or str(uuid.uuid4())
     meta["request_id"] = request_id
 
@@ -311,14 +360,14 @@ async def create_agent_run(
         uid=str(current_user.uid),
         agent_slug=payload.agent_slug,
         thread_id=payload.thread_id,
-        source="chat",
+        source=RESEARCH_COPILOT_SOURCE if is_research_copilot else "chat",
         queue_policy=payload.queue_policy,
         input_message=input_message,
         agent_item=agent_item,
         agent_backend=agent_backend,
         model_spec=payload.model_spec,
-        tool_approval_mode=payload.tool_approval_mode,
-        meta={**meta, "tool_approval_mode": payload.tool_approval_mode},
+        tool_approval_mode=tool_approval_mode,
+        meta={**meta, "tool_approval_mode": tool_approval_mode},
     )
 
     await finalize_intake(db=db, intake=result)

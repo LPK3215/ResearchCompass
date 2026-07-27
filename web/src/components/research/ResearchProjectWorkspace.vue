@@ -196,7 +196,12 @@
           <div class="project-work-area">
             <a-tabs v-model:active-key="detailTab" class="detail-tabs">
               <a-tab-pane key="plan" tab="执行计划">
-                <ResearchProjectPlan class="plan-panel" :project="projectDetail" @changed="handlePlanChanged" />
+                <ResearchProjectPlan
+                  ref="projectPlanRef"
+                  class="plan-panel"
+                  :project="projectDetail"
+                  @changed="handlePlanChanged"
+                />
               </a-tab-pane>
               <a-tab-pane key="assets" tab="研究成果">
                 <section class="assets-panel">
@@ -558,7 +563,7 @@ const props = defineProps({
   databasesLoading: { type: Boolean, default: false }
 })
 
-defineEmits(['change-database', 'continue-asset'])
+const emit = defineEmits(['change-database', 'continue-asset', 'project-change'])
 
 const userStore = useUserStore()
 const assetTypeOptions = [
@@ -584,6 +589,7 @@ const projectQuery = ref('')
 const projectStatus = ref('all')
 const selectedProjectId = ref('')
 const projectDetail = ref(null)
+const projectPlanRef = ref(null)
 const detailLoading = ref(false)
 const workspaceError = ref('')
 const projectModalOpen = ref(false)
@@ -738,8 +744,12 @@ const loadProjects = async ({ preserveSelection = true } = {}) => {
     if (!preserveSelection || !selectedExists) {
       selectedProjectId.value = projects.value[0]?.project_id || ''
     }
-    if (selectedProjectId.value) await loadProjectDetail()
-    else projectDetail.value = null
+    if (selectedProjectId.value) {
+      await loadProjectDetail()
+    } else {
+      projectDetail.value = null
+      emit('project-change', null)
+    }
   } catch (error) {
     if (generation !== requestGeneration || requestSequence !== projectRequestSequence) return
     workspaceError.value = error.message || '研究项目加载失败'
@@ -753,11 +763,16 @@ const loadProjectDetail = async () => {
   const requestSequence = ++detailRequestSequence
   const generation = requestGeneration
   const projectId = selectedProjectId.value
+  if (projectDetail.value?.project_id !== projectId) {
+    projectDetail.value = null
+    emit('project-change', null)
+  }
   detailLoading.value = true
   try {
     const detail = await researchApi.getProject(projectId)
     if (generation !== requestGeneration || projectId !== selectedProjectId.value || requestSequence !== detailRequestSequence) return
     projectDetail.value = detail
+    emit('project-change', detail)
     await loadAssets()
   } catch (error) {
     if (generation !== requestGeneration || requestSequence !== detailRequestSequence) return
@@ -774,7 +789,6 @@ const selectProject = async (projectId) => {
   assetPage.value = 1
   assetQuery.value = ''
   detailTab.value = 'plan'
-  projectDetail.value = null
   await loadProjectDetail()
 }
 
@@ -1115,7 +1129,13 @@ const resetWorkspace = () => {
   if (props.kbId) void loadProjects({ preserveSelection: false })
 }
 
+const refreshWorkspace = async () => {
+  await loadProjects({ preserveSelection: true })
+  await projectPlanRef.value?.refresh()
+}
+
 watch(() => props.kbId, resetWorkspace, { immediate: true })
+defineExpose({ refresh: refreshWorkspace })
 onBeforeUnmount(() => { requestGeneration += 1 })
 </script>
 

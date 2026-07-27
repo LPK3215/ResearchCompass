@@ -1,12 +1,12 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { message, Modal } from 'ant-design-vue'
-import { Plus, RefreshCw, Trash2, SquarePen, Bot, MessageCirclePlus } from 'lucide-vue-next'
+import { Plus, RefreshCw, Trash2, SquarePen, Bot, MessageCirclePlus, Radar } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 
 import { agentApi } from '@/apis/agent_api'
 import AgentEditModal from '@/components/model-management/AgentEditModal.vue'
-import { isBuiltinAgent, useAgentStore } from '@/stores/agent'
+import { isBuiltinAgent, isResearchCopilotAgent, useAgentStore } from '@/stores/agent'
 import PageShoulder from '@/components/shared/PageShoulder.vue'
 import InfoCard from '@/components/shared/InfoCard.vue'
 import FallbackAvatar from '@/components/common/FallbackAvatar.vue'
@@ -69,6 +69,7 @@ const agentStats = computed(() => ({
     .length
 }))
 const canManageAgent = (agent) => !!agent?.can_manage
+const canEditAgent = (agent) => canManageAgent(agent) && !isResearchCopilotAgent(agent)
 const getAgentDefaultIconSrc = (agent) => (agent.id ? generatePixelAvatar(agent.id) : '')
 
 // ============ Agent Operations ============
@@ -101,12 +102,16 @@ const openCreateAgentModal = () => {
 }
 
 const openEditAgentModal = (agent) => {
-  if (!canManageAgent(agent)) return
+  if (!canEditAgent(agent)) return
   agentEditModalRef.value?.openEdit(agent)
 }
 
 const openAgentChat = (agent) => {
   if (!agent?.id || agent.is_subagent) return
+  if (isResearchCopilotAgent(agent)) {
+    router.push('/research')
+    return
+  }
   router.push({ name: 'AgentComp', query: { agent_id: agent.id } })
 }
 
@@ -181,7 +186,7 @@ defineExpose({
             :default-icon="Bot"
             :tags="[]"
             class="config-card agent-card"
-            @click="canManageAgent(agent) && openEditAgentModal(agent)"
+            @click="canEditAgent(agent) && openEditAgentModal(agent)"
           >
             <template #icon>
               <FallbackAvatar
@@ -197,7 +202,7 @@ defineExpose({
               />
             </template>
 
-            <template v-if="canManageAgent(agent)" #card-more-action-corner>
+            <template v-if="canEditAgent(agent)" #card-more-action-corner>
               <a-menu>
                 <a-menu-item key="edit" @click.stop="openEditAgentModal(agent)">
                   <span class="lucide-menu-item">
@@ -227,8 +232,9 @@ defineExpose({
                   class="lucide-icon-btn agent-chat-entry"
                   @click.stop="openAgentChat(agent)"
                 >
-                  <MessageCirclePlus :size="14" />
-                  去对话
+                  <Radar v-if="isResearchCopilotAgent(agent)" :size="14" />
+                  <MessageCirclePlus v-else :size="14" />
+                  {{ isResearchCopilotAgent(agent) ? '进入科研罗盘' : '去对话' }}
                 </a-button>
               </div>
             </template>

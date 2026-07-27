@@ -17,6 +17,7 @@ def test_document_processor_factory_uses_shared_registry():
 
 
 def test_knowledge_runtime_preserves_lite_mode(tmp_path):
+    (tmp_path / ".env").write_text("LITE_MODE=false\n", encoding="utf-8")
     env = os.environ.copy()
     env["LITE_MODE"] = "1"
     result = subprocess.run(
@@ -41,3 +42,20 @@ def test_knowledge_runtime_preserves_lite_mode(tmp_path):
 
     loaded = json.loads(result.stdout.splitlines()[-1])
     assert loaded == {"manager": "KnowledgeBaseManager", "types": ["dify", "notion"]}
+
+
+def test_package_environment_takes_precedence_over_dotenv(tmp_path):
+    (tmp_path / ".env").write_text("LITE_MODE=false\n", encoding="utf-8")
+    env = os.environ.copy()
+    env["LITE_MODE"] = "1"
+
+    result = subprocess.run(
+        [sys.executable, "-c", "import os; import yuxi; print(os.environ['LITE_MODE'])"],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert result.stdout.splitlines()[-1] == "1"

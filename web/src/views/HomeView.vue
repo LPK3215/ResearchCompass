@@ -64,7 +64,7 @@
               </p>
             </Transition>
             <div class="hero-actions reveal-up delay-2">
-              <button class="button-base primary" @click="goToChat">
+              <button class="button-base primary" @click="goToProduct">
                 <span>开始体验</span>
                 <ArrowRight :size="18" />
               </button>
@@ -184,6 +184,7 @@ import { useUserStore } from '@/stores/user'
 import { useInfoStore } from '@/stores/info'
 import { healthApi } from '@/apis/system_api'
 import UserInfoComponent from '@/components/UserInfoComponent.vue'
+import { DEFAULT_PRODUCT_ENTRY } from '@/utils/productEntry'
 import {
   BookText,
   ArrowRight,
@@ -278,14 +279,14 @@ const retryLoad = () => {
   loadData()
 }
 
-const goToChat = async () => {
+const goToProduct = () => {
   if (!userStore.isLoggedIn) {
     sessionStorage.setItem('redirect', '/')
     router.push('/login')
     return
   }
 
-  router.push('/agent')
+  router.push(DEFAULT_PRODUCT_ENTRY)
 }
 
 onMounted(() => {

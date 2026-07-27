@@ -20,6 +20,29 @@ async def _fake_normalize_agent_context_config(context, **_kwargs):
     return dict(context or {})
 
 
+def test_research_runtime_context_requires_copilot_agent():
+    forged_context = {"kb_id": "forged-kb"}
+    generic_input = {"research_tools_enabled": False}
+    copilot_input = {"research_tools_enabled": False}
+
+    svc._apply_research_runtime_context(
+        generic_input,
+        {"research_context": forged_context},
+        "default-chatbot",
+    )
+    svc._apply_research_runtime_context(
+        copilot_input,
+        {"research_context": {"kb_id": "trusted-kb"}},
+        "research-copilot",
+    )
+
+    assert generic_input == {"research_tools_enabled": False}
+    assert copilot_input == {
+        "research_tools_enabled": True,
+        "research_context": {"kb_id": "trusted-kb"},
+    }
+
+
 @pytest.mark.asyncio
 async def test_resolve_agent_runtime_includes_subagents_only_when_requested(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[str] = []
@@ -33,7 +56,11 @@ async def test_resolve_agent_runtime_includes_subagents_only_when_requested(monk
             assert slug == "worker"
             calls.append(kind)
             if kind == "subagent":
-                return SimpleNamespace(slug="worker", backend_id="SubAgentBackend", config_json={"context": {}})
+                return SimpleNamespace(
+                    slug="worker",
+                    backend_id="SubAgentBackend",
+                    config_json={"context": {"research_context": {"kb_id": "forged-kb"}}},
+                )
             return None
 
     class FakeConversationRepository:
@@ -73,7 +100,10 @@ async def test_resolve_agent_runtime_includes_subagents_only_when_requested(monk
     assert calls == ["main", "subagent"]
     assert agent_item.slug == "worker"
     assert backend.context_schema is None
-    assert agent_config == {}
+    assert agent_config == {
+        "runtime_agent_slug": "worker",
+        "research_tools_enabled": False,
+    }
 
 
 class _FakeConvRepo:

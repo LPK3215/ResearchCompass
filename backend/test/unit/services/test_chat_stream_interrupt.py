@@ -27,27 +27,20 @@ class _FakeSession:
     async def commit(self):
         self.commit_count += 1
 
+
 def test_build_tool_approval_payload_preserves_actions_and_review_configs():
     payload = _build_tool_approval_payload(
         {
-            "action_requests": [
-                {"name": "execute", "args": {"command": "pytest -q"}, "description": "approval"}
-            ],
-            "review_configs": [
-                {"action_name": "execute", "allowed_decisions": ["approve", "reject"]}
-            ],
+            "action_requests": [{"name": "execute", "args": {"command": "pytest -q"}, "description": "approval"}],
+            "review_configs": [{"action_name": "execute", "allowed_decisions": ["approve", "reject"]}],
         },
         "thread-1",
     )
 
     assert payload == {
         "approval": {
-            "action_requests": [
-                {"name": "execute", "args": {"command": "pytest -q"}, "description": "approval"}
-            ],
-            "review_configs": [
-                {"action_name": "execute", "allowed_decisions": ["approve", "reject"]}
-            ],
+            "action_requests": [{"name": "execute", "args": {"command": "pytest -q"}, "description": "approval"}],
+            "review_configs": [{"action_name": "execute", "allowed_decisions": ["approve", "reject"]}],
         },
         "thread_id": "thread-1",
     }
@@ -238,6 +231,7 @@ async def test_stream_agent_resume_init_does_not_render_resume_input():
 @pytest.mark.asyncio
 async def test_stream_agent_resume_commits_before_stream_and_routes_subagent_chunks(monkeypatch):
     db = _FakeSession()
+    captured: dict[str, object] = {}
 
     class FakeContext:
         def __init__(self):
@@ -256,6 +250,7 @@ async def test_stream_agent_resume_commits_before_stream_and_routes_subagent_chu
 
         async def stream_resume_with_state(self, resume_command, input_context=None, **kwargs):
             assert db.commit_count == 1
+            captured["input_context"] = input_context
             yield (
                 "messages",
                 (
@@ -272,7 +267,7 @@ async def test_stream_agent_resume_commits_before_stream_and_routes_subagent_chu
             return FakeGraph()
 
     async def fake_resolve_agent_runtime(**_kwargs):
-        return SimpleNamespace(slug="main-agent", backend_id="ChatbotAgent"), FakeAgent(), {}
+        return SimpleNamespace(slug="research-copilot", backend_id="ChatbotAgent"), FakeAgent(), {}
 
     async def fake_save_messages_from_langgraph_state(**_kwargs):
         return None
@@ -299,7 +294,10 @@ async def test_stream_agent_resume_commits_before_stream_and_routes_subagent_chu
     stream = stream_agent_resume(
         thread_id="parent-thread",
         resume_input={"ok": True},
-        meta={"request_id": "req-1"},
+        meta={
+            "request_id": "req-1",
+            "research_context": {"kb_id": "kb-1", "project_id": "project-1"},
+        },
         current_user=SimpleNamespace(uid="user-1"),
         db=db,
     )
@@ -321,8 +319,12 @@ async def test_stream_agent_resume_commits_before_stream_and_routes_subagent_chu
     assert loading["stream_event"]["thread_id"] == "child-thread"
     finished = chunks[-1]
     assert finished["status"] == "finished"
-    assert finished["meta"]["agent_slug"] == "main-agent"
+    assert finished["meta"]["agent_slug"] == "research-copilot"
     assert "agent_id" not in finished["meta"]
+    assert captured["input_context"]["research_context"] == {
+        "kb_id": "kb-1",
+        "project_id": "project-1",
+    }
 
 
 class TestCoerceInterruptPayload:

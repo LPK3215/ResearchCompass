@@ -94,19 +94,22 @@ def get_tool_instances_by_category(category: str) -> list[Any]:
     return tools
 
 
-async def resolve_configured_runtime_tools(context) -> list[Any]:
+async def resolve_configured_runtime_tools(context, *, include_research_tools: bool = False) -> list[Any]:
     from yuxi.agents.mcp.service import get_enabled_mcp_tools
 
     selected_tools = []
     selected_tool_names: set[str] = set()
-    buildin_tools = {tool.name: tool for tool in get_tool_instances_by_category("buildin")}
+    available_tools = {tool.name: tool for tool in get_tool_instances_by_category("buildin")}
+    research_tools = {tool.name: tool for tool in get_tool_instances_by_category("research")}
+    if include_research_tools:
+        available_tools.update(research_tools)
 
     for tool_name in getattr(context, "tools", None) or []:
         if not isinstance(tool_name, str) or tool_name in selected_tool_names:
             continue
-        tool = buildin_tools.get(tool_name)
+        tool = available_tools.get(tool_name)
         if tool is None:
-            logger.warning(f"Configured buildin tool not found, skip: {tool_name}")
+            logger.warning(f"Configured runtime tool not found, skip: {tool_name}")
             continue
         selected_tools.append(tool)
         selected_tool_names.add(tool_name)
@@ -136,6 +139,8 @@ async def resolve_configured_runtime_tools(context) -> list[Any]:
     from yuxi.agents.middlewares.skills import resolve_skill_gated_tools
 
     for tool in resolve_skill_gated_tools(context):
+        if not include_research_tools and tool.name in research_tools:
+            continue
         if tool.name in selected_tool_names:
             continue
         selected_tools.append(tool)

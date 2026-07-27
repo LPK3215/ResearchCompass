@@ -56,6 +56,11 @@ class _SubAgentToolFilterMiddleware(AgentMiddleware[Any, Any, Any]):
     def __init__(self, tool_approval_mode: str = "default"):
         self.disabled_tools = _disabled_tools_for(tool_approval_mode)
 
+    def _reject_disabled_tool_call(self, request) -> None:
+        tool_name = _tool_name(request.tool_call)
+        if tool_name in self.disabled_tools:
+            raise PermissionError(f"SubAgent 禁止执行工具: {tool_name}")
+
     def wrap_model_call(self, request, handler):
         return handler(request.override(tools=_filter_disabled_tools(request.tools or [], self.disabled_tools)))
 
@@ -63,6 +68,14 @@ class _SubAgentToolFilterMiddleware(AgentMiddleware[Any, Any, Any]):
         return await handler(
             request.override(tools=_filter_disabled_tools(request.tools or [], self.disabled_tools))
         )
+
+    def wrap_tool_call(self, request, handler):
+        self._reject_disabled_tool_call(request)
+        return handler(request)
+
+    async def awrap_tool_call(self, request, handler):
+        self._reject_disabled_tool_call(request)
+        return await handler(request)
 
 
 async def _build_middlewares(context, tool_approval_mode: str = "default"):

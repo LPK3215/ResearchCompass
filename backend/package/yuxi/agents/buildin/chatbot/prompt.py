@@ -85,7 +85,39 @@ TODO_MID_PROMPT = """
 """
 
 
+def _research_context_prompt(context) -> str:
+    research_context = getattr(context, "research_context", None)
+    if not isinstance(research_context, dict) or not research_context.get("kb_id"):
+        return ""
+
+    scope = [f"知识库 ID: {research_context['kb_id']}"]
+    if research_context.get("kb_name"):
+        scope.append(f"知识库: {research_context['kb_name']}")
+    if research_context.get("project_id"):
+        scope.append(f"项目 ID: {research_context['project_id']}")
+    if research_context.get("project_title"):
+        scope.append(f"项目: {research_context['project_title']}")
+    if research_context.get("surface"):
+        scope.append(f"当前工作区: {research_context['surface']}")
+
+    return """
+<research_compass_context>
+你正在 ResearchCompass 研究工作台内协助用户。当前作用域：
+{scope}
+
+规则：
+- 研究项目、执行计划、检索、综述和成果状态必须通过 ResearchCompass 工具读取，以工具结果为事实来源。
+- 默认在当前知识库和当前项目内工作；需要离开当前项目时先明确说明并取得用户同意。
+- 工具写入的数据会出现在结构化工作台中。完成写操作后，简要说明变更对象和下一步，不要在聊天中维护第二份项目状态。
+- 不得编造论文、证据、项目、任务、成果或运行状态；异步任务只报告工具返回的真实状态和标识。
+</research_compass_context>
+""".format(scope="\n".join(f"- {item}" for item in scope)).strip()
+
+
 def build_prompt_with_context(context):
     current_date = f"当前日期：{shanghai_now().strftime('%Y-%m-%d')}"
+    research_prompt = _research_context_prompt(context)
     system_prompt = f"{current_date}\n\n{PROMPT.strip()}\n\n{context.system_prompt or ''}"
+    if research_prompt:
+        system_prompt = f"{system_prompt}\n\n{research_prompt}"
     return system_prompt.strip()

@@ -2,9 +2,10 @@
 对话域持久化 Repository（Async）
 """
 
+import json
 import uuid as uuid_lib
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import flag_modified
@@ -20,6 +21,10 @@ MESSAGE_SEARCH_SNIPPETS_PER_THREAD = 2
 MESSAGE_SEARCH_ROLES = ("user", "assistant")
 MESSAGE_SEARCH_EXCLUDED_TYPES = ("tool_call", "tool_result")
 INVOCATION_CONVERSATION_SOURCES = ("agent_call", "agent_evaluation")
+GENERAL_CHAT_EXCLUDED_CONVERSATION_SOURCES = (
+    *INVOCATION_CONVERSATION_SOURCES,
+    "research_copilot",
+)
 
 
 class ConversationRepository:
@@ -139,6 +144,52 @@ class ConversationRepository:
 
     async def get_conversation_by_thread_id(self, thread_id: str) -> Conversation | None:
         result = await self.db.execute(select(Conversation).where(Conversation.thread_id == thread_id))
+        return result.scalar_one_or_none()
+
+    async def lock_source_scope(
+        self,
+        *,
+        uid: str,
+        agent_id: str,
+        source: str,
+        scope_key: str,
+    ) -> None:
+        """Serialize a source-scoped thread lookup and write in the current transaction."""
+        lock_key = json.dumps(
+            {
+                "uid": str(uid),
+                "agent_id": agent_id,
+                "source": source,
+                "scope_key": scope_key,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        await self.db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:lock_key, 0))"),
+            {"lock_key": lock_key},
+        )
+
+    async def get_active_by_source_scope(
+        self,
+        *,
+        uid: str,
+        agent_id: str,
+        source: str,
+        scope_key: str,
+    ) -> Conversation | None:
+        result = await self.db.execute(
+            select(Conversation)
+            .where(
+                Conversation.uid == str(uid),
+                Conversation.agent_id == agent_id,
+                Conversation.status == "active",
+                Conversation.extra_metadata["source"].as_string() == source,
+                Conversation.extra_metadata["research_scope_key"].as_string() == scope_key,
+            )
+            .order_by(Conversation.updated_at.desc())
+            .limit(1)
+        )
         return result.scalar_one_or_none()
 
     async def lock_conversation_by_thread_id(self, thread_id: str) -> Conversation | None:
@@ -451,7 +502,7 @@ class ConversationRepository:
             conversation.is_pinned = is_pinned
 
         if metadata is not None:
-            current_metadata = conversation.extra_metadata or {}
+            current_metadata = dict(conversation.extra_metadata or {})
             current_metadata.update(metadata)
             conversation.extra_metadata = current_metadata
 

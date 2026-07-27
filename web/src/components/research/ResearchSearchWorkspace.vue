@@ -305,7 +305,13 @@ const props = defineProps({
   maxPublicationYear: { type: Number, required: true }
 })
 
-const emit = defineEmits(['change-database', 'open-paper', 'open-evidence', 'start-synthesis'])
+const emit = defineEmits([
+  'change-database',
+  'open-paper',
+  'open-evidence',
+  'start-synthesis',
+  'selection-change'
+])
 
 const localHybridMode = 'local_hybrid'
 const strictHybridGraphMode = 'strict_hybrid_citation_graph'
@@ -372,6 +378,7 @@ const clearResult = () => {
   selectedRun.value = null
   searchResult.value = null
   searchError.value = ''
+  emit('selection-change', null)
 }
 
 const loadHistory = async () => {
@@ -428,6 +435,7 @@ const selectHistoryRun = async (run) => {
     const detail = await researchApi.getSearchRun(run.run_id)
     if (generation !== requestGeneration || kbId !== props.kbId || selectedRunId.value !== run.run_id) return
     selectedRun.value = detail
+    emit('selection-change', detail)
     applyRunConfig(detail)
     searchResult.value = detail.result || null
   } catch (error) {
@@ -472,6 +480,7 @@ const runResearchSearch = async () => {
       config: { retrieval: result.config },
       result
     }
+    emit('selection-change', selectedRun.value)
     historyPage.value = 1
     await loadHistory()
   } catch (error) {
@@ -556,6 +565,7 @@ const resetWorkspace = () => {
   historyRuns.value = []
   historyTotal.value = 0
   historyPage.value = 1
+  emit('selection-change', null)
   void loadHistory()
 }
 
@@ -568,6 +578,7 @@ watch(
   { immediate: true }
 )
 onMounted(loadHistory)
+defineExpose({ refresh: loadHistory })
 onBeforeUnmount(() => { requestGeneration += 1 })
 </script>
 

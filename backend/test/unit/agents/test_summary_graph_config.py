@@ -54,6 +54,42 @@ async def test_chatbot_summary_trim_limit_matches_summary_threshold(monkeypatch:
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+async def test_chatbot_research_copilot_forces_default_approval(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict = {}
+    context = _context()
+    context.runtime_agent_slug = "research-copilot"
+    context.tool_approval_mode = "always_trust"
+    _patch_common_graph_deps(monkeypatch, chatbot_graph, captured)
+
+    async def no_subagent_middleware(_context):
+        return None
+
+    def capture_approval_mode(mode):
+        captured["approval_mode"] = mode
+        return None
+
+    monkeypatch.setattr(chatbot_graph, "create_subagent_task_middleware", no_subagent_middleware)
+    monkeypatch.setattr(chatbot_graph, "create_tool_approval_middleware", capture_approval_mode)
+
+    await chatbot_graph._build_middlewares(context)
+
+    assert captured["approval_mode"] == "default"
+
+
+def test_research_tools_require_copilot_agent_and_trusted_context_marker() -> None:
+    assert chatbot_graph._research_tools_are_enabled(
+        SimpleNamespace(runtime_agent_slug="research-copilot", research_tools_enabled=True)
+    )
+    assert not chatbot_graph._research_tools_are_enabled(
+        SimpleNamespace(runtime_agent_slug="research-copilot", research_tools_enabled=False)
+    )
+    assert not chatbot_graph._research_tools_are_enabled(
+        SimpleNamespace(runtime_agent_slug="custom-agent", research_tools_enabled=True)
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 async def test_subagent_summary_trim_limit_matches_summary_threshold(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict = {}
     _patch_common_graph_deps(monkeypatch, subagent_graph, captured)

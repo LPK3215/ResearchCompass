@@ -11,6 +11,11 @@ const buildQuery = (params = {}) => {
 }
 
 export const researchApi = {
+  ensureCopilotThread: (payload) =>
+    apiRequest('/api/research/copilot/thread', {
+      method: 'POST', body: JSON.stringify(payload)
+    }),
+
   createProject: (kbId, payload) =>
     apiRequest(`/api/research/databases/${encodeURIComponent(kbId)}/projects`, {
       method: 'POST', body: JSON.stringify(payload)

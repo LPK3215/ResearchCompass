@@ -2,8 +2,12 @@ import { createRouter, createWebHistory } from 'vue-router'
 import AppLayout from '@/layouts/AppLayout.vue'
 import BlankLayout from '@/layouts/BlankLayout.vue'
 import { useUserStore } from '@/stores/user'
-import { useAgentStore } from '@/stores/agent'
 import { sanitizeRedirect } from '@/utils/oidcAutoStart'
+import {
+  DEFAULT_PRODUCT_ENTRY,
+  getProductEntryRedirect,
+  IS_LITE_MODE
+} from '@/utils/productEntry'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -180,6 +184,11 @@ const router = createRouter({
 
 // 全局前置守卫
 router.beforeEach(async (to) => {
+  const productEntryRedirect = getProductEntryRedirect(to.path, IS_LITE_MODE)
+  if (productEntryRedirect) {
+    return productEntryRedirect
+  }
+
   // 检查路由是否需要认证
   const requiresAuth = to.matched.some((record) => record.meta.requiresAuth === true)
   const requiresAdmin = to.matched.some((record) => record.meta.requiresAdmin)
@@ -211,32 +220,16 @@ router.beforeEach(async (to) => {
 
   // 如果路由需要管理员权限但用户不是管理员
   if (requiresAdmin && !isAdmin) {
-    // 如果是普通用户，跳转到聊天页空态
-    try {
-      const agentStore = useAgentStore()
-      // 等待 store 初始化完成
-      if (!agentStore.isInitialized) {
-        await agentStore.initialize()
-      }
-      return '/agent'
-    } catch (error) {
-      console.error('获取智能体信息失败:', error)
-      return '/agent'
-    }
+    return DEFAULT_PRODUCT_ENTRY
   }
 
   // 如果路由需要超级管理员权限但用户不是超级管理员
   if (requiresSuperAdmin && !isSuperAdmin) {
-    try {
-      const agentStore = useAgentStore()
-      if (!agentStore.isInitialized) {
-        await agentStore.initialize()
-      }
-      return '/agent'
-    } catch (error) {
-      console.error('获取智能体信息失败:', error)
-      return '/agent'
-    }
+    return DEFAULT_PRODUCT_ENTRY
+  }
+
+  if (to.name === 'Home' && isLoggedIn) {
+    return DEFAULT_PRODUCT_ENTRY
   }
 
   // 如果用户已登录但访问登录页，按 redirect 参数跳转

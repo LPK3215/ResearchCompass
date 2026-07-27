@@ -26,7 +26,7 @@ from yuxi.agents.base import _json_safe
 from yuxi.agents.buildin import agent_manager
 from yuxi.agents.context import build_agent_input_context, normalize_agent_context_config
 from yuxi.agents.state import AgentStatePayload
-from yuxi.repositories.agent_repository import AgentRepository
+from yuxi.repositories.agent_repository import AgentRepository, RESEARCH_COPILOT_AGENT_SLUG
 from yuxi.repositories.agent_run_repository import AgentRunRepository
 from yuxi.repositories.conversation_repository import ConversationRepository
 from yuxi.repositories.subagent_thread_repository import SubagentThreadRepository
@@ -198,7 +198,6 @@ def _metadata_namespace(metadata: dict | None) -> list[str]:
     return []
 
 
-
 def _apply_model_override(input_context: dict, meta: dict | None) -> None:
     """对话级模型覆盖：meta.model_spec 优先于智能体配置的 model。值已在创建 run 时校验。"""
     model_spec = (meta or {}).get("model_spec")
@@ -212,6 +211,14 @@ def _apply_input_context_field(input_context: dict, meta: dict | None, key: str)
     value = (meta or {}).get(key)
     if value:
         input_context[key] = value
+
+
+def _apply_research_runtime_context(input_context: dict, meta: dict | None, agent_slug: str) -> None:
+    research_context = (meta or {}).get("research_context")
+    if agent_slug != RESEARCH_COPILOT_AGENT_SLUG or not isinstance(research_context, dict):
+        return
+    input_context["research_tools_enabled"] = True
+    input_context["research_context"] = research_context
 
 
 def _apply_subagent_runtime_context(input_context: dict, meta: dict | None) -> None:
@@ -602,7 +609,6 @@ def _coerce_interrupt_payload(info: Any) -> dict:
 def _build_ask_user_question_payload(payload: dict, thread_id: str) -> dict[str, Any]:
     """将已标准化的 interrupt payload 转换为 ask_user_question_required 载荷。"""
 
-
     questions = _normalize_interrupt_questions(payload.get("questions"))
 
     if not questions:
@@ -706,6 +712,9 @@ async def _resolve_agent_runtime(
         user=user,
         context_schema=backend.context_schema,
     )
+    agent_config.pop("research_context", None)
+    agent_config["runtime_agent_slug"] = agent_item.slug
+    agent_config["research_tools_enabled"] = False
     return agent_item, backend, agent_config
 
 
@@ -873,6 +882,7 @@ async def stream_agent_chat(
     )
     _apply_model_override(input_context, meta)
     _apply_input_context_field(input_context, meta, "tool_approval_mode")
+    _apply_research_runtime_context(input_context, meta, agent_item.slug)
     _apply_subagent_runtime_context(input_context, meta)
     context = _build_agent_context(agent, input_context)
     langfuse_run = _build_langfuse_run_context(
@@ -1185,6 +1195,7 @@ async def stream_agent_resume(
     )
     _apply_model_override(input_context, meta)
     _apply_input_context_field(input_context, meta, "tool_approval_mode")
+    _apply_research_runtime_context(input_context, meta, agent_item.slug)
     context = _build_agent_context(agent, input_context)
     langfuse_run = _build_langfuse_run_context(
         current_user=current_user,

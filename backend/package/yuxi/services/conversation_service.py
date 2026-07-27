@@ -18,7 +18,11 @@ from yuxi.config import config as app_config
 from yuxi.knowledge.parser.factory import DocumentProcessorFactory
 from yuxi.knowledge.parser.unified import Parser
 from yuxi.repositories.agent_repository import AgentRepository
-from yuxi.repositories.conversation_repository import INVOCATION_CONVERSATION_SOURCES, ConversationRepository
+from yuxi.repositories.conversation_repository import (
+    GENERAL_CHAT_EXCLUDED_CONVERSATION_SOURCES,
+    INVOCATION_CONVERSATION_SOURCES,
+    ConversationRepository,
+)
 from yuxi.services.mention_search_service import invalidate_mention_cache
 from yuxi.storage.minio import StorageError, get_minio_client
 from yuxi.storage.postgres.models_business import AgentRun, User
@@ -431,7 +435,8 @@ async def create_thread_view(
 
     thread_id = str(uuid.uuid4())
     conv_repo = ConversationRepository(db)
-    thread_metadata = dict(metadata or {})
+    reserved_metadata_fields = {"source", "research_scope_key", "research_context"}
+    thread_metadata = {key: value for key, value in (metadata or {}).items() if key not in reserved_metadata_fields}
     thread_metadata["backend_id"] = agent_item.backend_id
     conversation = await conv_repo.create_conversation(
         uid=str(current_uid),
@@ -461,13 +466,14 @@ async def list_threads_view(
     offset: int = 0,
 ) -> list[dict]:
     conv_repo = ConversationRepository(db)
+    excluded_sources = INVOCATION_CONVERSATION_SOURCES if agent_slug else GENERAL_CHAT_EXCLUDED_CONVERSATION_SOURCES
     conversations = await conv_repo.list_conversations(
         uid=str(current_uid),
         agent_id=agent_slug,
         status="active",
         limit=limit,
         offset=offset,
-        exclude_sources=INVOCATION_CONVERSATION_SOURCES,
+        exclude_sources=excluded_sources,
     )
 
     return [
@@ -499,13 +505,14 @@ async def search_threads_view(
         return {"items": [], "has_more": False, "limit": limit, "offset": offset}
 
     conv_repo = ConversationRepository(db)
+    excluded_sources = INVOCATION_CONVERSATION_SOURCES if agent_id else GENERAL_CHAT_EXCLUDED_CONVERSATION_SOURCES
     search_items, has_more = await conv_repo.search_conversations_by_message_content(
         uid=str(current_uid),
         agent_id=agent_id,
         query=normalized_query,
         limit=limit,
         offset=offset,
-        exclude_sources=INVOCATION_CONVERSATION_SOURCES,
+        exclude_sources=excluded_sources,
     )
 
     items = []

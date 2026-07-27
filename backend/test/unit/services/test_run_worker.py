@@ -181,6 +181,7 @@ async def test_process_agent_run_restores_invocation_meta(monkeypatch: pytest.Mo
             extra_metadata={
                 "source": "agent_call",
                 "agent_invocation_meta": {"trace_id": "trace-1"},
+                "research_context": {"kb_id": "kb-1", "project_id": "project-1"},
                 "evaluation": {"dataset_name": "legacy-top-level"},
                 "custom_variables": {"system_prompt": "legacy"},
             },
@@ -209,6 +210,7 @@ async def test_process_agent_run_restores_invocation_meta(monkeypatch: pytest.Mo
     meta = captured["meta"]
     assert meta["source"] == "agent_call"
     assert meta["agent_invocation_meta"] == {"trace_id": "trace-1"}
+    assert "research_context" not in meta
     assert "evaluation" not in meta
     assert "custom_variables" not in meta
     metadata_event = next(event for event in events if event["event_type"] == "metadata")
@@ -216,6 +218,39 @@ async def test_process_agent_run_restores_invocation_meta(monkeypatch: pytest.Mo
     assert "evaluation" not in metadata_event["payload"]
     assert "custom_variables" not in metadata_event["payload"]
     assert terminal_statuses == ["completed"]
+
+
+def test_trusted_research_context_requires_copilot_source_and_agent():
+    context = {"kb_id": "kb-1", "project_id": "project-1"}
+
+    assert (
+        run_worker._trusted_research_context(
+            "research-copilot",
+            {"source": "research_copilot", "research_context": context},
+        )
+        == context
+    )
+    assert (
+        run_worker._trusted_research_context(
+            "research-copilot",
+            {"source": "ask_user_question_resume", "research_context": context},
+        )
+        == context
+    )
+    assert (
+        run_worker._trusted_research_context(
+            "research-copilot",
+            {"source": "agent_call", "research_context": context},
+        )
+        is None
+    )
+    assert (
+        run_worker._trusted_research_context(
+            "default-chatbot",
+            {"source": "research_copilot", "research_context": context},
+        )
+        is None
+    )
 
 
 @pytest.mark.asyncio
@@ -241,9 +276,7 @@ async def test_process_agent_run_non_retryable_error_marks_failed(monkeypatch: p
 
     async def fake_mark_terminal(run_id: str, status: str, error_type=None, error_message=None):
         del run_id
-        terminal_updates.append(
-            {"status": status, "error_type": error_type, "error_message": error_message}
-        )
+        terminal_updates.append({"status": status, "error_type": error_type, "error_message": error_message})
         return run_worker.TerminalTransition(status=status, changed=True)
 
     monkeypatch.setattr(run_worker, "append_run_event", fake_append_event)
@@ -259,9 +292,7 @@ async def test_process_agent_run_non_retryable_error_marks_failed(monkeypatch: p
 
     error_event = next(event for event in events if event["event_type"] == "error")
     assert error_event["payload"]["chunk"]["error_message"] == "智能体运行失败"
-    assert terminal_updates == [
-        {"status": "failed", "error_type": "worker_error", "error_message": "智能体运行失败"}
-    ]
+    assert terminal_updates == [{"status": "failed", "error_type": "worker_error", "error_message": "智能体运行失败"}]
     assert secret not in repr(events)
     assert secret not in repr(terminal_updates)
     assert secret not in repr(log_entries)
@@ -282,9 +313,7 @@ async def test_process_agent_run_sanitizes_untrusted_stream_error_chunk(monkeypa
 
     async def fake_mark_terminal(run_id: str, status: str, error_type=None, error_message=None):
         del run_id
-        terminal_updates.append(
-            {"status": status, "error_type": error_type, "error_message": error_message}
-        )
+        terminal_updates.append({"status": status, "error_type": error_type, "error_message": error_message})
         return run_worker.TerminalTransition(status=status, changed=True)
 
     def fake_stream_agent_chat(**kwargs):
@@ -308,9 +337,7 @@ async def test_process_agent_run_sanitizes_untrusted_stream_error_chunk(monkeypa
     error_event = next(event for event in events if event["event_type"] == "error")
     assert error_event["payload"]["chunk"]["error_type"] == "stream_error"
     assert error_event["payload"]["chunk"]["error_message"] == "智能体运行失败"
-    assert terminal_updates == [
-        {"status": "failed", "error_type": "stream_error", "error_message": "智能体运行失败"}
-    ]
+    assert terminal_updates == [{"status": "failed", "error_type": "stream_error", "error_message": "智能体运行失败"}]
     assert secret not in repr(events)
     assert secret not in repr(terminal_updates)
 
@@ -378,8 +405,7 @@ async def test_process_agent_run_retryable_error_retries_then_completes(monkeypa
     retry_event = next(
         item
         for item in events
-        if item["event_type"] == "error"
-        and item["payload"]["chunk"].get("error_type") == "retryable_worker_error"
+        if item["event_type"] == "error" and item["payload"]["chunk"].get("error_type") == "retryable_worker_error"
     )
     assert retry_event["payload"]["chunk"]["error_message"] == "运行暂时失败，正在重试"
     assert str(exc_info.value) == "运行暂时失败，正在重试"
@@ -413,9 +439,7 @@ async def test_process_agent_run_retry_exhaustion_uses_fixed_public_error(monkey
 
     async def fake_mark_terminal(run_id: str, status: str, error_type=None, error_message=None):
         del run_id
-        terminal_updates.append(
-            {"status": status, "error_type": error_type, "error_message": error_message}
-        )
+        terminal_updates.append({"status": status, "error_type": error_type, "error_message": error_message})
         return run_worker.TerminalTransition(status=status, changed=True)
 
     monkeypatch.setattr(run_worker, "append_run_event", fake_append_event)

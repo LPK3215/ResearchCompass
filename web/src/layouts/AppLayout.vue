@@ -30,6 +30,12 @@ import TaskCenterDrawer from '@/components/TaskCenterDrawer.vue'
 import SettingsModal from '@/components/SettingsModal.vue'
 import ConversationNavSection from '@/components/ConversationNavSection.vue'
 import ConversationSearchModal from '@/components/ConversationSearchModal.vue'
+import {
+  AGENT_ENTRY_PATH,
+  DEFAULT_PRODUCT_ENTRY,
+  IS_LITE_MODE,
+  RESEARCH_ENTRY_PATH
+} from '@/utils/productEntry'
 
 const configStore = useConfigStore()
 const agentStore = useAgentStore()
@@ -105,8 +111,9 @@ const route = useRoute()
 const router = useRouter()
 
 const activeTaskCount = computed(() => activeCountRef.value || 0)
+const isAgentRoute = computed(() => route.path === '/agent' || route.path.startsWith('/agent/'))
 const activeConversationThreadId = computed(() => {
-  return route.path.startsWith('/agent') ? currentThreadId.value : null
+  return isAgentRoute.value ? currentThreadId.value : null
 })
 const organizationName = computed(() => {
   return infoStore.organization.name || infoStore.branding.name || 'ResearchCompass'
@@ -114,44 +121,49 @@ const organizationName = computed(() => {
 
 // 下面是导航菜单部分，添加智能体项
 const mainList = computed(() => {
-  const items = [
-    {
-      name: '创建新对话',
-      path: '/agent',
-      icon: MessageCirclePlus,
-      activeIcon: MessageCirclePlus,
-      action: true,
-      exactActive: true
-    }
-  ]
+  const items = []
+
+  if (!IS_LITE_MODE) {
+    items.push({
+      name: 'ResearchCompass',
+      path: RESEARCH_ENTRY_PATH,
+      icon: Radar,
+      activeIcon: Radar,
+      section: 'product'
+    })
+  }
 
   items.push({
-    name: '智能体',
-    path: '/agent-manage',
-    icon: Box,
-    activeIcon: Box
+    name: '通用助手',
+    path: AGENT_ENTRY_PATH,
+    icon: MessageCirclePlus,
+    activeIcon: MessageCirclePlus,
+    section: 'product'
   })
 
   items.push({
     name: '工作区',
     path: '/workspace',
     icon: FolderKanban,
-    activeIcon: FolderKanban
+    activeIcon: FolderKanban,
+    section: 'product'
   })
 
   items.push({
-    name: '科研罗盘',
-    path: '/research',
-    icon: Radar,
-    activeIcon: Radar
+    name: 'Agent 管理',
+    path: '/agent-manage',
+    icon: Box,
+    activeIcon: Box,
+    section: 'management'
   })
 
   items.push({
-    name: '智能体扩展',
+    name: '知识与工具管理',
     path: '/extensions',
     activePaths: ['/extensions'],
     icon: LibraryBig,
-    activeIcon: LibraryBig
+    activeIcon: LibraryBig,
+    section: 'management'
   })
 
   if (userStore.isSuperAdmin) {
@@ -159,7 +171,8 @@ const mainList = computed(() => {
       name: '数据总览',
       path: '/dashboard',
       icon: BarChart3,
-      activeIcon: BarChart3
+      activeIcon: BarChart3,
+      section: 'management'
     })
   }
 
@@ -279,7 +292,7 @@ const handleTogglePinChat = async (threadId) => {
 watch(
   () => [route.path, route.params.thread_id],
   () => {
-    if (!route.path.startsWith('/agent')) return
+    if (!isAgentRoute.value) return
     const threadId = typeof route.params.thread_id === 'string' ? route.params.thread_id : null
     chatThreadsStore.setCurrentThreadId(threadId)
   },
@@ -296,7 +309,11 @@ provide('settingsModal', {
   <div class="app-layout" :class="{ 'sidebar-collapsed': sidebarCollapsed }">
     <div class="header">
       <div class="sidebar-brand" @click.stop>
-        <router-link v-if="!sidebarCollapsed" to="/" class="brand-link">
+        <router-link
+          v-if="!sidebarCollapsed"
+          :to="DEFAULT_PRODUCT_ENTRY"
+          class="brand-link"
+        >
           <img :src="infoStore.organization.avatar" class="brand-avatar" />
           <span class="brand-name">{{ organizationName }}</span>
         </router-link>
@@ -343,6 +360,7 @@ provide('settingsModal', {
         </RouterLink>
 
         <button
+          v-if="isAgentRoute"
           type="button"
           class="nav-item"
           :class="{ active: conversationSearchOpen }"
@@ -355,30 +373,36 @@ provide('settingsModal', {
           <span class="nav-text">搜索对话</span>
         </button>
 
-        <RouterLink
-          v-for="(item, index) in secondaryNavItems"
-          :key="index"
-          :to="item.path"
-          v-show="!item.hidden"
-          class="nav-item"
-          :class="{ active: isNavItemActive(item) }"
-          :active-class="item.action ? '' : 'active'"
-          @click.stop
-        >
-          <a-tooltip placement="right" :open="sidebarCollapsed ? undefined : false">
-            <template #title>{{ item.name }}</template>
-            <component
-              class="icon"
-              :is="isNavItemActive(item) ? item.activeIcon : item.icon"
-              size="18"
-            />
-          </a-tooltip>
-          <span class="nav-text">{{ item.name }}</span>
-        </RouterLink>
+        <template v-for="(item, index) in secondaryNavItems" :key="item.path">
+          <div
+            v-if="item.section === 'management' && secondaryNavItems[index - 1]?.section !== 'management'"
+            class="nav-section-label"
+          >
+            设置与管理
+          </div>
+          <RouterLink
+            :to="item.path"
+            v-show="!item.hidden"
+            class="nav-item"
+            :class="{ active: isNavItemActive(item) }"
+            :active-class="item.action ? '' : 'active'"
+            @click.stop
+          >
+            <a-tooltip placement="right" :open="sidebarCollapsed ? undefined : false">
+              <template #title>{{ item.name }}</template>
+              <component
+                class="icon"
+                :is="isNavItemActive(item) ? item.activeIcon : item.icon"
+                size="18"
+              />
+            </a-tooltip>
+            <span class="nav-text">{{ item.name }}</span>
+          </RouterLink>
+        </template>
       </div>
       <div class="fill">
         <ConversationNavSection
-          v-if="!sidebarCollapsed"
+          v-if="isAgentRoute && !sidebarCollapsed"
           class="sidebar-conversations"
           :current-chat-id="activeConversationThreadId"
           :chats-list="threads"
@@ -436,6 +460,7 @@ provide('settingsModal', {
     </router-view>
 
     <ConversationSearchModal
+      v-if="isAgentRoute"
       v-model:open="conversationSearchOpen"
       :recent-threads="threads"
       @select-thread="handleSearchSelectThread"
@@ -536,6 +561,14 @@ div.header,
     align-items: stretch;
     position: relative;
     gap: 0;
+  }
+
+  .nav-section-label {
+    margin: 14px 10px 5px;
+    color: var(--gray-500);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 16px;
   }
 
   .sidebar-conversations {
@@ -865,6 +898,14 @@ div.header,
     .nav {
       align-items: stretch;
       width: 100%;
+    }
+
+    .nav-section-label {
+      height: 1px;
+      margin: 8px 4px;
+      overflow: hidden;
+      background: var(--gray-150);
+      color: transparent;
     }
 
     .nav-item {

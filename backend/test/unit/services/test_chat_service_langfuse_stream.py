@@ -315,7 +315,10 @@ async def test_stream_agent_chat_commits_before_stream_and_persists_langfuse_con
     async for chunk in svc.stream_agent_chat(
         agent_slug="test-agent",
         thread_id="thread-1",
-        meta={"request_id": "req-1"},
+        meta={
+            "request_id": "req-1",
+            "research_context": {"kb_id": "kb-1", "project_id": "project-1"},
+        },
         input_message=build_chat_input_message("hello"),
         current_user=SimpleNamespace(id=1, uid="user-1", role="user", department_id="dept-1"),
         db=db,
@@ -330,6 +333,7 @@ async def test_stream_agent_chat_commits_before_stream_and_persists_langfuse_con
             "thread_id": "thread-1",
             "run_id": None,
             "request_id": "req-1",
+            "research_context": {"kb_id": "kb-1", "project_id": "project-1"},
         }.items()
     )
     assert calls["stream_kwargs"] == {

@@ -660,6 +660,8 @@ const removeAssetLink = async (link) => {
   }
 }
 
+defineExpose({ refresh: loadPlan })
+
 watch(() => props.project.project_id, () => {
   plan.value = null
   void loadPlan()

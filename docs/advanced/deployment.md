@@ -39,6 +39,8 @@ SILICONFLOW_API_KEY=
 
 生产 Compose 会在前七项配置缺失或为空时拒绝启动，并提示具体变量名。`JWT_SECRET_KEY` 和 `SANDBOX_PROVISIONER_TOKEN` 均应至少使用 32 字节随机值并持久保存，可分别使用 `openssl rand -hex 32` 生成；两者不能复用。`YUXI_INSTANCE_ID` 应是每套部署稳定且唯一的实例标识。模型 API 密钥按实际使用的供应商配置。
 
+默认 `LITE_MODE=false`，生产镜像会在构建期生成完整模式前端。设置 `LITE_MODE=true` 后必须带 `--build` 重新构建 Web 镜像；Lite 模式不加载 ResearchCompass、知识库和图谱能力，并以通用助手作为默认入口。
+
 ### 2. 启动服务
 
 使用生产环境配置文件启动：

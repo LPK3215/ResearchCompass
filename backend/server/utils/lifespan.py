@@ -19,6 +19,23 @@ from yuxi import get_version
 from yuxi.config import config
 
 
+def _lite_mode_enabled() -> bool:
+    return os.environ.get("LITE_MODE", "").lower() in ("true", "1")
+
+
+async def _ensure_builtin_agents() -> None:
+    from yuxi.repositories.agent_repository import AgentRepository
+
+    async with pg_manager.get_async_session_context() as session:
+        repository = AgentRepository(session)
+        await repository.ensure_default_agent()
+        await repository.ensure_general_purpose_subagent()
+        await repository.ensure_web_search_subagent()
+        await repository.ensure_deep_research_agents()
+        if not _lite_mode_enabled():
+            await repository.ensure_research_copilot_agent()
+
+
 async def _shutdown_resources() -> None:
     try:
         await tasker.shutdown()
@@ -91,14 +108,7 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to initialize builtin skills during startup (error_type={type(e).__name__})")
 
     try:
-        from yuxi.repositories.agent_repository import AgentRepository
-
-        async with pg_manager.get_async_session_context() as session:
-            repository = AgentRepository(session)
-            await repository.ensure_default_agent()
-            await repository.ensure_general_purpose_subagent()
-            await repository.ensure_web_search_subagent()
-            await repository.ensure_deep_research_agents()
+        await _ensure_builtin_agents()
     except Exception as e:
         logger.error(f"Failed to ensure default agent during startup (error_type={type(e).__name__})")
 
@@ -121,7 +131,7 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to initialize model cache during startup (error_type={type(e).__name__})")
 
     # 初始化知识库管理器
-    if os.environ.get("LITE_MODE", "").lower() in ("true", "1"):
+    if _lite_mode_enabled():
         logger.info("LITE_MODE enabled, skipping knowledge base initialization")
     else:
         try:

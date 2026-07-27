@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from yuxi.agents.toolkits import service as tool_service
 
 
 def test_get_tool_metadata_includes_config_guide(monkeypatch):
     tool_service._metadata_cache.clear()
-
     fake_tool = SimpleNamespace(
         name="demo_tool",
         description="demo description",
@@ -46,3 +47,27 @@ def test_get_tool_metadata_includes_config_guide(monkeypatch):
     ]
 
     tool_service._metadata_cache.clear()
+
+
+@pytest.mark.asyncio
+async def test_research_tools_require_explicit_trusted_resolution(monkeypatch: pytest.MonkeyPatch):
+    from yuxi.agents.toolkits.research import tools as research_tools
+
+    context = SimpleNamespace(
+        tools=["research_delete_project"],
+        mcps=[],
+        skills=[],
+    )
+    monkeypatch.setattr(
+        "yuxi.agents.middlewares.skills.resolve_skill_gated_tools",
+        lambda _context: [research_tools.research_delete_project],
+    )
+
+    generic_tools = await tool_service.resolve_configured_runtime_tools(context)
+    trusted_tools = await tool_service.resolve_configured_runtime_tools(
+        context,
+        include_research_tools=True,
+    )
+
+    assert generic_tools == []
+    assert [tool.name for tool in trusted_tools] == ["research_delete_project"]

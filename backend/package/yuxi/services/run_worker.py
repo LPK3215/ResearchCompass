@@ -12,6 +12,7 @@ from sqlalchemy.exc import OperationalError
 from yuxi.agents.mcp.service import ensure_builtin_mcp_servers_in_db
 from yuxi.agents.skills.service import init_builtin_skills
 from yuxi.config import config as sys_config
+from yuxi.repositories.agent_repository import RESEARCH_COPILOT_AGENT_SLUG
 from yuxi.repositories.agent_run_repository import TERMINAL_RUN_STATUSES, AgentRunRepository
 from yuxi.services.agent_request_queue_service import (
     RUN_STATUS_TO_DELIVERY_STATUS,
@@ -20,6 +21,7 @@ from yuxi.services.agent_request_queue_service import (
 )
 from yuxi.services.chat_service import stream_agent_chat, stream_agent_resume
 from yuxi.services.input_message_service import restore_chat_input_message
+from yuxi.services.research_copilot_service import RESEARCH_COPILOT_SOURCE
 from yuxi.services.run_queue_service import (
     append_run_stream_event,
     clear_cancel_signal,
@@ -46,6 +48,7 @@ PUBLIC_STREAM_ERROR_MESSAGES = {
     "unexpected_error": RUN_FAILED_MESSAGE,
     "resume_error": "对话恢复失败",
 }
+RESEARCH_CONTEXT_SOURCES = frozenset({RESEARCH_COPILOT_SOURCE, "ask_user_question_resume"})
 
 
 class RetryableRunError(Exception):
@@ -54,6 +57,17 @@ class RetryableRunError(Exception):
 
 class NonRetryableRunError(Exception):
     """Error type that should not trigger ARQ retry."""
+
+
+def _trusted_research_context(agent_slug: str, input_metadata: dict) -> dict | None:
+    research_context = input_metadata.get("research_context")
+    if (
+        agent_slug != RESEARCH_COPILOT_AGENT_SLUG
+        or input_metadata.get("source") not in RESEARCH_CONTEXT_SOURCES
+        or not isinstance(research_context, dict)
+    ):
+        return None
+    return research_context
 
 
 @dataclass(frozen=True)
@@ -430,6 +444,8 @@ async def process_agent_run(ctx, run_id: str):
         meta["source"] = input_metadata.get("source")
     if isinstance(input_metadata.get("agent_invocation_meta"), dict):
         meta["agent_invocation_meta"] = input_metadata.get("agent_invocation_meta") or {}
+    if research_context := _trusted_research_context(agent_slug, input_metadata):
+        meta["research_context"] = research_context
 
     await mark_run_running(run_id)
     run_ctx = RunContext(run_id=run_id)
@@ -599,9 +615,7 @@ async def process_agent_run(ctx, run_id: str):
             job_try = _job_try(ctx)
             last_try = _is_last_try(ctx)
             error_message = RUN_RETRY_EXHAUSTED_MESSAGE if last_try else RUN_RETRY_MESSAGE
-            logger.warning(
-                f"Run retryable failure {run_id} (try={job_try}, error_type={type(e).__name__})"
-            )
+            logger.warning(f"Run retryable failure {run_id} (try={job_try}, error_type={type(e).__name__})")
             retryable_error_chunk = {
                 "status": "error",
                 "error_type": "retryable_worker_error",
@@ -625,9 +639,7 @@ async def process_agent_run(ctx, run_id: str):
                     error_type="retryable_worker_error",
                     error_message=error_message,
                 )
-                logger.error(
-                    f"Run failed after retries exhausted {run_id} (error_type={type(e).__name__})"
-                )
+                logger.error(f"Run failed after retries exhausted {run_id} (error_type={type(e).__name__})")
                 return
 
             raise RetryableRunError(RUN_RETRY_MESSAGE) from None

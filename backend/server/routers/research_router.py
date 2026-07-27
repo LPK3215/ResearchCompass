@@ -6,9 +6,15 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, field_validator, model_validator
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from server.utils.auth_middleware import get_required_user
+from server.utils.auth_middleware import get_db, get_required_user
 from server.utils.client_ip import extract_client_ip
+from yuxi.services.research_copilot_service import (
+    ResearchCopilotError,
+    ResearchCopilotScope,
+    ensure_research_copilot_thread,
+)
 from yuxi.services.research_project_service import (
     ResearchProjectError,
     add_project_assets,
@@ -671,6 +677,37 @@ def _project_http_error(exc: ResearchProjectError) -> HTTPException:
         "invalid_report_format": 422,
     }.get(exc.error_type, 502)
     return HTTPException(status_code=status, detail={"error": exc.error_type, "message": exc.message})
+
+
+def _copilot_http_error(exc: ResearchCopilotError) -> HTTPException:
+    status = {
+        "forbidden": 403,
+        "knowledge_base_not_found": 404,
+        "project_not_found": 404,
+        "thread_not_found": 404,
+        "invalid_copilot_thread": 409,
+        "project_scope_mismatch": 409,
+        "thread_scope_conflict": 409,
+        "thread_update_failed": 409,
+        "invalid_research_context": 422,
+    }.get(exc.error_type, 502)
+    return HTTPException(status_code=status, detail={"error": exc.error_type, "message": exc.message})
+
+
+@research.post("/copilot/thread")
+async def ensure_copilot_thread(
+    payload: ResearchCopilotScope,
+    current_user: User = Depends(get_required_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return await ensure_research_copilot_thread(
+            payload=payload.model_dump(mode="json"),
+            current_user=current_user,
+            db=db,
+        )
+    except ResearchCopilotError as exc:
+        raise _copilot_http_error(exc) from exc
 
 
 @research.post("/databases/{kb_id}/projects", status_code=201)

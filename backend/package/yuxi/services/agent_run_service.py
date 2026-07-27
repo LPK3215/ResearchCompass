@@ -29,7 +29,7 @@ from yuxi.agents.buildin import agent_manager
 from yuxi.agents.models import resolve_chat_model_spec
 from yuxi.agents.tool_approval import DEFAULT_TOOL_APPROVAL_MODE, normalize_tool_approval_mode
 from yuxi.models.providers.cache import model_cache
-from yuxi.repositories.agent_repository import AgentRepository
+from yuxi.repositories.agent_repository import AgentRepository, RESEARCH_COPILOT_AGENT_SLUG
 from yuxi.repositories.agent_run_repository import TERMINAL_RUN_STATUSES, AgentRunRepository
 from yuxi.repositories.conversation_repository import ConversationRepository
 from yuxi.services.input_message_service import (
@@ -116,6 +116,9 @@ def resolve_agent_run_model_spec(model_spec: str | None, agent_item, agent_backe
 
 def resolve_agent_run_tool_approval_mode(requested_mode: str | None, agent_item, agent_backend, context=None) -> str:
     """解析本次 run 的工具审批模式：显式覆盖优先，否则使用 Agent 配置与默认值。"""
+    if getattr(agent_item, "slug", None) == RESEARCH_COPILOT_AGENT_SLUG:
+        return DEFAULT_TOOL_APPROVAL_MODE
+
     source = requested_mode
     if source is None:
         if context is None:
@@ -399,11 +402,14 @@ async def create_agent_run_view(
     db: AsyncSession,
     model_spec: str | None = None,
     tool_approval_mode: str | None = None,
+    force_tool_approval_mode: str | None = None,
     resume: object | None = None,
     created_by_run_id: str | None = None,
 ) -> dict:
     """创建 chat/resume run 的 HTTP 入口，输入正文由 Message 承载，run 只登记运行元数据。"""
-    meta = meta or {}
+    meta = dict(meta or {})
+    if agent_slug != RESEARCH_COPILOT_AGENT_SLUG:
+        meta.pop("research_context", None)
     if input_message is None and resume is None:
         raise HTTPException(status_code=422, detail="input_message 或 resume 不能为空")
     if resume is not None:
@@ -436,12 +442,15 @@ async def create_agent_run_view(
     if run_type == "resume":
         resolved_model_spec = scope.parent_run.input_payload["model_spec"]
         # 旧版本固化的 input_payload 没有 tool_approval_mode，回退默认值以兼容历史 interrupted run。
-        resolved_tool_approval_mode = scope.parent_run.input_payload.get(
+        resolved_tool_approval_mode = force_tool_approval_mode or scope.parent_run.input_payload.get(
             "tool_approval_mode", DEFAULT_TOOL_APPROVAL_MODE
         )
     else:
         resolved_model_spec, resolved_tool_approval_mode = resolve_agent_run_config(
-            model_spec, tool_approval_mode, scope.agent_item, scope.agent_backend
+            model_spec,
+            force_tool_approval_mode or tool_approval_mode,
+            scope.agent_item,
+            scope.agent_backend,
         )
 
     run_input_message = _prepare_run_input_message(
@@ -516,6 +525,8 @@ def _prepare_run_input_message(
         metadata["source"] = source
     if isinstance(meta.get("agent_invocation_meta"), dict):
         metadata["agent_invocation_meta"] = meta["agent_invocation_meta"]
+    if isinstance(meta.get("research_context"), dict):
+        metadata["research_context"] = meta["research_context"]
     if run_type == "chat":
         if input_message is None:
             raise HTTPException(status_code=422, detail="input_message 不能为空")

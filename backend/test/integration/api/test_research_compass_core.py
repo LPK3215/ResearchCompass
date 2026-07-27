@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import uuid
 from contextlib import asynccontextmanager
 
@@ -83,6 +84,98 @@ async def _create_knowledge_database(test_client, headers) -> dict:
     )
     assert response.status_code == 200, response.text
     return response.json()
+
+
+async def test_research_copilot_thread_reuses_scope_and_isolates_projects(test_client):
+    knowledge_databases: list[str] = []
+    project_ids: list[str] = []
+
+    async with _temporary_superadmin(test_client) as admin:
+        headers = admin["headers"]
+        try:
+            primary_kb = await _create_knowledge_database(test_client, headers)
+            knowledge_databases.append(primary_kb["kb_id"])
+            other_kb = await _create_knowledge_database(test_client, headers)
+            knowledge_databases.append(other_kb["kb_id"])
+
+            for title in ("Copilot project A", "Copilot project B"):
+                project_response = await test_client.post(
+                    f"/api/research/databases/{primary_kb['kb_id']}/projects",
+                    json={
+                        "title": title,
+                        "research_question": f"How does {title} preserve research scope?",
+                    },
+                    headers=headers,
+                )
+                assert project_response.status_code == 201, project_response.text
+                project_ids.append(project_response.json()["project_id"])
+
+            unauthenticated = await test_client.post(
+                "/api/research/copilot/thread",
+                json={"kb_id": primary_kb["kb_id"], "project_id": project_ids[0]},
+            )
+            assert unauthenticated.status_code == 401
+
+            concurrent_responses = await asyncio.gather(
+                *(
+                    test_client.post(
+                        "/api/research/copilot/thread",
+                        json={
+                            "kb_id": primary_kb["kb_id"],
+                            "project_id": project_ids[0],
+                            "surface": "projects",
+                        },
+                        headers=headers,
+                    )
+                    for _ in range(4)
+                )
+            )
+            for response in concurrent_responses:
+                assert response.status_code == 200, response.text
+            concurrent_threads = [response.json() for response in concurrent_responses]
+            assert len({item["thread"]["id"] for item in concurrent_threads}) == 1
+
+            first = concurrent_threads[0]
+            assert first["agent_id"] == "research-copilot"
+            assert first["research_context"]["project_id"] == project_ids[0]
+            assert uuid.UUID(first["thread"]["id"]).version == 4
+
+            reused_response = await test_client.post(
+                "/api/research/copilot/thread",
+                json={
+                    "kb_id": primary_kb["kb_id"],
+                    "project_id": project_ids[0],
+                    "surface": "synthesis",
+                },
+                headers=headers,
+            )
+            assert reused_response.status_code == 200, reused_response.text
+            reused = reused_response.json()
+            assert reused["thread"]["id"] == first["thread"]["id"]
+            assert reused["thread"]["metadata"]["research_context"]["surface"] == "synthesis"
+
+            isolated_response = await test_client.post(
+                "/api/research/copilot/thread",
+                json={"kb_id": primary_kb["kb_id"], "project_id": project_ids[1]},
+                headers=headers,
+            )
+            assert isolated_response.status_code == 200, isolated_response.text
+            assert isolated_response.json()["thread"]["id"] != first["thread"]["id"]
+
+            mismatched_response = await test_client.post(
+                "/api/research/copilot/thread",
+                json={"kb_id": other_kb["kb_id"], "project_id": project_ids[0]},
+                headers=headers,
+            )
+            assert mismatched_response.status_code == 409, mismatched_response.text
+            assert mismatched_response.json()["detail"]["error"] == "project_scope_mismatch"
+        finally:
+            for project_id in project_ids:
+                response = await test_client.delete(f"/api/research/projects/{project_id}", headers=headers)
+                assert response.status_code in {204, 404}, response.text
+            for kb_id in reversed(knowledge_databases):
+                response = await test_client.delete(f"/api/knowledge/databases/{kb_id}", headers=headers)
+                assert response.status_code in {200, 404}, response.text
 
 
 async def _seed_academic_paper(kb_id: str) -> dict[str, str]:

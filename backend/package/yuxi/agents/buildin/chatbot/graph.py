@@ -23,10 +23,19 @@ from yuxi.agents.middlewares.skills import SkillsMiddleware
 from yuxi.agents.middlewares.subagent_task import create_subagent_task_middleware
 from yuxi.agents.toolkits.service import resolve_configured_runtime_tools
 from yuxi.agents.tool_approval import create_tool_approval_middleware, normalize_tool_approval_mode
+from yuxi.repositories.agent_repository import RESEARCH_COPILOT_AGENT_SLUG, RESEARCH_COPILOT_TOOL_SLUGS
 
 from .context import ChatBotContext
 from .prompt import TODO_MID_PROMPT, build_prompt_with_context
 from .state import ChatBotState
+
+
+def _is_research_copilot_agent(context) -> bool:
+    return getattr(context, "runtime_agent_slug", "") == RESEARCH_COPILOT_AGENT_SLUG
+
+
+def _research_tools_are_enabled(context) -> bool:
+    return _is_research_copilot_agent(context) and bool(getattr(context, "research_tools_enabled", False))
 
 
 async def _build_middlewares(context):
@@ -74,9 +83,10 @@ async def _build_middlewares(context):
             TokenUsageMiddleware(),
         ]
     )
-    approval_middleware = create_tool_approval_middleware(
-        normalize_tool_approval_mode(getattr(context, "tool_approval_mode", "default"))
+    requested_approval_mode = (
+        "default" if _is_research_copilot_agent(context) else getattr(context, "tool_approval_mode", "default")
     )
+    approval_middleware = create_tool_approval_middleware(normalize_tool_approval_mode(requested_approval_mode))
     if approval_middleware:
         middlewares.append(approval_middleware)
     return middlewares
@@ -97,12 +107,18 @@ class ChatbotAgent(BaseAgent):
             context or self.context_schema(),
             context_schema=self.context_schema,
         )
+        research_tools_enabled = _research_tools_are_enabled(context)
+        if research_tools_enabled:
+            context.tools = list(RESEARCH_COPILOT_TOOL_SLUGS)
 
         # 使用 create_agent 创建智能体
         model_spec = resolve_chat_model_spec(context.model)
         graph = create_agent(
             model=load_chat_model(fully_specified_name=model_spec),
-            tools=await resolve_configured_runtime_tools(context),
+            tools=await resolve_configured_runtime_tools(
+                context,
+                include_research_tools=research_tools_enabled,
+            ),
             system_prompt=build_prompt_with_context(context),
             middleware=await _build_middlewares(context),
             state_schema=ChatBotState,

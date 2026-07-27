@@ -1,18 +1,18 @@
 <div align="center">
-<h1>Yuxi</h1>
+<h1>ResearchCompass</h1>
 
-<p><strong>A multi-tenant agent platform combining RAG and knowledge graphs</strong><br/>Make enterprise knowledge retrievable, reasoned over, and deliverable by agents</p>
+<p><strong>A conversational research Copilot grounded in projects, evidence, and knowledge graphs</strong><br/>Move from literature discovery to an auditable research plan and deliverables in one workspace</p>
 
-[![](https://img.shields.io/badge/Docker-2496ED?style=flat&logo=docker&logoColor=ffffff)](https://github.com/xerrors/Yuxi/blob/main/docker-compose.yml)
-[![](https://img.shields.io/github/issues/xerrors/Yuxi?color=F48D73)](https://github.com/xerrors/Yuxi/issues)
-[![License](https://img.shields.io/github/license/bitcookies/winrar-keygen.svg?logo=github)](https://github.com/xerrors/Yuxi/blob/main/LICENSE)
-[![DeepWiki](https://img.shields.io/badge/DeepWiki-blue.svg)](https://deepwiki.com/xerrors/Yuxi)
+[![](https://img.shields.io/badge/Docker-2496ED?style=flat&logo=docker&logoColor=ffffff)](https://github.com/LPK3215/ResearchCompass/blob/main/docker-compose.yml)
+[![](https://img.shields.io/github/issues/LPK3215/ResearchCompass?color=F48D73)](https://github.com/LPK3215/ResearchCompass/issues)
+[![License](https://img.shields.io/github/license/LPK3215/ResearchCompass.svg?logo=github)](https://github.com/LPK3215/ResearchCompass/blob/main/LICENSE)
+[![DeepWiki](https://img.shields.io/badge/DeepWiki-blue.svg)](https://deepwiki.com/LPK3215/ResearchCompass)
 [![zread](https://img.shields.io/badge/Ask_Zread-_.svg?style=flat&color=00b0aa&labelColor=000000&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTQuOTYxNTYgMS42MDAxSDIuMjQxNTZDMS44ODgxIDEuNjAwMSAxLjYwMTU2IDEuODg2NjQgMS42MDE1NiAyLjI0MDFWNC45NjAxQzEuNjAxNTYgNS4zMTM1NiAxLjg4ODEgNS42MDAxIDIuMjQxNTYgNS42MDAxSDQuOTYxNTZDNS4zMTUwMiA1LjYwMDEgNS42MDE1NiA1LjMxMzU2IDUuNjAxNTYgNC45NjAxVjIuMjQwMUM1LjYwMTU2IDEuODg2NjQgNS4zMTUwMiAxLjYwMDEgNC45NjE1NiAxLjYwMDFaIiBmaWxsPSIjZmZmIi8%2BCjxwYXRoIGQ9Ik00Ljk2MTU2IDEwLjM5OTlIMi4yNDE1NkMxLjg4ODEgMTAuMzk5OSAxLjYwMTU2IDEwLjY4NjQgMS42MDE1NiAxMS4wMzk5VjEzLjc1OTlDMS42MDE1NiAxNC4xMTM0IDEuODg4MSAxNC4zOTk5IDIuMjQxNTYgMTQuMzk5OUg0Ljk2MTU2QzUuMzE1MDIgMTQuMzk5OSA1LjYwMTU2IDE0LjExMzQgNS42MDE1NiAxMy43NTk5VjExLjAzOTlDNS42MDE1NiAxMC42ODY0IDUuMzE1MDIgMTAuMzk5OSA0Ljk2MTU2IDEwLjM5OTlaIiBmaWxsPSIjZmZmIi8%2BCjxwYXRoIGQ9Ik0xMy43NTg0IDEuNjAwMUgxMS4wMzg0QzEwLjY4NSAxLjYwMDEgMTAuMzk4NCAxLjg4NjY0IDEwLjM5ODQgMi4yNDAxVjQuOTYwMUMxMC4zOTg0IDUuMzEzNTYgMTAuNjg1IDUuNjAwMSAxMS4wMzg0IDUuNjAwMUgxMy43NTg0QzE0LjExMTkgNS42MDAxIDE0LjM5ODQgNS4zMTM1NiAxNC4zOTg0IDQuOTYwMVYyLjI0MDFDMTQuMzk4NCAxLjg4NjY0IDE0LjExMTkgMS42MDAxIDEzLjc1ODQgMS42MDAxWiIgZmlsbD0iI2ZmZiIvPgo8cGF0aCBkPSJNNCAxMkwxMiA0TDQgMTJaIiBmaWxsPSIjZmZmIi8%2BCjxwYXRoIGQ9Ik00IDEyTDEyIDQiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgo8L3N2Zz4K&logoColor=ffffff)](https://zread.ai/xerrors/Yuxi)
 [![demo](https://img.shields.io/badge/demo-00A1D6.svg?style=flat&logo=bilibili&logoColor=white)](https://www.bilibili.com/video/BV1TZEx6NEit/)
 
 <a href="https://trendshift.io/repositories/24335" target="_blank"><img src="https://trendshift.io/api/badge/repositories/24335" alt="xerrors%2FYuxi | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 
-[[Docs]](https://xerrors.github.io/Yuxi) · [[中文]](README.md)
+[[Docs]](https://lpk3215.github.io/ResearchCompass/) · [[中文]](README.md)
 
 </div>
 
@@ -22,12 +22,14 @@
 
 ## Introduction
 
-Yuxi is an LLM-powered platform for building knowledge-base and knowledge-graph agents. It unifies **RAG retrieval**, **Milvus-backed in-knowledge-base graphs**, and **LangGraph multi-agent orchestration** into a single multi-tenant workspace: administrators configure knowledge bases, models, and permissions, while users chat — in a ChatGPT-like interface — with agents that can mount Skills, MCPs, sub-agents, and sandbox tools, and receive answers with cited sources, graph-based reasoning, and deliverable artifacts.
+ResearchCompass is an LLM-powered research workspace built on the Yuxi agent platform. Its conversational Copilot carries the active knowledge base, research project, workspace, and selected-object context into every run, then uses permission-checked domain tools to plan work, search papers, produce evidence syntheses, and organize results. Projects, plans, evidence, and deliverables remain structured and auditable instead of living only in chat history.
 
-Navigation: [Introduction](https://xerrors.github.io/Yuxi/) ｜ [Quick Start](https://xerrors.github.io/Yuxi/intro/quick-start) ｜ [Roadmap](https://xerrors.github.io/Yuxi/develop-guides/roadmap); for the latest updates, see the [changelog](https://xerrors.github.io/Yuxi/develop-guides/changelog).
+Navigation: [ResearchCompass](https://lpk3215.github.io/ResearchCompass/intro/research-compass) ｜ [Quick Start](https://lpk3215.github.io/ResearchCompass/intro/quick-start) ｜ [Roadmap](https://lpk3215.github.io/ResearchCompass/develop-guides/roadmap); for the latest updates, see the [changelog](https://lpk3215.github.io/ResearchCompass/develop-guides/changelog).
 
 ## Core Features
 
+- **Conversational research Copilot** — Opens as the authenticated default product in full mode, preserves a separate thread per knowledge-base/project scope, streams tool progress, resumes interrupted runs, and requires approval for sensitive changes. Lite mode keeps the general assistant as its default because research dependencies are disabled.
+- **Research execution workspace** — Manages projects, milestones, tasks, health signals, papers, searches, evidence syntheses, analyses, experiments, and report-ready deliverables as structured records.
 - 🤖 **Agent development** — Built on LangGraph, with sub-agents (SubAgents), Skills, MCPs, Tools, and middleware; long-running tasks run asynchronously on a background worker, backed by a sandbox file system for persisting, previewing, and downloading tool artifacts.
 - 📚 **Knowledge base (RAG)** — Multi-format document parsing (MinerU / PaddleX / OCR), configurable Embedding and Rerank models, knowledge base evaluation, in-app PDF / image preview, and retrieval sources backfilled as chat citations.
 - 🕸️ **Knowledge graph** — Build, visualize, and retrieve entity-relation graphs inside Milvus knowledge bases, then fuse graph hits with chunk retrieval for agent reasoning.
@@ -54,8 +56,8 @@ Navigation: [Introduction](https://xerrors.github.io/Yuxi/) ｜ [Quick Start](ht
 **1. Clone and initialize**
 
 ```bash
-git clone --branch v0.7.1 --depth 1 https://github.com/xerrors/Yuxi.git
-cd Yuxi
+git clone --branch v0.11.0 --depth 1 https://github.com/LPK3215/ResearchCompass.git
+cd ResearchCompass
 
 # Linux/macOS
 ./scripts/init.sh
@@ -74,7 +76,7 @@ docker compose up --build
 
 Once the services are ready, open `http://localhost:5173` in your browser and sign in with the admin account generated during initialization.
 
-> 💡 If you don't need heavy dependencies like knowledge bases / graphs, run `make up-lite` for a lightweight LITE mode with faster cold starts. See the [docs](https://xerrors.github.io/Yuxi) for more deployment details.
+> 💡 If you don't need heavy dependencies like knowledge bases / graphs, run `make up-lite` for a lightweight LITE mode with faster cold starts. See the [docs](https://lpk3215.github.io/ResearchCompass/) for more deployment details.
 
 ## Examples and Demo
 

@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue'
 import { withBase } from 'vitepress'
 
-const GITHUB = 'https://github.com/xerrors/Yuxi'
+const GITHUB = 'https://github.com/LPK3215/ResearchCompass'
 const DEMO = 'https://www.bilibili.com/video/BV1TZEx6NEit/'
 
 // 关键数字（占位，后续替换为真实数据）
@@ -10,7 +10,7 @@ const stats = [
   { value: '15+', label: '模型供应商' },
   { value: '7', label: 'Harness 能力' },
   { value: 'MIT', label: '开源协议' },
-  { value: 'v0.7', label: '当前版本' }
+  { value: 'v0.11', label: '当前版本' }
 ]
 
 // Harness 能力中枢（bento）
@@ -209,13 +209,13 @@ const vReveal = {
         <div class="yx-grid"></div>
       </div>
       <div class="yx-container yx-hero__inner">
-        <span class="yx-badge">v0.7.1 · MIT 开源 · LangGraph 驱动</span>
-        <h1 class="yx-hero__title">语析 <span class="yx-accent">Yuxi</span></h1>
-        <p class="yx-hero__subtitle">融合 RAG 与知识图谱的智能体 Harness 平台</p>
+        <span class="yx-badge">v0.11.0 · MIT 开源 · LangGraph 驱动</span>
+        <h1 class="yx-hero__title"><span class="yx-accent">ResearchCompass</span></h1>
+        <p class="yx-hero__subtitle">贯穿研究项目、证据与交付的对话式 Copilot</p>
         <p class="yx-hero__desc">
-          管理员配置知识库、模型与权限，用户在类 ChatGPT 的界面中，
-          与可挂载 Skills、MCP、子智能体与沙盒工具的智能体对话，
-          获得带引用来源、知识图谱推理与可交付产物的回答。
+          AI 研究助手理解当前知识库、研究项目和工作区，
+          通过受权限与审批约束的领域工具完成规划、检索、综述与成果归集，
+          让每次对话都沉淀为可查看、可审计、可导出的结构化研究结果。
         </p>
         <div class="yx-hero__actions">
           <a class="yx-btn yx-btn--primary" :href="withBase('/intro/quick-start')">快速开始</a>
@@ -453,8 +453,8 @@ const vReveal = {
         </header>
         <div v-reveal class="yx-quick">
           <pre class="yx-code"><code><span class="yx-c-cmt"># 1. 克隆并初始化</span>
-git clone --branch v0.7.1 --depth 1 https://github.com/xerrors/Yuxi.git
-cd Yuxi && ./scripts/init.sh
+git clone --branch v0.11.0 --depth 1 https://github.com/LPK3215/ResearchCompass.git
+cd ResearchCompass && ./scripts/init.sh
 
 <span class="yx-c-cmt"># 2. 使用 Docker 启动</span>
 docker compose up --build

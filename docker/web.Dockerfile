@@ -41,6 +41,8 @@ RUN --mount=type=cache,id=yuxi-pnpm-store,target=/root/.local/share/pnpm/store \
 
 # 复制源代码并构建
 COPY ./web .
+ARG VITE_LITE_MODE=false
+ENV VITE_LITE_MODE=$VITE_LITE_MODE
 RUN pnpm run build
 
 # 生产环境运行阶段

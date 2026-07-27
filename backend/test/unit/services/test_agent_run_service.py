@@ -56,6 +56,7 @@ def test_prepare_run_input_message_keeps_invocation_meta_namespaced():
         meta={
             "source": "agent_call",
             "agent_invocation_meta": {"trace_id": "trace-1"},
+            "research_context": {"kb_id": "kb-1", "project_id": "project-1"},
             "evaluation": {"dataset_name": "legacy-top-level"},
             "custom_variables": {"system_prompt": "legacy"},
         },
@@ -63,8 +64,28 @@ def test_prepare_run_input_message_keeps_invocation_meta_namespaced():
 
     assert input_message.extra_metadata["source"] == "agent_call"
     assert input_message.extra_metadata["agent_invocation_meta"] == {"trace_id": "trace-1"}
+    assert input_message.extra_metadata["research_context"] == {
+        "kb_id": "kb-1",
+        "project_id": "project-1",
+    }
     assert "evaluation" not in input_message.extra_metadata
     assert "custom_variables" not in input_message.extra_metadata
+
+
+def test_prepare_resume_input_message_keeps_research_context():
+    input_message = agent_run_service._prepare_run_input_message(
+        run_type="resume",
+        input_message=None,
+        resume={"answer": "yes"},
+        request_id="req-1",
+        model_spec="provider:model",
+        meta={"research_context": {"kb_id": "kb-1", "project_id": "project-1"}},
+    )
+
+    assert input_message.extra_metadata["research_context"] == {
+        "kb_id": "kb-1",
+        "project_id": "project-1",
+    }
 
 
 def _progress_event(seq: str, chunks: list[dict]) -> dict:
@@ -1462,6 +1483,25 @@ async def test_create_chat_run_with_image_persists_multimodal_message_type(monke
 
 
 @pytest.mark.asyncio
+async def test_create_non_copilot_run_drops_research_context(monkeypatch: pytest.MonkeyPatch):
+    db = _patch_agent_run_creation(monkeypatch)
+
+    await agent_run_service.create_agent_run_view(
+        input_message=_chat_input("hello"),
+        agent_slug="default",
+        thread_id="thread-1",
+        meta={
+            "request_id": "req-1",
+            "research_context": {"kb_id": "forged-kb", "project_id": "forged-project"},
+        },
+        current_uid="user-1",
+        db=db,
+    )
+
+    assert "research_context" not in db.added[0].extra_metadata
+
+
+@pytest.mark.asyncio
 async def test_create_chat_run_snapshots_agent_configured_model_spec(monkeypatch: pytest.MonkeyPatch):
     db = _patch_agent_run_creation(
         monkeypatch,
@@ -1538,6 +1578,33 @@ async def test_create_resume_run_inherits_parent_model_spec(monkeypatch: pytest.
 
 
 @pytest.mark.asyncio
+async def test_create_resume_run_can_force_default_tool_approval_mode(monkeypatch: pytest.MonkeyPatch):
+    db = _patch_agent_run_creation(
+        monkeypatch,
+        parent_run=SimpleNamespace(
+            id="parent-run",
+            conversation_thread_id="thread-1",
+            status="interrupted",
+            input_payload={"model_spec": "parent-model", "tool_approval_mode": "always_trust"},
+        ),
+    )
+
+    await agent_run_service.create_agent_run_view(
+        input_message=None,
+        agent_slug="default",
+        thread_id="thread-1",
+        meta={"request_id": "resume-req"},
+        current_uid="user-1",
+        db=db,
+        resume={"decisions": [{"type": "approve"}]},
+        created_by_run_id="parent-run",
+        force_tool_approval_mode="default",
+    )
+
+    assert db.created_run_kwargs["input_payload"]["tool_approval_mode"] == "default"
+
+
+@pytest.mark.asyncio
 async def test_create_resume_run_defaults_tool_approval_mode_for_legacy_parent(monkeypatch: pytest.MonkeyPatch):
     # 旧版本固化的 input_payload 没有 tool_approval_mode，resume 必须回退默认值而不能报错。
     db = _patch_agent_run_creation(
@@ -1567,6 +1634,10 @@ async def test_create_resume_run_defaults_tool_approval_mode_for_legacy_parent(m
 def test_resolve_tool_approval_mode_uses_request_then_agent_config_then_default():
     configured_agent = SimpleNamespace(config_json={"context": {"tool_approval_mode": "always_trust"}})
     default_agent = SimpleNamespace(config_json={})
+    research_copilot = SimpleNamespace(
+        slug="research-copilot",
+        config_json={"context": {"tool_approval_mode": "always_trust"}},
+    )
 
     assert (
         agent_run_service.resolve_agent_run_tool_approval_mode("default", configured_agent, _FakeBackend()) == "default"
@@ -1575,6 +1646,10 @@ def test_resolve_tool_approval_mode_uses_request_then_agent_config_then_default(
         agent_run_service.resolve_agent_run_tool_approval_mode(None, configured_agent, _FakeBackend()) == "always_trust"
     )
     assert agent_run_service.resolve_agent_run_tool_approval_mode(None, default_agent, _FakeBackend()) == "default"
+    assert (
+        agent_run_service.resolve_agent_run_tool_approval_mode("always_trust", research_copilot, _FakeBackend())
+        == "default"
+    )
 
 
 def test_resolve_tool_approval_mode_rejects_unknown_value():

@@ -29,15 +29,14 @@
 import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useUserStore } from '@/stores/user'
-import { useAgentStore } from '@/stores/agent'
 import { authApi } from '@/apis/auth_api'
 import { message } from 'ant-design-vue'
 import { clearAutoStartAttempt } from '@/utils/oidcAutoStart'
+import { DEFAULT_PRODUCT_ENTRY } from '@/utils/productEntry'
 
 const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
-const agentStore = useAgentStore()
 
 // 状态
 const loading = ref(true)
@@ -93,16 +92,10 @@ const handleCallback = async () => {
     loading.value = false
 
     // 延迟跳转，让用户看到成功提示
-    setTimeout(async () => {
+    setTimeout(() => {
       // 跳转
       if (redirectPath === '/') {
-        try {
-          await agentStore.initialize()
-          router.push('/agent')
-        } catch (err) {
-          console.error('获取智能体信息失败:', err)
-          router.push('/agent')
-        }
+        router.push(DEFAULT_PRODUCT_ENTRY)
       } else {
         router.push(redirectPath)
       }

@@ -12,10 +12,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from yuxi.services.agent_request_queue_service import (
     NOT_IMPLEMENTED_QUEUE_POLICIES,
+    _build_message_metadata,
     cancel_queued_request,
     intake_request,
     validate_queue_policy,
 )
+from yuxi.services.input_message_service import build_chat_input_message
 from yuxi.storage.postgres.models_business import AgentRunRequest, Base, Message
 from yuxi.utils.datetime_utils import utc_now_naive
 
@@ -59,6 +61,19 @@ def test_agent_run_create_accepts_thread_id():
     payload = AgentRunCreate(query="hi", agent_slug="bot", thread_id="t1")
     assert payload.thread_id == "t1"
     assert payload.tool_approval_mode is None
+
+
+def test_build_message_metadata_keeps_validated_research_context():
+    research_context = {"kb_id": "kb-1", "project_id": "project-1"}
+
+    metadata = _build_message_metadata(
+        request_id="req-1",
+        source="research_copilot",
+        input_message=build_chat_input_message("hello"),
+        meta={"research_context": research_context},
+    )
+
+    assert metadata["research_context"] == research_context
 
 
 # ── fixtures ──

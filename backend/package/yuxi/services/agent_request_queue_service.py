@@ -597,6 +597,8 @@ def _build_message_metadata(
         metadata["attachment_file_ids"] = attachment_file_ids
     if isinstance(meta.get("agent_invocation_meta"), dict):
         metadata["agent_invocation_meta"] = meta["agent_invocation_meta"]
+    if isinstance(meta.get("research_context"), dict):
+        metadata["research_context"] = meta["research_context"]
     if meta.get("tool_approval_mode") is not None:
         metadata["tool_approval_mode"] = meta["tool_approval_mode"]
     return metadata

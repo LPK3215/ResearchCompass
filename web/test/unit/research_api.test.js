@@ -24,6 +24,27 @@ beforeEach(() => {
   requestResult = { ok: true }
 })
 
+test('ensureCopilotThread posts the current research context as JSON', async () => {
+  const payload = {
+    kb_id: 'kb-1',
+    project_id: 'project-1',
+    surface: 'search',
+    selection: { type: 'search_run', id: 'run-1', title: 'Graph RAG' }
+  }
+
+  await researchApi.ensureCopilotThread(payload)
+
+  assert.deepEqual(calls, [
+    {
+      method: 'apiRequest',
+      args: [
+        '/api/research/copilot/thread',
+        { method: 'POST', body: JSON.stringify(payload) }
+      ]
+    }
+  ])
+})
+
 test('listPapers encodes the knowledge base and omits empty filters', async () => {
   await researchApi.listPapers('kb/team one', {
     page: 2,

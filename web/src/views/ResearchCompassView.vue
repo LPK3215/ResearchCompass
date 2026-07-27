@@ -1,5 +1,8 @@
 <template>
-  <div class="research-view layout-container">
+  <div
+    class="research-view layout-container"
+    :class="{ 'copilot-open': copilotOpen && selectedKbId }"
+  >
     <PageHeader title="科研罗盘" :loading="loading || databasesLoading" :show-border="true">
       <template #info>
         <span class="header-summary">知识图谱驱动的学术文献分析</span>
@@ -48,6 +51,17 @@
           <template #icon><RefreshCw :size="15" /></template>
           刷新
         </a-button>
+        <a-button
+          class="lucide-icon-btn"
+          :type="copilotOpen ? 'primary' : 'default'"
+          title="AI 研究助手"
+          aria-label="AI 研究助手"
+          :disabled="!selectedKbId"
+          @click="copilotOpen = !copilotOpen"
+        >
+          <template #icon><Sparkles :size="15" /></template>
+          AI 研究助手
+        </a-button>
       </template>
     </PageHeader>
 
@@ -66,11 +80,13 @@
 
       <ResearchProjectWorkspace
         v-if="activeMode === 'projects'"
+        ref="projectWorkspaceRef"
         :kb-id="selectedKbId"
         :database-options="databaseOptions"
         :databases-loading="databasesLoading"
         @change-database="handleDatabaseChange"
         @continue-asset="continueProjectAsset"
+        @project-change="handleProjectChange"
       />
 
       <section v-if="activeMode === 'user-studies'" class="user-studies-workspace">
@@ -109,6 +125,7 @@
 
       <ResearchSearchWorkspace
         v-if="activeMode === 'search'"
+        ref="searchWorkspaceRef"
         :kb-id="selectedKbId"
         :focus-run-id="projectSearchRunId"
         :database-options="databaseOptions"
@@ -118,6 +135,7 @@
         @open-paper="openPaper"
         @open-evidence="handleSearchEvidenceOpen"
         @start-synthesis="startSynthesisFromSearch"
+        @selection-change="handleSearchSelectionChange"
       />
 
       <section v-else-if="activeMode === 'synthesis'" class="synthesis-workspace">
@@ -996,6 +1014,18 @@
       </template>
     </main>
 
+    <ResearchCopilotPanel
+      v-if="selectedKbId"
+      v-model:open="copilotOpen"
+      :kb-id="selectedKbId"
+      :kb-name="selectedDatabase?.name || selectedKbId"
+      :project-id="selectedProject?.project_id || ''"
+      :project-title="selectedProject?.title || ''"
+      :surface="activeMode"
+      :selection="copilotSelection"
+      @run-complete="handleCopilotRunComplete"
+    />
+
     <a-modal
       v-model:open="externalImportOpen"
       title="导入 Semantic Scholar 公开论文"
@@ -1164,6 +1194,7 @@ import { databaseApi } from '@/apis/knowledge_api'
 import { researchApi } from '@/apis/research_api'
 import { downloadWorkspaceKnowledgeFile } from '@/apis/workspace_api'
 import PaperDetailDrawer from '@/components/research/PaperDetailDrawer.vue'
+import ResearchCopilotPanel from '@/components/research/ResearchCopilotPanel.vue'
 import ResearchProjectWorkspace from '@/components/research/ResearchProjectWorkspace.vue'
 import ResearchSearchWorkspace from '@/components/research/ResearchSearchWorkspace.vue'
 import UserStudyManager from '@/components/research/UserStudyManager.vue'
@@ -1232,6 +1263,13 @@ const externalImportingId = ref('')
 const maxPublicationYear = new Date().getFullYear() + 1
 const activeMode = ref('projects')
 const projectSearchRunId = ref('')
+const projectWorkspaceRef = ref(null)
+const searchWorkspaceRef = ref(null)
+const selectedProject = ref(null)
+const selectedSearchRun = ref(null)
+const copilotOpen = ref(
+  typeof window === 'undefined' || !window.matchMedia('(max-width: 960px)').matches
+)
 const synthesisQuery = ref('')
 const synthesisRuns = ref([])
 const synthesisTotal = ref(0)
@@ -1335,6 +1373,38 @@ const sortValue = computed({
 const selectedDatabase = computed(() =>
   databases.value.find((database) => database.kb_id === selectedKbId.value)
 )
+const copilotSelection = computed(() => {
+  if (detailOpen.value && selectedPaperId.value) {
+    const paper = papers.value.find((item) => item.paper_id === selectedPaperId.value)
+    return {
+      type: 'paper',
+      id: selectedPaperId.value,
+      title: paper?.title || ''
+    }
+  }
+  if (activeMode.value === 'search' && selectedSearchRun.value?.run_id) {
+    return {
+      type: 'search_run',
+      id: selectedSearchRun.value.run_id,
+      title: selectedSearchRun.value.query || ''
+    }
+  }
+  if (activeMode.value === 'synthesis' && selectedSynthesisRun.value?.run_id) {
+    return {
+      type: 'synthesis_run',
+      id: selectedSynthesisRun.value.run_id,
+      title: selectedSynthesisRun.value.query || ''
+    }
+  }
+  if (activeMode.value === 'graph' && selectedGraphNode.value?.id) {
+    return {
+      type: 'paper',
+      id: selectedGraphNode.value.id,
+      title: selectedGraphNode.value.title || selectedGraphNode.value.name || ''
+    }
+  }
+  return null
+})
 const databaseOptions = computed(() =>
   databases.value.map((database) => ({
     value: database.kb_id,
@@ -2221,6 +2291,8 @@ const exportAllBibtex = async () => {
 
 const handleDatabaseChange = (kbId) => {
   if (typeof kbId === 'string') selectedKbId.value = kbId
+  selectedProject.value = null
+  selectedSearchRun.value = null
   workspaceRequestGeneration += 1
   page.value = 1
   synthesisRequestGeneration += 1
@@ -2280,6 +2352,32 @@ const handleDatabaseChange = (kbId) => {
 
 const handleSearchEvidenceOpen = ({ paper, evidence }) => {
   openEvidence(paper, evidence)
+}
+
+const handleProjectChange = (project) => {
+  selectedProject.value = project || null
+}
+
+const handleSearchSelectionChange = (run) => {
+  selectedSearchRun.value = run || null
+}
+
+const handleCopilotRunComplete = async () => {
+  if (activeMode.value === 'projects') {
+    await projectWorkspaceRef.value?.refresh?.()
+    return
+  }
+  if (activeMode.value === 'search') {
+    await searchWorkspaceRef.value?.refresh?.()
+    return
+  }
+  if (activeMode.value === 'synthesis') {
+    await loadSyntheses({ preserveSelection: true })
+    return
+  }
+  if (activeMode.value === 'library') {
+    await loadPapers()
+  }
 }
 
 const startSynthesisFromSearch = ({ query, yearFrom, yearTo, topK, recallTopK }) => {
@@ -2390,10 +2488,15 @@ onBeforeUnmount(() => {
 
 <style scoped lang="less">
 .research-view {
+  --research-copilot-width: 420px;
+
+  position: relative;
+  box-sizing: border-box;
   height: 100%;
   min-height: 0;
   overflow: hidden;
   background: var(--gray-0);
+  transition: padding-right 0.18s ease;
 }
 
 .header-summary {
@@ -2442,6 +2545,58 @@ onBeforeUnmount(() => {
   border: 1px solid var(--gray-150);
   border-radius: 8px;
   background: var(--gray-0);
+}
+
+.research-view.copilot-open {
+  padding-right: var(--research-copilot-width);
+}
+
+.research-view.copilot-open :deep(.page-header) {
+  gap: 8px;
+  padding-inline: 16px;
+}
+
+.research-view.copilot-open .header-summary {
+  display: none;
+}
+
+.research-view.copilot-open :deep(.page-header-right .lucide-icon-btn) {
+  width: 34px;
+  min-width: 34px;
+  padding-inline: 0;
+  font-size: 0;
+}
+
+.research-view.copilot-open :deep(.page-header-right .lucide-icon-btn .ant-btn-icon) {
+  margin-inline-end: 0;
+}
+
+.research-view.copilot-open :deep(.project-detail-header) {
+  flex-direction: column;
+}
+
+.research-view.copilot-open :deep(.project-actions) {
+  width: 100%;
+  max-width: none;
+  justify-content: flex-start;
+}
+
+.research-view.copilot-open :deep(.project-overview) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.research-view.copilot-open :deep(.project-overview > div) {
+  border-right: 0;
+  border-bottom: 1px solid var(--gray-150);
+}
+
+.research-view.copilot-open :deep(.project-overview > div:last-child) {
+  border-bottom: 0;
+}
+
+.research-view.copilot-open :deep(.description-block) {
+  grid-column: auto;
+  border-top: 0;
 }
 
 .synthesis-builder {
@@ -3833,7 +3988,39 @@ onBeforeUnmount(() => {
   margin-top: 18px;
 }
 
+@media (max-width: 1200px) {
+  .research-view :deep(.page-header) {
+    gap: 6px;
+    padding-inline: 12px;
+  }
+
+  .research-view .header-summary {
+    display: none;
+  }
+
+  .research-view :deep(.page-header-right) {
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .research-view :deep(.page-header-right .lucide-icon-btn) {
+    width: 32px;
+    min-width: 32px;
+    height: 32px;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .research-view :deep(.page-header-right .lucide-icon-btn .ant-btn-icon) {
+    margin-inline-end: 0;
+  }
+}
+
 @media (max-width: 1100px) {
+  .research-view {
+    --research-copilot-width: 380px;
+  }
+
   .synthesis-grid {
     grid-template-columns: 1fr;
   }
@@ -3864,6 +4051,12 @@ onBeforeUnmount(() => {
 
   .toolbar-actions {
     justify-content: flex-end;
+  }
+}
+
+@media (max-width: 960px) {
+  .research-view.copilot-open {
+    padding-right: 0;
   }
 }
 

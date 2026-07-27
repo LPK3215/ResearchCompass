@@ -16,7 +16,7 @@ import { userApi } from '@/apis/user_api'
 import AgentRuntimeConfigForm from '@/components/AgentRuntimeConfigForm.vue'
 import ShareConfigForm from '@/components/ShareConfigForm.vue'
 import FallbackAvatar from '@/components/common/FallbackAvatar.vue'
-import { isBuiltinAgent, useAgentStore } from '@/stores/agent'
+import { isBuiltinAgent, isResearchCopilotAgent, useAgentStore } from '@/stores/agent'
 import { useUserStore } from '@/stores/user'
 import { generatePixelAvatar } from '@/utils/pixelAvatar'
 import { MAX_IMAGE_UPLOAD_SIZE_BYTES, MAX_IMAGE_UPLOAD_SIZE_MB } from '@/utils/upload_limits'
@@ -151,6 +151,10 @@ const openCreate = () => {
 const openEdit = async (agent) => {
   const agentId = typeof agent === 'string' ? agent : agent?.id
   if (!agentId) return
+  if (isResearchCopilotAgent({ id: agentId })) {
+    message.warning('AI 研究助手由系统维护，请在科研罗盘中使用')
+    return
+  }
 
   const detail = await agentStore.fetchAgentDetail(agentId, true)
   if (!detail?.can_manage) {

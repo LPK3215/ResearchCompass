@@ -3,6 +3,16 @@ import { ref, computed } from 'vue'
 import { agentApi, databaseApi, mcpApi, skillApi } from '@/apis'
 import { isDefaultAllAgentResourceKind } from '@/utils/agentConfigUtils'
 import { handleChatError } from '@/utils/errorHandler'
+import {
+  getPreferredAgentId,
+  isBuiltinAgent
+} from '@/utils/agentIdentity'
+
+export {
+  BUILTIN_AGENT_ID,
+  isBuiltinAgent,
+  isResearchCopilotAgent
+} from '@/utils/agentIdentity'
 
 function normalizeAgent(agent) {
   const agentId = agent?.agent_id || agent?.slug || agent?.id
@@ -11,23 +21,11 @@ function normalizeAgent(agent) {
     : agent
 }
 
-export const BUILTIN_AGENT_ID = 'default-chatbot'
-
-export function isBuiltinAgent(agent) {
-  return agent?.is_builtin || agent?.id === BUILTIN_AGENT_ID || agent?.slug === BUILTIN_AGENT_ID
-}
-
 function sortAgents(agents) {
   return [...agents].sort((a, b) => {
     if (isBuiltinAgent(a) !== isBuiltinAgent(b)) return isBuiltinAgent(a) ? -1 : 1
     return String(a.name || a.id).localeCompare(String(b.name || b.id), 'zh-CN')
   })
-}
-
-function getPreferredAgentId(agents, persistedId) {
-  const chatAgents = agents.filter((agent) => !agent.is_subagent)
-  if (persistedId && chatAgents.some((agent) => agent.id === persistedId)) return persistedId
-  return chatAgents.find(isBuiltinAgent)?.id || chatAgents[0]?.id || null
 }
 
 function extractContext(agent) {

@@ -6,6 +6,7 @@
         <AgentChatComponent
           ref="chatComponentRef"
           :single-mode="false"
+          :send-disabled="isResearchCopilotSelected && (!researchKbId || ensuringThread)"
           @thread-change="handleThreadChange"
         >
           <template #input-actions-left="{ hasActiveThread }">
@@ -89,6 +90,40 @@
                 </div>
               </template>
             </a-dropdown>
+
+            <div v-if="isResearchCopilotSelected" class="research-context-bar">
+              <Database :size="14" class="research-context-icon" aria-hidden="true" />
+              <a-select
+                v-model:value="researchKbId"
+                :options="knowledgeBaseOptions"
+                :loading="false"
+                placeholder="选择知识库"
+                size="small"
+                :bordered="false"
+                class="research-context-select"
+                :disabled="ensuringThread"
+                @change="handleResearchKbChange"
+              />
+              <a-select
+                v-if="researchKbId"
+                v-model:value="researchProjectId"
+                :options="projectOptions"
+                :loading="isLoadingProjects"
+                placeholder="项目（可选）"
+                size="small"
+                :bordered="false"
+                allow-clear
+                class="research-context-select research-context-project"
+                :disabled="ensuringThread"
+                @change="handleResearchProjectChange"
+              />
+              <LoaderCircle
+                v-if="ensuringThread"
+                :size="13"
+                class="research-context-spinner"
+                aria-hidden="true"
+              />
+            </div>
           </template>
         </AgentChatComponent>
       </div>
@@ -104,13 +139,15 @@
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { Settings2, ChevronDown, Check } from 'lucide-vue-next'
+import { Settings2, ChevronDown, Check, Database, LoaderCircle } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import { agentApi } from '@/apis/agent_api'
+import { researchApi } from '@/apis/research_api'
 import { useOutsidePointerdown } from '@/composables/useOutsidePointerdown'
 import AgentChatComponent from '@/components/AgentChatComponent.vue'
 import AgentEditModal from '@/components/model-management/AgentEditModal.vue'
-import { isBuiltinAgent, useAgentStore } from '@/stores/agent'
+import { isBuiltinAgent, isResearchCopilotAgent, useAgentStore } from '@/stores/agent'
+import { useChatThreadsStore } from '@/stores/chatThreads'
 import { handleChatError } from '@/utils/errorHandler'
 import { generatePixelAvatar } from '@/utils/pixelAvatar'
 import FallbackAvatar from '@/components/common/FallbackAvatar.vue'
@@ -123,11 +160,13 @@ const agentEditModalRef = ref(null)
 
 // Stores
 const agentStore = useAgentStore()
+const chatThreadsStore = useChatThreadsStore()
 const route = useRoute()
 const router = useRouter()
 
 // 从 agentStore 中获取响应式状态
-const { agents, selectedAgentId, isLoadingConfig } = storeToRefs(agentStore)
+const { agents, selectedAgentId, isLoadingConfig, availableKnowledgeBases } =
+  storeToRefs(agentStore)
 
 const syncingRouteThread = ref(false)
 
@@ -291,6 +330,104 @@ const openAgentManagement = async () => {
   }
 }
 
+// ==================== Research Copilot 上下文 ====================
+const isResearchCopilotSelected = computed(() =>
+  isResearchCopilotAgent({ id: selectedAgentId.value })
+)
+
+const researchKbId = ref('')
+const researchProjectId = ref(undefined)
+const researchProjects = ref([])
+const isLoadingProjects = ref(false)
+const ensuringThread = ref(false)
+let ensureGeneration = 0
+
+const knowledgeBaseOptions = computed(() =>
+  (availableKnowledgeBases.value || []).map((kb) => ({
+    value: kb.kb_id,
+    label: kb.name || kb.kb_id
+  }))
+)
+
+const projectOptions = computed(() =>
+  researchProjects.value.map((project) => ({
+    value: project.project_id,
+    label: project.title || project.project_id
+  }))
+)
+
+const loadResearchProjects = async (kbId) => {
+  if (!kbId) {
+    researchProjects.value = []
+    return
+  }
+  isLoadingProjects.value = true
+  try {
+    const result = await researchApi.listProjects(kbId, { status: 'active', limit: 100 })
+    researchProjects.value = result.items || []
+  } catch (error) {
+    researchProjects.value = []
+    console.error('加载研究项目失败:', error)
+  } finally {
+    isLoadingProjects.value = false
+  }
+}
+
+const ensureResearchThread = async () => {
+  if (!isResearchCopilotSelected.value || !researchKbId.value) return
+  const generation = ++ensureGeneration
+  ensuringThread.value = true
+  try {
+    const payload = {
+      kb_id: researchKbId.value,
+      project_id: researchProjectId.value || null,
+      surface: 'projects'
+    }
+    const result = await researchApi.ensureCopilotThread(payload)
+    if (generation !== ensureGeneration) return
+    const thread = result?.thread
+    if (!thread?.id) {
+      throw new Error('研究助手会话响应无效')
+    }
+    chatThreadsStore.upsertThread(thread)
+    await chatComponentRef.value?.selectThreadFromRoute?.(thread.id)
+  } catch (error) {
+    if (generation !== ensureGeneration) return
+    message.error(error.message || '研究助手连接失败')
+  } finally {
+    if (generation === ensureGeneration) {
+      ensuringThread.value = false
+    }
+  }
+}
+
+const handleResearchKbChange = (kbId) => {
+  researchProjectId.value = undefined
+  researchProjects.value = []
+  if (kbId) {
+    loadResearchProjects(kbId)
+    ensureResearchThread()
+  }
+}
+
+const handleResearchProjectChange = () => {
+  ensureResearchThread()
+}
+
+// 切换到 research-copilot 时自动选择第一个知识库
+watch(isResearchCopilotSelected, (isSelected) => {
+  if (!isSelected) return
+  if (researchKbId.value) {
+    ensureResearchThread()
+    return
+  }
+  const firstKb = knowledgeBaseOptions.value[0]
+  if (firstKb) {
+    researchKbId.value = firstKb.value
+    handleResearchKbChange(firstKb.value)
+  }
+})
+
 useOutsidePointerdown(agentDropdownOpen, [agentDropdownTriggerRef, agentDropdownPanelRef])
 </script>
 
@@ -376,6 +513,65 @@ useOutsidePointerdown(agentDropdownOpen, [agentDropdownTriggerRef, agentDropdown
 @media (max-width: 520px) {
   .config-dropdown-trigger {
     max-width: calc(100vw - 112px);
+  }
+}
+
+.research-context-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+.research-context-icon {
+  flex-shrink: 0;
+  color: var(--gray-500);
+}
+
+.research-context-spinner {
+  flex-shrink: 0;
+  color: var(--main-600);
+  animation: research-context-spin 1s linear infinite;
+}
+
+.research-context-select {
+  min-width: 100px;
+  max-width: 160px;
+}
+
+.research-context-select :deep(.ant-select-selector) {
+  min-height: 28px !important;
+  padding: 0 6px !important;
+  font-size: 12px;
+  line-height: 26px;
+}
+
+.research-context-select :deep(.ant-select-selection-item) {
+  font-size: 12px;
+}
+
+.research-context-select :deep(.ant-select-selection-placeholder) {
+  font-size: 12px;
+  color: var(--gray-500);
+}
+
+@keyframes research-context-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 640px) {
+  .research-context-select {
+    min-width: 80px;
+    max-width: 120px;
+  }
+}
+
+@media (max-width: 390px) {
+  .research-context-project {
+    display: none;
   }
 }
 </style>

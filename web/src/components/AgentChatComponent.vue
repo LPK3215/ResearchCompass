@@ -132,7 +132,19 @@
 
               <!-- 打招呼区域 - 在输入框上方 -->
               <div v-if="!conversations.length" class="chat-greeting-input">
-                <h1>{{ randomGreeting }}</h1>
+                <h1>{{ displayGreeting }}</h1>
+                <div v-if="normalizedStarterPrompts.length" class="starter-prompts">
+                  <button
+                    v-for="(starter, index) in normalizedStarterPrompts"
+                    :key="`${starter.prompt}-${index}`"
+                    type="button"
+                    class="starter-prompt-button"
+                    :disabled="!currentAgent || sendDisabled || sendCooldownActive || isWaitingForUserAction"
+                    @click="handleStarterPrompt(starter.prompt)"
+                  >
+                    {{ starter.label }}
+                  </button>
+                </div>
               </div>
 
               <section
@@ -221,6 +233,7 @@
                   >
                     <template #actions-left-extra>
                       <ToolApprovalModeSelector
+                        v-if="showToolApprovalMode"
                         :model-value="currentToolApprovalMode"
                         @update:model-value="handleToolApprovalModeSelect"
                       />
@@ -704,9 +717,13 @@ import {
 const props = defineProps({
   agentId: { type: String, default: '' },
   singleMode: { type: Boolean, default: true },
-  sendDisabled: { type: Boolean, default: false }
+  sendDisabled: { type: Boolean, default: false },
+  initialThreadId: { type: String, default: '' },
+  greeting: { type: String, default: '' },
+  starterPrompts: { type: Array, default: () => [] },
+  showToolApprovalMode: { type: Boolean, default: true }
 })
-const emit = defineEmits(['thread-change'])
+const emit = defineEmits(['thread-change', 'run-complete'])
 
 // ==================== STORE MANAGEMENT ====================
 const agentStore = useAgentStore()
@@ -733,6 +750,18 @@ const greetingMessages = [
 
 // 随机选择一个打招呼文本
 const randomGreeting = greetingMessages[Math.floor(Math.random() * greetingMessages.length)]
+const displayGreeting = computed(() => props.greeting || randomGreeting)
+const normalizedStarterPrompts = computed(() =>
+  props.starterPrompts
+    .map((starter) => {
+      if (typeof starter === 'string') return { label: starter, prompt: starter }
+      return {
+        label: starter?.label || starter?.prompt || '',
+        prompt: starter?.prompt || starter?.label || ''
+      }
+    })
+    .filter((starter) => starter.label && starter.prompt)
+)
 
 // 业务状态（保留在组件本地）
 const chatState = reactive({
@@ -2440,11 +2469,14 @@ const { startRunStream, resumeActiveRunForThread, stopRunStreamSubscription } = 
     restorePendingInterruptForThread(threadId)
     void resumeQueuedRequestsForThread(threadId)
   },
-  onTerminalDetected: ({ threadId, touchedThreadIds = [] }) => {
+  onTerminalDetected: ({ threadId, runId, touchedThreadIds = [] }) => {
     if (approvalState.threadId === threadId || touchedThreadIds.includes(approvalState.threadId)) {
       hideApprovalState()
     }
     void resumeQueuedRequestsForThread(threadId)
+    if (runId) {
+      emit('run-complete', { threadId, runId, touchedThreadIds })
+    }
   }
 })
 const startDispatchedRequestRun = async (threadId, runId, requestId) => {
@@ -2790,6 +2822,13 @@ const handleSendOrStop = async (payload) => {
   await handleSendMessage(payload)
 }
 
+const handleStarterPrompt = async (prompt) => {
+  if (!prompt) return
+  userInput.value = prompt
+  await nextTick()
+  await handleSendOrStop()
+}
+
 // ==================== 人工审批处理 ====================
 const handleApprovalWithStream = async (answer) => {
   const threadId = approvalState.threadId
@@ -3052,7 +3091,8 @@ const loadChatsList = async () => {
 
     // singleMode 保持旧行为：自动选择首个可用对话
     if (props.singleMode && threads.value.length > 0 && !chatState.currentThreadId) {
-      await selectChat(getFirstNonPinnedChat(threads.value).id)
+      const initialThread = threads.value.find((thread) => thread.id === props.initialThreadId)
+      await selectChat((initialThread || getFirstNonPinnedChat(threads.value)).id)
     }
   } catch (error) {
     handleChatError(error, 'load')
@@ -3071,8 +3111,19 @@ const initAll = async () => {
 
 onMounted(async () => {
   await initAll()
+  if (props.initialThreadId) {
+    await selectThreadFromRoute(props.initialThreadId)
+  }
   scrollController.enableAutoScroll()
 })
+
+watch(
+  () => props.initialThreadId,
+  async (threadId, previousThreadId) => {
+    if (!threadId || threadId === previousThreadId) return
+    await selectThreadFromRoute(threadId)
+  }
+)
 
 watch(showStateEntry, (visible) => {
   if (!visible && statePanelOpen.value) {
@@ -3391,6 +3442,48 @@ watch(currentChatId, (threadId, oldThreadId) => {
     font-size: 1.4rem;
     color: var(--gray-1000);
     margin: 0;
+  }
+}
+
+.starter-prompts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.starter-prompt-button {
+  min-height: 40px;
+  padding: 9px 12px;
+  border: 1px solid var(--gray-150);
+  border-radius: 6px;
+  color: var(--color-text-secondary);
+  background: var(--gray-0);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: left;
+  overflow-wrap: anywhere;
+  transition:
+    border-color 0.18s ease,
+    background-color 0.18s ease,
+    color 0.18s ease;
+
+  &:hover:not(:disabled) {
+    border-color: var(--main-300);
+    color: var(--main-700);
+    background: var(--main-30);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--main-500);
+    outline-offset: 2px;
+  }
+
+  &:disabled {
+    color: var(--gray-400);
+    background: var(--gray-25);
+    cursor: not-allowed;
   }
 }
 

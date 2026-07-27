@@ -33,6 +33,7 @@ export default defineConfig({
         text: '简介',
         items: [
           { text: '科研罗盘', link: '/intro/research-compass' },
+          { text: 'AI 研究助手', link: '/intro/research-compass#ai-研究助手' },
           { text: '什么是 Yuxi？', link: '/intro/project-overview' },
           { text: '快速开始', link: '/intro/quick-start' },
           { text: '命令行工具', link: '/intro/cli' },

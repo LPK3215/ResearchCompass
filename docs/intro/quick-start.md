@@ -20,15 +20,15 @@
 
 ```bash
 # 克隆最新版本
-git clone --branch v0.7.1 --depth 1 https://github.com/xerrors/Yuxi.git
-cd Yuxi
+git clone --branch v0.11.0 --depth 1 https://github.com/LPK3215/ResearchCompass.git
+cd ResearchCompass
 ```
 
 `--depth 1` 标志会创建一个浅克隆，仅包含最新的提交，从而显著减少下载时间和磁盘使用量。下表提供了版本选择的指导。
 
 | 版本 | 适用场景 |
 |------|----------|
-| v0.7.1 | 当前稳定版本，推荐生产使用 |
+| v0.11.0 | 当前稳定版本，推荐生产使用 |
 | main | 开发版本，包含最新特性（可能不稳定） |
 
 ### 步骤二：配置环境变量
@@ -83,7 +83,7 @@ docker compose up --build -d
 make up-lite  # macOS or Linux
 ```
 
-轻量模式仅启动核心服务（前端、后端、PostgreSQL、Redis、MinIO），前端侧边栏会自动隐藏知识库和图谱入口。切换回完整模式只需运行 `make up`。
+轻量模式仅启动核心服务（前端、后端、PostgreSQL、Redis、MinIO），默认入口为 `/agent`，前端侧边栏会隐藏 ResearchCompass、知识库和图谱入口；`/research` 旧链接也会回退到通用助手。切换回完整模式只需运行 `make up`，登录后默认进入 `/research`。
 :::
 
 ### 步骤四：访问系统

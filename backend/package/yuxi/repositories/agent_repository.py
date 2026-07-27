@@ -99,12 +99,48 @@ FACT_VERIFIER_SYSTEM_PROMPT = """你是「事实核查员」子智能体，专�
 - 明确标注无法查证或来源相互冲突的论断。
 - 不要编造来源或链接。"""
 
+RESEARCH_COPILOT_AGENT_SLUG = "research-copilot"
+RESEARCH_COPILOT_AGENT_NAME = "AI 研究助手"
+RESEARCH_COPILOT_AGENT_DESCRIPTION = "理解当前研究项目并执行检索、综述、计划和成果管理的 ResearchCompass 助手。"
+RESEARCH_COPILOT_TOOL_SLUGS = [
+    "research_get_context",
+    "research_list_projects",
+    "research_get_project",
+    "research_create_project",
+    "research_update_project",
+    "research_set_project_status",
+    "research_delete_project",
+    "research_get_project_plan",
+    "research_create_milestone",
+    "research_update_milestone",
+    "research_delete_milestone",
+    "research_create_task",
+    "research_update_task",
+    "research_delete_task",
+    "research_search_papers",
+    "research_get_search_run",
+    "research_create_synthesis",
+    "research_get_synthesis",
+    "research_regenerate_synthesis",
+    "research_list_project_asset_candidates",
+    "research_add_project_assets",
+    "research_list_project_assets",
+    "research_remove_project_asset",
+    "research_link_asset_to_plan",
+    "research_unlink_asset_from_plan",
+]
+RESEARCH_COPILOT_SYSTEM_PROMPT = """你是 ResearchCompass 的 AI 研究助手。
+
+你的职责是把用户的研究意图转化为可追踪的项目、计划、检索、证据综述和成果记录。优先读取当前研究上下文，再调用对应工具完成工作；需要多个步骤时先说明简短计划，然后持续执行到产生可在工作台查看的结果。
+
+不要用普通聊天文本假装已经修改业务数据。项目、任务、检索、综述或成果只有在工具成功返回后才算完成。涉及删除、项目完成/归档等敏感动作时，清楚说明影响并等待系统审批。"""
+
 ACCESS_LEVELS = SHARE_ACCESS_LEVELS
 ADMIN_ROLES = {"admin", "superadmin"}
 
 
 def is_builtin_agent(agent: Agent) -> bool:
-    return agent.slug == DEFAULT_AGENT_SLUG
+    return agent.slug in {DEFAULT_AGENT_SLUG, RESEARCH_COPILOT_AGENT_SLUG}
 
 
 def resolve_agent_is_subagent(backend_id: str, is_subagent: bool | None = None) -> bool:
@@ -326,6 +362,50 @@ class AgentRepository:
             created_by=created_by,
         )
 
+    async def ensure_research_copilot_agent(self, *, created_by: str | None = None) -> Agent:
+        """落库 ResearchCompass 专用主 Agent，只启用受控的研究领域工具。"""
+        config_context = {
+            "system_prompt": RESEARCH_COPILOT_SYSTEM_PROMPT,
+            "tools": list(RESEARCH_COPILOT_TOOL_SLUGS),
+            "knowledges": [],
+            "mcps": [],
+            "skills": [],
+            "subagents": [RESEARCH_EXPLORER_AGENT_SLUG, FACT_VERIFIER_AGENT_SLUG],
+        }
+        agent = await self._ensure_builtin_agent(
+            slug=RESEARCH_COPILOT_AGENT_SLUG,
+            backend_id=DEFAULT_AGENT_BACKEND_ID,
+            name=RESEARCH_COPILOT_AGENT_NAME,
+            description=RESEARCH_COPILOT_AGENT_DESCRIPTION,
+            config_context=config_context,
+            is_subagent=False,
+            created_by=created_by,
+        )
+        expected_config = {"context": config_context}
+        if (
+            agent.backend_id == DEFAULT_AGENT_BACKEND_ID
+            and agent.name == RESEARCH_COPILOT_AGENT_NAME
+            and agent.description == RESEARCH_COPILOT_AGENT_DESCRIPTION
+            and agent.config_json == expected_config
+            and agent.share_config == DEFAULT_SHARE_CONFIG
+            and agent.is_default is False
+            and agent.is_subagent is False
+        ):
+            return agent
+
+        agent.backend_id = DEFAULT_AGENT_BACKEND_ID
+        agent.name = RESEARCH_COPILOT_AGENT_NAME
+        agent.description = RESEARCH_COPILOT_AGENT_DESCRIPTION
+        agent.config_json = expected_config
+        agent.share_config = DEFAULT_SHARE_CONFIG.copy()
+        agent.is_default = False
+        agent.is_subagent = False
+        agent.updated_by = created_by
+        agent.updated_at = utc_now_naive()
+        await self.db.commit()
+        await self.db.refresh(agent)
+        return agent
+
     async def list_visible(self, *, user: User, include_subagent_definitions: bool = False) -> list[Agent]:
         """列出用户可见的主智能体，只有显式请求时才包含子智能体定义。"""
         stmt = select(Agent)
@@ -378,7 +458,7 @@ class AgentRepository:
     async def set_default(self, *, agent: Agent, updated_by: str | None = None) -> Agent:
         if agent.is_subagent:
             raise ValueError("子智能体不能设为默认智能体")
-        if not is_builtin_agent(agent):
+        if agent.slug != DEFAULT_AGENT_SLUG:
             raise ValueError("默认智能体已固定为内置智能助手")
         share_config = agent.share_config or DEFAULT_SHARE_CONFIG.copy()
         if share_config.get("access_level") != "global":
