@@ -37,6 +37,11 @@ export default defineConfig(({ mode }) => {
         'echarts/components',
         'echarts/renderers'
       ]
+    },
+    build: {
+      // GraphCanvas (@antv/g6)、pdfjs-dist、shiki 等异步组件本身较大且已按需加载，
+      // 提高阈值以避免对正常拆分的异步 chunk 产生噪音告警。
+      chunkSizeWarningLimit: 1500
     }
   }
 })
