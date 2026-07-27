@@ -5,7 +5,6 @@ import {
   AGENT_ENTRY_PATH,
   getProductEntryRedirect,
   isLiteModeEnabled,
-  RESEARCH_ENTRY_PATH,
   resolveProductEntry
 } from '../../src/utils/productEntry.js'
 
