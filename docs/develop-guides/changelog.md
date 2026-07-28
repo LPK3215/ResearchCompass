@@ -28,6 +28,7 @@
 - 前端代码清理：删除 `useGraph.js` 中 `handleNodeClick`/`handleEdgeClick` 的 2 处 `console.log` 调试残留（`Node clicked`/`Edge clicked`），删除 `config.js` 中 `refreshConfig` 函数的 `console.log('config', data)` 调试残留。删除未被任何代码引用的遗留资源 `web/src/assets/defaults/agent.png`（品牌资源已替换为 SVG）。清理 `.gitignore` 中已失效的 `web/src/utils/__tests__/` 规则（目录已删除）。
 - 修复后端全量测试收集错误：`test/unit/routers/test_system_router.py` 与 `test/integration/api/test_system_router.py` 同名导致 pytest 同时收集 unit+integration 时报 `import file mismatch` 错误。将集成测试文件重命名为 `test_system_api.py` 以消除 basename 冲突，修复后全量测试（unit+integration+e2e）1515 passed, 168 skipped, 0 errors。
 - 前端死代码清理：删除未被任何文件引用的 `web/src/utils/agentPanelAutoOpen.js`（自项目初始化以来无消费者）和 `web/src/assets/icons/sidebar_left.svg`/`sidebar_right.svg` 两个未引用图标资源。
+- 前端死代码组件清理：删除6个自项目初始化以来未被任何文件引用的 Vue 组件（共741行）：`ViewSwitchHeader.vue`、`LoadingComponent.vue`、`MarkdownContentViewer.vue`、`HeaderComponent.vue`（唯一引用者 ViewSwitchHeader 已先行删除）、`ThemeToggle.vue`（暗色模式通过 theme.js store 实现）、`ChartTool.vue`（不在 ToolCallingResult/index.js 导出中）。清理后前端构建、ESLint、74项测试全部通过。
 
 ## v0.10.0
 
