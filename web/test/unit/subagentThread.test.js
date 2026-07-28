@@ -1,0 +1,32 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+
+import { makeChildThreadId } from '../../src/utils/subagentThread.js'
+
+const EXPECTED_THREAD_ID = 'subagent_198242794595efedd1850d5263f677c9b628052b1bfca0d5bc77499'
+
+test('makeChildThreadId generates stable hash-based id', async () => {
+  assert.equal(await makeChildThreadId('thread-1', 'researcher', 'call-1'), EXPECTED_THREAD_ID)
+})
+
+test('makeChildThreadId returns empty string for empty parent thread id', async () => {
+  assert.equal(await makeChildThreadId('', 'researcher', 'call-1'), '')
+})
+
+test('makeChildThreadId falls back to hash when crypto.subtle is unavailable', async () => {
+  const originalCrypto = Object.getOwnPropertyDescriptor(globalThis, 'crypto')
+  try {
+    Object.defineProperty(globalThis, 'crypto', {
+      configurable: true,
+      value: {}
+    })
+
+    assert.equal(await makeChildThreadId('thread-1', 'researcher', 'call-1'), EXPECTED_THREAD_ID)
+  } finally {
+    if (originalCrypto) {
+      Object.defineProperty(globalThis, 'crypto', originalCrypto)
+    } else {
+      delete globalThis.crypto
+    }
+  }
+})
