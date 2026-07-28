@@ -57,7 +57,7 @@ Qwen-Image 生成能力已迁移为内置 Skill `image-gen`。模型调用与图
 from yuxi.agents.toolkits.kbs import get_common_kb_tools
 
 kb_tools = get_common_kb_tools()
-# 返回: [list_kbs, get_mindmap, query_kb, find_kb_document, open_kb_document]
+# 返回: [list_kbs, get_mindmap, query_kb, find_kb_document, open_kb_document, search_file, download_kb_file]
 ```
 
 | 工具 | 说明 |
@@ -68,6 +68,40 @@ kb_tools = get_common_kb_tools()
 | `find_kb_document` | 在已知文件内按关键词或正则定位内容 |
 | `open_kb_document` | 按 `file_id` 分段打开知识库文档（默认窗口 1800 行） |
 | `search_file` | 按文件名在指定或全部可见知识库中搜索文件 |
+| `download_kb_file` | 下载知识库内文件到沙盒 outputs 目录，便于后续工具读取 |
+
+### 科研工具 (research)
+
+科研工具使用 `@tool(category="research")` 注册，是 ResearchCompass 在 Yuxi 框架之上扩展的核心能力，由 `research-copilot` 主智能体调用，覆盖项目治理、论文检索、证据综述、产物管理等科研闭环场景。具体工具如下：
+
+| 工具 | 说明 |
+|------|------|
+| `research_get_context` | 获取当前线程的科研上下文（当前项目、用户偏好、可用知识库等） |
+| `research_list_projects` | 列出指定知识库下的科研项目 |
+| `research_get_project` | 获取指定项目的详细信息 |
+| `research_create_project` | 在指定知识库下创建科研项目 |
+| `research_update_project` | 更新项目名称、描述、状态等字段 |
+| `research_set_project_status` | 切换项目状态（如 active、archived） |
+| `research_delete_project` | 删除指定项目 |
+| `research_get_project_plan` | 获取项目计划，包括里程碑、任务、关联资产 |
+| `research_create_milestone` | 创建项目里程碑 |
+| `research_update_milestone` | 更新里程碑字段 |
+| `research_delete_milestone` | 删除里程碑 |
+| `research_create_task` | 在里程碑下创建任务 |
+| `research_update_task` | 更新任务字段 |
+| `research_delete_task` | 删除任务 |
+| `research_search_papers` | 在指定知识库中检索论文，支持混合检索与严格图谱检索模式 |
+| `research_get_search_run` | 查询检索任务的运行结果与命中论文列表 |
+| `research_create_synthesis` | 基于检索到的论文生成证据综述 |
+| `research_get_synthesis` | 查询综述结果，包括论点、主题、局限和研究空白 |
+| `research_regenerate_synthesis` | 重新生成已有综述 |
+| `research_export_synthesis` | 将综述结果导出为 MD 文件并展示给用户下载 |
+| `research_list_project_asset_candidates` | 列出可作为项目资产候选的论文或综述 |
+| `research_add_project_assets` | 将候选资产添加到项目 |
+| `research_list_project_assets` | 列出项目已有的资产 |
+| `research_remove_project_asset` | 移除项目资产 |
+| `research_link_asset_to_plan` | 将资产关联到里程碑或任务 |
+| `research_unlink_asset_from_plan` | 解除资产与计划项的关联 |
 
 ## 工具组装
 

@@ -13,7 +13,6 @@ import json
 import re
 import time
 import uuid
-from datetime import UTC, datetime
 from typing import Any
 
 from yuxi.config import config
@@ -27,6 +26,7 @@ from yuxi.repositories.knowledge_base_repository import KnowledgeBaseRepository
 from yuxi.repositories.research_search_run_repository import ResearchSearchRunRepository
 from yuxi.services.research_paper_service import _ensure_access
 from yuxi.storage.postgres.models_business import User
+from yuxi.utils.datetime_utils import utc_now_naive
 
 
 class ResearchSearchError(RuntimeError):
@@ -47,10 +47,6 @@ def _normalize_search_mode(value: str | None) -> str:
     if mode not in RESEARCH_SEARCH_MODES:
         raise ResearchSearchError("invalid_retrieval_config", f"不支持的科研检索模式: {mode}")
     return mode
-
-
-def _now() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def _elapsed(start: float) -> int:
@@ -455,7 +451,7 @@ async def search_papers(
                     "stage_timings": timings,
                     "result_count": 0,
                     "result_snapshot": response,
-                    "completed_at": _now(),
+                    "completed_at": utc_now_naive(),
                 },
             )
             return response
@@ -516,7 +512,7 @@ async def search_papers(
                 "stage_timings": timings,
                 "result_count": len(results),
                 "result_snapshot": response,
-                "completed_at": _now(),
+                "completed_at": utc_now_naive(),
             },
         )
         return response
@@ -528,7 +524,7 @@ async def search_papers(
                 "stage_timings": timings,
                 "error_type": exc.error_type,
                 "error_message": exc.message,
-                "completed_at": _now(),
+                "completed_at": utc_now_naive(),
             },
         )
         raise
@@ -542,7 +538,7 @@ async def search_papers(
                 "stage_timings": timings,
                 "error_type": failure_type,
                 "error_message": failure_message,
-                "completed_at": _now(),
+                "completed_at": utc_now_naive(),
             },
         )
         raise ResearchSearchError(failure_type, failure_message) from exc

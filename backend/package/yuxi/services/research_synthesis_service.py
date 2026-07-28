@@ -15,7 +15,6 @@ import re
 import time
 import uuid
 from collections.abc import Mapping
-from datetime import UTC, datetime
 from io import BytesIO
 from typing import Any
 
@@ -36,6 +35,7 @@ from yuxi.services.research_paper_service import _ensure_access
 from yuxi.services.research_search_service import LOCAL_HYBRID_MODE, ResearchSearchError, search_papers
 from yuxi.services.task_service import PublicTaskError, TaskContext, tasker
 from yuxi.storage.postgres.models_business import User
+from yuxi.utils.datetime_utils import utc_now_naive
 
 
 class ResearchSynthesisError(PublicTaskError):
@@ -67,10 +67,6 @@ SYNTHESIS_SYSTEM_PROMPT = """你是证据约束的跨论文研究综述专家。
 executive_summary 和 themes 只能概括其 claim_ids 对应的 claims。
 high 置信度至少需要两篇不同论文的证据；contradictions 至少需要两篇不同论文。
 证据不足的判断放入 unsupported_claims，不能伪装成结论。"""
-
-
-def _now() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def _elapsed(started: float) -> int:
@@ -453,7 +449,7 @@ def _validate_report(
         "validation": {
             "status": "verified",
             "rules_version": SYNTHESIS_RULES_VERSION,
-            "validated_at": _now().isoformat(),
+            "validated_at": utc_now_naive().isoformat(),
             "confidence_adjustments": adjustments,
         },
     }
@@ -502,7 +498,7 @@ async def _run_synthesis(
             {
                 "status": "retrieving",
                 "stage": "retrieving",
-                "started_at": _now(),
+                "started_at": utc_now_naive(),
                 "completed_at": None,
                 "error_type": None,
                 "error_message": None,
@@ -592,7 +588,7 @@ async def _run_synthesis(
                 "stage": "completed",
                 "result": result,
                 "stage_timings": timings,
-                "completed_at": _now(),
+                "completed_at": utc_now_naive(),
             },
         )
         if completed is None:
@@ -624,7 +620,7 @@ async def _run_synthesis(
                     "stage_timings": timings,
                     "error_type": "synthesis_timeout" if timed_out else "synthesis_cancelled",
                     "error_message": "综述任务执行超时" if timed_out else "综述任务已取消",
-                    "completed_at": _now(),
+                    "completed_at": utc_now_naive(),
                 },
             )
         raise
@@ -641,7 +637,7 @@ async def _run_synthesis(
                 "stage_timings": timings,
                 "error_type": failure.error_type,
                 "error_message": failure.message,
-                "completed_at": _now(),
+                "completed_at": utc_now_naive(),
             },
         )
         if isinstance(exc, ResearchSynthesisError):
@@ -737,7 +733,7 @@ async def enqueue_research_synthesis(
                 "stage": "failed",
                 "error_type": "synthesis_enqueue_failed",
                 "error_message": "综述任务提交失败",
-                "completed_at": _now(),
+                "completed_at": utc_now_naive(),
             },
         )
         raise ResearchSynthesisError("synthesis_enqueue_failed", "综述任务提交失败") from exc
@@ -770,7 +766,7 @@ async def _resume_research_synthesis_task(context: TaskContext) -> dict[str, Any
                 "stage": "failed",
                 "error_type": "synthesis_recovery_invalid",
                 "error_message": error,
-                "completed_at": _now(),
+                "completed_at": utc_now_naive(),
             },
         )
         raise RuntimeError(error)
@@ -785,7 +781,7 @@ async def _resume_research_synthesis_task(context: TaskContext) -> dict[str, Any
                 "stage": "failed",
                 "error_type": "synthesis_recovery_invalid",
                 "error_message": error,
-                "completed_at": _now(),
+                "completed_at": utc_now_naive(),
             },
         )
         raise RuntimeError(error) from exc
@@ -828,7 +824,7 @@ async def cancel_research_synthesis(*, run_id: str, current_user: User) -> dict[
     if not await tasker.cancel_task(str(record.task_id)):
         raise ResearchSynthesisError("synthesis_not_cancellable", "该研究综述已结束，不能取消")
 
-    cancelled = await ResearchSynthesisRepository().mark_cancelled(run_id, completed_at=_now())
+    cancelled = await ResearchSynthesisRepository().mark_cancelled(run_id, completed_at=utc_now_naive())
     if cancelled is None:
         terminal = await ResearchSynthesisRepository().get(run_id)
         if terminal is not None and terminal.status == "cancelled":
@@ -1056,7 +1052,7 @@ async def recover_research_synthesis_runs() -> int:
                     "stage": "failed",
                     "error_type": "synthesis_recovery_invalid",
                     "error_message": "恢复综述所需的用户或模型配置不存在",
-                    "completed_at": _now(),
+                    "completed_at": utc_now_naive(),
                 },
             )
             continue
@@ -1070,7 +1066,7 @@ async def recover_research_synthesis_runs() -> int:
                     "stage": "failed",
                     "error_type": "synthesis_recovery_invalid",
                     "error_message": "综述任务所有者已失去知识库访问权限",
-                    "completed_at": _now(),
+                    "completed_at": utc_now_naive(),
                 },
             )
             continue
@@ -1117,7 +1113,7 @@ async def recover_research_synthesis_runs() -> int:
                     "stage": "failed",
                     "error_type": "synthesis_recovery_failed",
                     "error_message": "综述恢复任务提交失败",
-                    "completed_at": _now(),
+                    "completed_at": utc_now_naive(),
                 },
             )
     return recovered

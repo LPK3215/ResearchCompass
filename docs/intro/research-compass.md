@@ -108,6 +108,18 @@ ResearchCompass 面向需要管理、检索和分析学术论文的研究者。�
 
 Semantic Scholar 属于外部可选能力。正式演示应提前完成图谱同步并保留可复现快照，避免把现场网络或外部限流作为核心链路前提。
 
+### Semantic Scholar API Key 配置
+
+引用图谱同步、外部论文导入和严格图谱检索模式依赖 [Semantic Scholar API](https://www.semanticscholar.org/product/api)。未配置 API Key 时，单 IP 每秒请求次数受限（约 1 RPT），大批量同步容易出现 429 错误。
+
+在 `.env` 中设置：
+
+```env
+SEMANTIC_SCHOLAR_API_KEY=s2k-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+申请入口：<https://www.semanticscholar.org/product/api#api-key-form>。Key 配置后由 `semantic_scholar_service.py` 在每次请求中携带，可显著提升速率上限。修改后需重启 `api-dev` 与 `worker-dev` 容器才能生效。
+
 ## 结果边界
 
 研究机会、趋势和多 Agent 报告是基于当前论文库和模型配置生成的辅助证据，不等同于领域共识。没有真实实验或用户样本时，系统不会推断策略优劣，也不应在对外材料中声明提升比例。

@@ -14,7 +14,6 @@ import json
 import re
 import uuid
 from collections.abc import Mapping
-from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import HTTPException
@@ -31,6 +30,7 @@ from yuxi.services.research_paper_service import _ensure_access, _serialize_pape
 from yuxi.services.academic_paper_analysis_workflow import build_analysis_workflow
 from yuxi.services.task_service import PublicTaskError, TaskContext, tasker
 from yuxi.storage.postgres.models_business import User
+from yuxi.utils.datetime_utils import utc_now_naive
 
 
 class AcademicPaperAnalysisError(PublicTaskError):
@@ -44,10 +44,6 @@ ANALYSIS_STRATEGIES = {"single_agent", "multi_agent"}
 DEFAULT_ANALYSIS_INPUT_BUDGET = 24_000
 ANALYSIS_CONTEXT_OVERHEAD = 512
 ANALYSIS_CONTEXT_RATIO = 0.75
-
-
-def _now() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def _parse_json(content: str, *, stage: str) -> dict[str, Any]:
@@ -344,7 +340,7 @@ async def _run_analysis(
         run_id,
         {
             "status": "running",
-            "started_at": _now(),
+            "started_at": utc_now_naive(),
             "completed_at": None,
             "error_type": None,
             "error_message": None,
@@ -411,7 +407,7 @@ async def _run_analysis(
                 "stage": None,
                 "stage_results": stage_results,
                 "result": result,
-                "completed_at": _now(),
+                "completed_at": utc_now_naive(),
             },
         )
         await context.set_result(result)
@@ -440,7 +436,7 @@ async def _run_analysis(
                     "stage_results": stage_results,
                     "error_type": "analysis_timeout" if timed_out else "analysis_cancelled",
                     "error_message": "论文分析任务执行超时" if timed_out else "论文分析任务已取消",
-                    "completed_at": _now(),
+                    "completed_at": utc_now_naive(),
                 },
             )
         raise
@@ -457,7 +453,7 @@ async def _run_analysis(
                 "stage_results": stage_results,
                 "error_type": failure.error_type,
                 "error_message": failure.message,
-                "completed_at": _now(),
+                "completed_at": utc_now_naive(),
             },
         )
         if failure is exc:
@@ -524,7 +520,7 @@ async def enqueue_paper_analysis(
                     "status": "failed",
                     "error_type": "analysis_active",
                     "error_message": "当前论文已有分析任务运行中",
-                    "completed_at": _now(),
+                    "completed_at": utc_now_naive(),
                 },
             )
             raise AcademicPaperAnalysisError("analysis_active", "当前论文已有分析任务运行中")
@@ -537,7 +533,7 @@ async def enqueue_paper_analysis(
                 "status": "failed",
                 "error_type": "task_enqueue_failed",
                 "error_message": "论文分析任务提交失败",
-                "completed_at": _now(),
+                "completed_at": utc_now_naive(),
             },
         )
         raise AcademicPaperAnalysisError("task_enqueue_failed", "论文分析任务提交失败") from exc
@@ -569,7 +565,7 @@ async def _resume_paper_analysis_task(context: TaskContext) -> dict[str, Any]:
                 "status": "failed",
                 "error_type": "analysis_recovery_invalid",
                 "error_message": error,
-                "completed_at": _now(),
+                "completed_at": utc_now_naive(),
             },
         )
         raise RuntimeError(error)
@@ -583,7 +579,7 @@ async def _resume_paper_analysis_task(context: TaskContext) -> dict[str, Any]:
                 "status": "failed",
                 "error_type": "analysis_recovery_invalid",
                 "error_message": error,
-                "completed_at": _now(),
+                "completed_at": utc_now_naive(),
             },
         )
         raise RuntimeError(error) from exc
@@ -597,7 +593,7 @@ async def _resume_paper_analysis_task(context: TaskContext) -> dict[str, Any]:
                 "status": "failed",
                 "error_type": "analysis_recovery_invalid",
                 "error_message": error,
-                "completed_at": _now(),
+                "completed_at": utc_now_naive(),
             },
         )
         raise RuntimeError(error)
@@ -630,7 +626,7 @@ async def recover_paper_analysis_runs() -> int:
                     "status": "failed",
                     "error_type": "analysis_recovery_invalid",
                     "error_message": "论文分析任务所有者不存在或已删除",
-                    "completed_at": _now(),
+                    "completed_at": utc_now_naive(),
                 },
             )
             continue
@@ -643,7 +639,7 @@ async def recover_paper_analysis_runs() -> int:
                     "status": "failed",
                     "error_type": "analysis_recovery_invalid",
                     "error_message": "论文分析任务所有者已失去知识库访问权限",
-                    "completed_at": _now(),
+                    "completed_at": utc_now_naive(),
                 },
             )
             continue
@@ -655,7 +651,7 @@ async def recover_paper_analysis_runs() -> int:
                     "status": "failed",
                     "error_type": "analysis_recovery_invalid",
                     "error_message": "论文分析恢复所需的论文或模型配置不存在",
-                    "completed_at": _now(),
+                    "completed_at": utc_now_naive(),
                 },
             )
             continue
@@ -682,7 +678,7 @@ async def recover_paper_analysis_runs() -> int:
                     "status": "failed",
                     "error_type": "analysis_recovery_failed",
                     "error_message": "论文分析恢复任务提交失败",
-                    "completed_at": _now(),
+                    "completed_at": utc_now_naive(),
                 },
             )
             continue

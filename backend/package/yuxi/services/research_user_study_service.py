@@ -14,7 +14,6 @@ import io
 import secrets
 import uuid
 from collections import Counter
-from datetime import UTC, datetime
 from statistics import mean
 from typing import Any
 
@@ -22,6 +21,7 @@ from yuxi.repositories.research_user_study_repository import ResearchUserStudyRe
 from yuxi.services.research_paper_service import _ensure_access
 from yuxi.services.run_queue_service import get_redis_client
 from yuxi.storage.postgres.models_business import User
+from yuxi.utils.datetime_utils import utc_now_naive
 
 
 TASK_SCORE_KEYS = ("search", "paper_analysis", "citation_traceability", "trend_insight")
@@ -49,10 +49,6 @@ class ResearchUserStudyError(RuntimeError):
         self.error_type = error_type
         self.message = message
         self.retry_after = retry_after
-
-
-def _now() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def _token_hash(token: str) -> str:
@@ -257,7 +253,7 @@ class ResearchUserStudyService:
             raise ResearchUserStudyError("study_not_found", "用户评测不存在")
         if study.status == "closed":
             return
-        await self.repo.update_study(study_id, {"status": "closed", "closed_at": _now()})
+        await self.repo.update_study(study_id, {"status": "closed", "closed_at": utc_now_naive()})
 
     async def get_public_study(self, token: str, *, client_key: str = "unknown") -> dict[str, Any]:
         await _enforce_public_rate_limit(
@@ -334,7 +330,7 @@ class ResearchUserStudyService:
                 "overall_rating": overall_rating,
                 "recommend_score": recommend_score,
                 "feedback": feedback.strip() or None,
-                "submitted_at": _now(),
+                "submitted_at": utc_now_naive(),
             },
         )
         if rejection:

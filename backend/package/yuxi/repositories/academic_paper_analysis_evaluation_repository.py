@@ -8,7 +8,6 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import func, select
@@ -21,10 +20,7 @@ from yuxi.storage.postgres.models_knowledge import (
     AcademicPaperAnalysisRun,
     AcademicPaper,
 )
-
-
-def _now() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
+from yuxi.utils.datetime_utils import utc_now_naive
 
 
 class AcademicPaperAnalysisEvaluationRepository:
@@ -153,7 +149,7 @@ class AcademicPaperAnalysisEvaluationRepository:
             else:
                 record.blind_scores = blind_scores
                 record.notes = notes or None
-                record.submitted_at = _now()
+                record.submitted_at = utc_now_naive()
             return record
 
     async def list_scores(self, evaluation_id: str) -> list[AcademicPaperAnalysisEvaluationScore]:

@@ -2,7 +2,7 @@
 
 > 本文描述的能力由开源智能体框架 Yuxi 提供，ResearchCompass 复用该能力作为科研智能体平台的通用底座。
 
-Yuxi 支持以OIDC接入第三方登录认证，方便企业用户集成现有的身份认证系统。
+ResearchCompass 支持以OIDC接入第三方登录认证，方便企业用户集成现有的身份认证系统。
 > 此功能默认关闭，需要在配置文件中启用并提供相关参数。
 
 ## 配置步骤
@@ -12,7 +12,7 @@ Yuxi 支持以OIDC接入第三方登录认证，方便企业用户集成现有�
 - 客户端密钥（Client Secret）
 - ISSUER URL
 
-填入回调地址（Redirect URI）：https://<your_yuxi_host>/api/auth/oidc/callback
+填入回调地址（Redirect URI）：https://<your_researchcompass_host>/api/auth/oidc/callback
 
 ### 2. 配置 ResearchCompass（基于 Yuxi 框架）
 在 ResearchCompass 的 .env 文件中添加以下配置项：
@@ -34,7 +34,7 @@ Yuxi 支持以OIDC接入第三方登录认证，方便企业用户集成现有�
 # OIDC_CLIENT_SECRET=
 
 # OIDC 回调 URL (可选，默认自动构建为 /api/auth/oidc/callback, 不建议自定义)
-# 填写完整的地址：https://<your_yuxi_host>/api/auth/oidc/callback
+# 填写完整的地址：https://<your_researchcompass_host>/api/auth/oidc/callback
 # 需要确保此 URL 在 OIDC Provider 中已注册
 # OIDC_REDIRECT_URI=
 
@@ -71,7 +71,7 @@ Yuxi 支持以OIDC接入第三方登录认证，方便企业用户集成现有�
 # 姓名映射字段 (默认: name)
 # OIDC_NAME_CLAIM=name
 
-# 是否使用原始用户名（不带 oidc: 前缀），允许映射到 Yuxi 已有的本地账号 (true/false，默认: false)
+# 是否使用原始用户名（不带 oidc: 前缀），允许映射到 ResearchCompass 已有的本地账号 (true/false，默认: false)
 # 开启后，OIDC 返回的 username 会直接作为业务登录标识 uid 登录，需要管理员提前创建好用户账号
 # OIDC_USE_RAW_USERNAME=false
 
@@ -93,13 +93,13 @@ docker restart api-dev web-dev
 ## 功能说明
 
 ### 使用原始用户名（OIDC_USE_RAW_USERNAME=true）
-当你需要将 Yuxi 系统中已有的本地账号与 OIDC SSO 绑定，可以开启此选项。
+当你需要将 ResearchCompass 系统中已有的本地账号与 OIDC SSO 绑定，可以开启此选项。
 
 **绑定原理**（无需修改数据库）：  
-系统会创建一个标记为删除的占位用户 `oidc:{sub}:{target_user_id}` 来记录 OIDC sub 与 Yuxi 用户的绑定关系，确保只有绑定过的 OIDC 身份才能登录对应的账号，**防止账号冒用**。其中 `target_user_id` 是数据库中的数值 `users.id`；用户登录标识仍使用字符串 `uid`。
+系统会创建一个标记为删除的占位用户 `oidc:{sub}:{target_user_id}` 来记录 OIDC sub 与 ResearchCompass 用户的绑定关系，确保只有绑定过的 OIDC 身份才能登录对应的账号，**防止账号冒用**。其中 `target_user_id` 是数据库中的数值 `users.id`；用户登录标识仍使用字符串 `uid`。
 
 ### 自动获取部门信息（OIDC_FETCH_DEPARTMENT_INFO=true）
-开启后，系统会从 OIDC userinfo 中读取部门名称和描述，自动在 Yuxi 中创建部门并将用户关联到该部门。
+开启后，系统会从 OIDC userinfo 中读取部门名称和描述，自动在 ResearchCompass 中创建部门并将用户关联到该部门。
 
 - 对从 OIDC 获取的部门名称会自动做 `strip()` 去空格，并截断到 50 字符
 - 部门描述会自动截断到 255 字符

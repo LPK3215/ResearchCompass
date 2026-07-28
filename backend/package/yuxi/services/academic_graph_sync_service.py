@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import HTTPException
@@ -28,6 +27,7 @@ from yuxi.services.semantic_scholar_service import (
 from yuxi.services.task_service import PublicTaskError, TaskContext, tasker
 from yuxi.storage.postgres.models_business import User
 from yuxi.utils import hashstr, logger
+from yuxi.utils.datetime_utils import utc_now_naive
 
 
 class AcademicGraphSyncError(PublicTaskError):
@@ -35,10 +35,6 @@ class AcademicGraphSyncError(PublicTaskError):
         super().__init__(message)
         self.error_type = error_type
         self.message = message
-
-
-def _now() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def _identity_key(paper: dict[str, Any]) -> str:
@@ -252,7 +248,7 @@ async def _run_sync(
         run_id,
         {
             "status": "running",
-            "started_at": _now(),
+            "started_at": utc_now_naive(),
             "completed_at": None,
             "error_type": None,
             "error_message": None,
@@ -390,7 +386,7 @@ async def _run_sync(
                 "authors": graph_counts["authors"],
                 "topics": graph_counts["topics"],
                 "status": "completed_with_conflicts" if counts["conflict_count"] else "success",
-                "completed_at": _now(),
+                "completed_at": utc_now_naive(),
             }
         )
         await _persist_sync_checkpoint(repo, run_id, counts, processed_paper_ids)
@@ -419,7 +415,7 @@ async def _run_sync(
                     "status": "failed" if timed_out else "cancelled",
                     "error_type": "graph_sync_timeout" if timed_out else "graph_sync_cancelled",
                     "error_message": "学术图谱同步任务执行超时" if timed_out else "学术图谱同步任务已取消",
-                    "completed_at": _now(),
+                    "completed_at": utc_now_naive(),
                 },
             )
         raise
@@ -437,7 +433,7 @@ async def _run_sync(
                 "status": "failed",
                 "error_type": failure.error_type,
                 "error_message": failure.message,
-                "completed_at": _now(),
+                "completed_at": utc_now_naive(),
             },
         )
         if failure is exc:
@@ -482,7 +478,7 @@ async def enqueue_academic_graph_sync(
                     "status": "failed",
                     "error_type": "graph_sync_active",
                     "error_message": "当前知识库已有学术图谱同步任务运行中",
-                    "completed_at": _now(),
+                    "completed_at": utc_now_naive(),
                 },
             )
             raise AcademicGraphSyncError("graph_sync_active", "当前知识库已有学术图谱同步任务运行中")
@@ -495,7 +491,7 @@ async def enqueue_academic_graph_sync(
                 "status": "failed",
                 "error_type": "task_enqueue_failed",
                 "error_message": "学术图谱同步任务提交失败",
-                "completed_at": _now(),
+                "completed_at": utc_now_naive(),
             },
         )
         raise AcademicGraphSyncError("task_enqueue_failed", "学术图谱同步任务提交失败") from exc
@@ -534,7 +530,7 @@ async def _resume_academic_graph_sync_task(context: TaskContext) -> dict[str, An
                 "status": "failed",
                 "error_type": "graph_sync_recovery_invalid",
                 "error_message": error,
-                "completed_at": _now(),
+                "completed_at": utc_now_naive(),
             },
         )
         raise RuntimeError(error)
@@ -548,7 +544,7 @@ async def _resume_academic_graph_sync_task(context: TaskContext) -> dict[str, An
                 "status": "failed",
                 "error_type": "graph_sync_recovery_invalid",
                 "error_message": error,
-                "completed_at": _now(),
+                "completed_at": utc_now_naive(),
             },
         )
         raise RuntimeError(error) from exc
@@ -577,7 +573,7 @@ async def recover_academic_graph_sync_runs() -> int:
                     "status": "failed",
                     "error_type": "graph_sync_recovery_invalid",
                     "error_message": "图谱同步任务所有者不存在或已删除",
-                    "completed_at": _now(),
+                    "completed_at": utc_now_naive(),
                 },
             )
             continue
@@ -590,7 +586,7 @@ async def recover_academic_graph_sync_runs() -> int:
                     "status": "failed",
                     "error_type": "graph_sync_recovery_invalid",
                     "error_message": "图谱同步任务所有者已失去知识库写入权限",
-                    "completed_at": _now(),
+                    "completed_at": utc_now_naive(),
                 },
             )
             continue
@@ -611,7 +607,7 @@ async def recover_academic_graph_sync_runs() -> int:
                     "status": "failed",
                     "error_type": "graph_sync_recovery_failed",
                     "error_message": "学术图谱同步恢复任务提交失败",
-                    "completed_at": _now(),
+                    "completed_at": utc_now_naive(),
                 },
             )
             continue

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import uuid
 from collections import defaultdict
-from datetime import UTC, date, datetime
+from datetime import date
 from typing import Any
 
 from fastapi import HTTPException
@@ -22,6 +22,7 @@ from yuxi.services.research_project_plan_utils import build_project_plan_summary
 from yuxi.services.research_paper_service import _ensure_access
 from yuxi.storage.postgres.models_business import User
 from yuxi.storage.postgres.models_knowledge import ResearchProject, ResearchProjectActivity, ResearchProjectAsset
+from yuxi.utils.datetime_utils import utc_now_naive
 
 
 PROJECT_STATUSES = {"active", "completed", "archived"}
@@ -32,10 +33,6 @@ class ResearchProjectError(RuntimeError):
         super().__init__(message)
         self.error_type = error_type
         self.message = message
-
-
-def _now() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
 
 
 async def get_owned_project(project_id: str, current_user: User) -> ResearchProject:
@@ -247,10 +244,10 @@ async def update_research_project(
     if status != project.status:
         if status == "completed":
             values["progress"] = 100
-            values["completed_at"] = _now()
+            values["completed_at"] = utc_now_naive()
             values["archived_at"] = None
         elif status == "archived":
-            values["archived_at"] = _now()
+            values["archived_at"] = utc_now_naive()
         else:
             values["completed_at"] = None
             values["archived_at"] = None

@@ -13,7 +13,6 @@ import asyncio
 import secrets
 import uuid
 from collections import Counter
-from datetime import UTC, datetime
 from statistics import mean
 from typing import Any
 
@@ -32,6 +31,7 @@ from yuxi.services.academic_paper_analysis_service import (
 from yuxi.services.research_paper_service import _ensure_access
 from yuxi.services.task_service import PublicTaskError, TaskContext, tasker
 from yuxi.storage.postgres.models_business import User
+from yuxi.utils.datetime_utils import utc_now_naive
 
 
 RUBRIC_VERSION = "analysis-blind-v1"
@@ -49,10 +49,6 @@ class AcademicPaperAnalysisEvaluationError(PublicTaskError):
         super().__init__(message)
         self.error_type = error_type
         self.message = message
-
-
-def _now() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def _serialize_run_result(run) -> dict[str, Any]:
@@ -188,7 +184,7 @@ class AcademicPaperAnalysisEvaluationService:
         except Exception as exc:
             await self.repo.update_evaluation(
                 evaluation_id,
-                {"status": "failed", "error_message": "分析对比任务提交失败", "completed_at": _now()},
+                {"status": "failed", "error_message": "分析对比任务提交失败", "completed_at": utc_now_naive()},
             )
             raise AcademicPaperAnalysisEvaluationError("task_enqueue_failed", "分析对比任务提交失败") from exc
         await self.repo.update_evaluation(evaluation_id, {"task_id": task.id})
@@ -251,11 +247,11 @@ class AcademicPaperAnalysisEvaluationService:
         except AcademicPaperAnalysisEvaluationError as exc:
             await self.repo.update_evaluation(
                 evaluation_id,
-                {"status": "failed", "error_message": exc.message, "completed_at": _now()},
+                {"status": "failed", "error_message": exc.message, "completed_at": utc_now_naive()},
             )
             raise
         await self.repo.update_evaluation(
-            evaluation_id, {"status": "running", "started_at": _now(), "error_message": None}
+            evaluation_id, {"status": "running", "started_at": utc_now_naive(), "error_message": None}
         )
         items = await self.repo.list_items(evaluation_id)
         try:
@@ -295,7 +291,7 @@ class AcademicPaperAnalysisEvaluationService:
                 except (AcademicPaperAnalysisError, AcademicPaperAnalysisEvaluationError) as exc:
                     await self.repo.update_item(
                         item.item_id,
-                        {"status": "failed", "error_message": exc.message, "completed_at": _now()},
+                        {"status": "failed", "error_message": exc.message, "completed_at": utc_now_naive()},
                     )
                 except Exception:
                     await self.repo.update_item(
@@ -303,7 +299,7 @@ class AcademicPaperAnalysisEvaluationService:
                         {
                             "status": "failed",
                             "error_message": "论文分析对比项执行失败",
-                            "completed_at": _now(),
+                            "completed_at": utc_now_naive(),
                         },
                     )
                 else:
@@ -313,7 +309,7 @@ class AcademicPaperAnalysisEvaluationService:
                             "single_run_id": single_run_id,
                             "multi_run_id": multi_run_id,
                             "status": "completed",
-                            "completed_at": _now(),
+                            "completed_at": utc_now_naive(),
                         },
                     )
                 current_items = await self.repo.list_items(evaluation_id)
@@ -326,7 +322,7 @@ class AcademicPaperAnalysisEvaluationService:
                 "completed_with_failures" if any(item.status == "failed" for item in final_items) else "completed"
             )
             await self.repo.update_evaluation(
-                evaluation_id, {"status": final_status, "completed_at": _now()}
+                evaluation_id, {"status": final_status, "completed_at": utc_now_naive()}
             )
             completed_pairs = len([item for item in final_items if item.status == "completed"])
             result = {"evaluation_id": evaluation_id, "completed_pairs": completed_pairs}
@@ -338,7 +334,7 @@ class AcademicPaperAnalysisEvaluationService:
                 raise
             message = "分析对比任务执行超时" if context.cancellation_reason == "timeout" else "分析对比任务已取消"
             await self.repo.update_evaluation(
-                evaluation_id, {"status": "failed", "error_message": message, "completed_at": _now()}
+                evaluation_id, {"status": "failed", "error_message": message, "completed_at": utc_now_naive()}
             )
             raise
         except Exception as exc:
@@ -352,7 +348,7 @@ class AcademicPaperAnalysisEvaluationService:
                 )
             await self.repo.update_evaluation(
                 evaluation_id,
-                {"status": "failed", "error_message": failure.message, "completed_at": _now()},
+                {"status": "failed", "error_message": failure.message, "completed_at": utc_now_naive()},
             )
             if failure is exc:
                 raise
@@ -589,7 +585,7 @@ class AcademicPaperAnalysisEvaluationService:
             except AcademicPaperAnalysisEvaluationError as exc:
                 await self.repo.update_evaluation(
                     str(evaluation.evaluation_id),
-                    {"status": "failed", "error_message": exc.message, "completed_at": _now()},
+                    {"status": "failed", "error_message": exc.message, "completed_at": utc_now_naive()},
                 )
                 continue
             try:
@@ -607,7 +603,7 @@ class AcademicPaperAnalysisEvaluationService:
                     {
                         "status": "failed",
                         "error_message": "分析对比恢复任务提交失败",
-                        "completed_at": _now(),
+                        "completed_at": utc_now_naive(),
                     },
                 )
                 continue

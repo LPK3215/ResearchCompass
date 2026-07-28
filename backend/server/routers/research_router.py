@@ -509,144 +509,14 @@ class PublicUserStudyTokenRequest(BaseModel):
     token: str = Field(..., min_length=20, max_length=256)
 
 
-def _search_http_error(exc: ResearchSearchError) -> HTTPException:
-    status = {
-        "forbidden": 403,
-        "run_active": 409,
-        "knowledge_base_not_found": 404,
-        "run_not_found": 404,
-        "invalid_query": 422,
-        "invalid_filter": 422,
-        "invalid_retrieval_config": 422,
-        "unsupported_knowledge_base": 409,
-        "graph_not_ready": 409,
-        "citation_graph_seed_missing": 409,
-        "citation_graph_seed_invalid": 409,
-        "chat_model_unavailable": 409,
-        "reranker_unavailable": 409,
-        "query_rewrite_invalid": 502,
-        "evidence_missing_paper": 502,
-        "retrieval_failure": 502,
-        "citation_graph_failure": 502,
-        "local_research_failure": 502,
-        "strict_research_failure": 502,
-    }.get(exc.error_type, 502)
-    return HTTPException(status_code=status, detail={"error": exc.error_type, "message": exc.message})
-
-
-def _synthesis_http_error(exc: ResearchSynthesisError) -> HTTPException:
-    status = {
-        "forbidden": 403,
-        "knowledge_base_not_found": 404,
-        "synthesis_run_not_found": 404,
-        "synthesis_invalid_query": 422,
-        "synthesis_invalid_filter": 422,
-        "synthesis_invalid_retrieval_config": 422,
-        "synthesis_export_format_invalid": 422,
-        "synthesis_active": 409,
-        "synthesis_model_unavailable": 409,
-        "synthesis_reranker_unavailable": 409,
-        "synthesis_insufficient_evidence": 409,
-        "synthesis_context_exceeded": 409,
-        "synthesis_evidence_changed": 409,
-        "synthesis_not_exportable": 409,
-        "synthesis_not_cancellable": 409,
-        "synthesis_task_missing": 409,
-        "synthesis_invalid_json": 502,
-        "synthesis_invalid_schema": 502,
-        "synthesis_invalid_citation": 502,
-        "synthesis_generation_failed": 502,
-        "synthesis_retrieval_failed": 502,
-        "synthesis_record_failed": 502,
-        "synthesis_enqueue_failed": 503,
-    }.get(exc.error_type, 502)
-    return HTTPException(status_code=status, detail={"error": exc.error_type, "message": exc.message})
-
-
-def _graph_http_error(exc: AcademicGraphSyncError) -> HTTPException:
-    status = {
-        "forbidden": 403,
-        "paper_not_found": 404,
-        "graph_paper_not_found": 404,
-        "sync_run_not_found": 404,
-        "task_enqueue_failed": 503,
-        "graph_sync_active": 409,
-    }.get(exc.error_type, 502)
-    return HTTPException(status_code=status, detail={"error": exc.error_type, "message": exc.message})
-
-
-def _analysis_http_error(exc: AcademicPaperAnalysisError) -> HTTPException:
-    status = {
-        "forbidden": 403,
-        "paper_not_found": 404,
-        "analysis_run_not_found": 404,
-        "analysis_model_unavailable": 409,
-        "analysis_active": 409,
-        "paper_content_missing": 409,
-        "analysis_context_exceeded": 409,
-        "task_enqueue_failed": 503,
-    }.get(exc.error_type, 502)
-    return HTTPException(status_code=status, detail={"error": exc.error_type, "message": exc.message})
-
-
-def _analysis_evaluation_http_error(exc: AcademicPaperAnalysisEvaluationError) -> HTTPException:
-    status = {
-        "evaluation_not_found": 404,
-        "evaluation_item_not_found": 404,
-        "paper_not_found": 404,
-        "evaluation_item_not_ready": 409,
-        "analysis_model_unavailable": 409,
-        "paper_content_missing": 409,
-        "task_enqueue_failed": 503,
-        "invalid_papers": 422,
-        "invalid_score": 422,
-        "forbidden": 403,
-    }.get(exc.error_type, 502)
-    return HTTPException(status_code=status, detail={"error": exc.error_type, "message": exc.message})
-
-
-def _trend_http_error(exc: AcademicTrendError) -> HTTPException:
-    status = {
-        "forbidden": 403,
-        "invalid_filter": 422,
-        "trend_pagination_unsupported": 422,
-    }.get(exc.error_type, 502)
-    return HTTPException(status_code=status, detail={"error": exc.error_type, "message": exc.message})
-
-
-def _opportunity_http_error(exc: AcademicOpportunityError) -> HTTPException:
-    status = {"forbidden": 403, "invalid_filter": 422}.get(exc.error_type, 502)
-    return HTTPException(status_code=status, detail={"error": exc.error_type, "message": exc.message})
-
-
-def _paper_import_http_error(exc: AcademicPaperImportError) -> HTTPException:
-    status = {
-        "forbidden": 403,
-        "paper_already_imported": 409,
-        "file_already_imported": 409,
-        "paper_pdf_unavailable": 409,
-        "paper_pdf_too_large": 413,
-        "unsupported_knowledge_base": 409,
-        "paper_import_enqueue_failed": 503,
-        "paper_import_record_failed": 502,
-        "invalid_search_query": 422,
-    }.get(exc.error_type, 502)
-    return HTTPException(status_code=status, detail={"error": exc.error_type, "message": exc.message})
-
-
-def _user_study_http_error(exc: ResearchUserStudyError) -> HTTPException:
-    status = {
-        "study_not_found": 404,
-        "invite_not_found": 404,
-        "invite_used": 409,
-        "study_closed": 409,
-        "consent_required": 422,
-        "invalid_participant_count": 422,
-        "invalid_response": 422,
-        "rate_limited": 429,
-        "rate_limit_unavailable": 503,
-    }.get(exc.error_type, 502)
-    headers = {"Retry-After": str(exc.retry_after)} if exc.retry_after else None
+def _to_http_error(
+    exc,
+    status_map: dict[str, int],
+    *,
+    headers: dict[str, str] | None = None,
+    default_status: int = 502,
+) -> HTTPException:
+    status = status_map.get(exc.error_type, default_status)
     return HTTPException(
         status_code=status,
         detail={"error": exc.error_type, "message": exc.message},
@@ -654,52 +524,163 @@ def _user_study_http_error(exc: ResearchUserStudyError) -> HTTPException:
     )
 
 
+_SEARCH_STATUS_MAP = {
+    "forbidden": 403,
+    "run_active": 409,
+    "knowledge_base_not_found": 404,
+    "run_not_found": 404,
+    "invalid_query": 422,
+    "invalid_filter": 422,
+    "invalid_retrieval_config": 422,
+    "unsupported_knowledge_base": 409,
+    "graph_not_ready": 409,
+    "citation_graph_seed_missing": 409,
+    "citation_graph_seed_invalid": 409,
+    "chat_model_unavailable": 409,
+    "reranker_unavailable": 409,
+    "query_rewrite_invalid": 502,
+    "evidence_missing_paper": 502,
+    "retrieval_failure": 502,
+    "citation_graph_failure": 502,
+    "local_research_failure": 502,
+    "strict_research_failure": 502,
+}
+
+_SYNTHESIS_STATUS_MAP = {
+    "forbidden": 403,
+    "knowledge_base_not_found": 404,
+    "synthesis_run_not_found": 404,
+    "synthesis_invalid_query": 422,
+    "synthesis_invalid_filter": 422,
+    "synthesis_invalid_retrieval_config": 422,
+    "synthesis_export_format_invalid": 422,
+    "synthesis_active": 409,
+    "synthesis_model_unavailable": 409,
+    "synthesis_reranker_unavailable": 409,
+    "synthesis_insufficient_evidence": 409,
+    "synthesis_context_exceeded": 409,
+    "synthesis_evidence_changed": 409,
+    "synthesis_not_exportable": 409,
+    "synthesis_not_cancellable": 409,
+    "synthesis_task_missing": 409,
+    "synthesis_invalid_json": 502,
+    "synthesis_invalid_schema": 502,
+    "synthesis_invalid_citation": 502,
+    "synthesis_generation_failed": 502,
+    "synthesis_retrieval_failed": 502,
+    "synthesis_record_failed": 502,
+    "synthesis_enqueue_failed": 503,
+}
+
+_GRAPH_STATUS_MAP = {
+    "forbidden": 403,
+    "paper_not_found": 404,
+    "graph_paper_not_found": 404,
+    "sync_run_not_found": 404,
+    "task_enqueue_failed": 503,
+    "graph_sync_active": 409,
+}
+
+_ANALYSIS_STATUS_MAP = {
+    "forbidden": 403,
+    "paper_not_found": 404,
+    "analysis_run_not_found": 404,
+    "analysis_model_unavailable": 409,
+    "analysis_active": 409,
+    "paper_content_missing": 409,
+    "analysis_context_exceeded": 409,
+    "task_enqueue_failed": 503,
+}
+
+_ANALYSIS_EVALUATION_STATUS_MAP = {
+    "evaluation_not_found": 404,
+    "evaluation_item_not_found": 404,
+    "paper_not_found": 404,
+    "evaluation_item_not_ready": 409,
+    "analysis_model_unavailable": 409,
+    "paper_content_missing": 409,
+    "task_enqueue_failed": 503,
+    "invalid_papers": 422,
+    "invalid_score": 422,
+    "forbidden": 403,
+}
+
+_TREND_STATUS_MAP = {
+    "forbidden": 403,
+    "invalid_filter": 422,
+    "trend_pagination_unsupported": 422,
+}
+
+_OPPORTUNITY_STATUS_MAP = {
+    "forbidden": 403,
+    "invalid_filter": 422,
+}
+
+_PAPER_IMPORT_STATUS_MAP = {
+    "forbidden": 403,
+    "paper_already_imported": 409,
+    "file_already_imported": 409,
+    "paper_pdf_unavailable": 409,
+    "paper_pdf_too_large": 413,
+    "unsupported_knowledge_base": 409,
+    "paper_import_enqueue_failed": 503,
+    "paper_import_record_failed": 502,
+    "invalid_search_query": 422,
+}
+
+_USER_STUDY_STATUS_MAP = {
+    "study_not_found": 404,
+    "invite_not_found": 404,
+    "invite_used": 409,
+    "study_closed": 409,
+    "consent_required": 422,
+    "invalid_participant_count": 422,
+    "invalid_response": 422,
+    "rate_limited": 429,
+    "rate_limit_unavailable": 503,
+}
+
+_PROJECT_STATUS_MAP = {
+    "forbidden": 403,
+    "project_not_found": 404,
+    "asset_not_found": 404,
+    "asset_already_linked": 409,
+    "project_archived": 409,
+    "project_read_only": 409,
+    "project_has_open_tasks": 409,
+    "milestone_has_open_tasks": 409,
+    "milestone_has_tasks": 409,
+    "plan_asset_already_linked": 409,
+    "milestone_not_found": 404,
+    "task_not_found": 404,
+    "plan_asset_link_not_found": 404,
+    "plan_asset_target_not_found": 404,
+    "invalid_project_status": 422,
+    "invalid_asset_type": 422,
+    "invalid_milestone_status": 422,
+    "invalid_task_status": 422,
+    "invalid_task_priority": 422,
+    "invalid_milestone_order": 422,
+    "invalid_task_order": 422,
+    "invalid_plan_asset_target": 422,
+    "invalid_report_format": 422,
+}
+
+_COPILOT_STATUS_MAP = {
+    "forbidden": 403,
+    "knowledge_base_not_found": 404,
+    "project_not_found": 404,
+    "thread_not_found": 404,
+    "invalid_copilot_thread": 409,
+    "project_scope_mismatch": 409,
+    "thread_scope_conflict": 409,
+    "thread_update_failed": 409,
+    "invalid_research_context": 422,
+}
+
+
 def _public_request_client_key(request: Request) -> str:
     return extract_client_ip(request)
-
-
-def _project_http_error(exc: ResearchProjectError) -> HTTPException:
-    status = {
-        "forbidden": 403,
-        "project_not_found": 404,
-        "asset_not_found": 404,
-        "asset_already_linked": 409,
-        "project_archived": 409,
-        "project_read_only": 409,
-        "project_has_open_tasks": 409,
-        "milestone_has_open_tasks": 409,
-        "milestone_has_tasks": 409,
-        "plan_asset_already_linked": 409,
-        "milestone_not_found": 404,
-        "task_not_found": 404,
-        "plan_asset_link_not_found": 404,
-        "plan_asset_target_not_found": 404,
-        "invalid_project_status": 422,
-        "invalid_asset_type": 422,
-        "invalid_milestone_status": 422,
-        "invalid_task_status": 422,
-        "invalid_task_priority": 422,
-        "invalid_milestone_order": 422,
-        "invalid_task_order": 422,
-        "invalid_plan_asset_target": 422,
-        "invalid_report_format": 422,
-    }.get(exc.error_type, 502)
-    return HTTPException(status_code=status, detail={"error": exc.error_type, "message": exc.message})
-
-
-def _copilot_http_error(exc: ResearchCopilotError) -> HTTPException:
-    status = {
-        "forbidden": 403,
-        "knowledge_base_not_found": 404,
-        "project_not_found": 404,
-        "thread_not_found": 404,
-        "invalid_copilot_thread": 409,
-        "project_scope_mismatch": 409,
-        "thread_scope_conflict": 409,
-        "thread_update_failed": 409,
-        "invalid_research_context": 422,
-    }.get(exc.error_type, 502)
-    return HTTPException(status_code=status, detail={"error": exc.error_type, "message": exc.message})
 
 
 @research.post("/copilot/thread")
@@ -715,7 +696,7 @@ async def ensure_copilot_thread(
             db=db,
         )
     except ResearchCopilotError as exc:
-        raise _copilot_http_error(exc) from exc
+        raise _to_http_error(exc, _COPILOT_STATUS_MAP) from exc
 
 
 @research.post("/databases/{kb_id}/projects", status_code=201)
@@ -731,7 +712,7 @@ async def create_project(
             **payload.model_dump(),
         )
     except ResearchProjectError as exc:
-        raise _project_http_error(exc) from exc
+        raise _to_http_error(exc, _PROJECT_STATUS_MAP) from exc
 
 
 @research.get("/databases/{kb_id}/projects")
@@ -753,7 +734,7 @@ async def list_projects(
             limit=limit,
         )
     except ResearchProjectError as exc:
-        raise _project_http_error(exc) from exc
+        raise _to_http_error(exc, _PROJECT_STATUS_MAP) from exc
 
 
 @research.get("/projects/{project_id}")
@@ -761,7 +742,7 @@ async def project_detail(project_id: str, current_user: User = Depends(get_requi
     try:
         return await get_research_project(project_id=project_id, current_user=current_user)
     except ResearchProjectError as exc:
-        raise _project_http_error(exc) from exc
+        raise _to_http_error(exc, _PROJECT_STATUS_MAP) from exc
 
 
 @research.patch("/projects/{project_id}")
@@ -777,7 +758,7 @@ async def update_project(
             values=payload.model_dump(exclude_unset=True),
         )
     except ResearchProjectError as exc:
-        raise _project_http_error(exc) from exc
+        raise _to_http_error(exc, _PROJECT_STATUS_MAP) from exc
 
 
 @research.delete("/projects/{project_id}", status_code=204)
@@ -785,7 +766,7 @@ async def remove_project(project_id: str, current_user: User = Depends(get_requi
     try:
         await delete_research_project(project_id=project_id, current_user=current_user)
     except ResearchProjectError as exc:
-        raise _project_http_error(exc) from exc
+        raise _to_http_error(exc, _PROJECT_STATUS_MAP) from exc
 
 
 @research.get("/projects/{project_id}/plan")
@@ -793,7 +774,7 @@ async def project_plan(project_id: str, current_user: User = Depends(get_require
     try:
         return await get_research_project_plan(project_id=project_id, current_user=current_user)
     except ResearchProjectError as exc:
-        raise _project_http_error(exc) from exc
+        raise _to_http_error(exc, _PROJECT_STATUS_MAP) from exc
 
 
 @research.post("/projects/{project_id}/milestones", status_code=201)
@@ -809,7 +790,7 @@ async def create_milestone(
             **payload.model_dump(),
         )
     except ResearchProjectError as exc:
-        raise _project_http_error(exc) from exc
+        raise _to_http_error(exc, _PROJECT_STATUS_MAP) from exc
 
 
 @research.patch("/projects/{project_id}/milestones/{milestone_id}")
@@ -827,7 +808,7 @@ async def update_milestone(
             values=payload.model_dump(exclude_unset=True),
         )
     except ResearchProjectError as exc:
-        raise _project_http_error(exc) from exc
+        raise _to_http_error(exc, _PROJECT_STATUS_MAP) from exc
 
 
 @research.delete("/projects/{project_id}/milestones/{milestone_id}", status_code=204)
@@ -843,7 +824,7 @@ async def remove_milestone(
             current_user=current_user,
         )
     except ResearchProjectError as exc:
-        raise _project_http_error(exc) from exc
+        raise _to_http_error(exc, _PROJECT_STATUS_MAP) from exc
 
 
 @research.put("/projects/{project_id}/milestones/order", status_code=204)
@@ -859,7 +840,7 @@ async def reorder_milestones(
             milestone_ids=payload.milestone_ids,
         )
     except ResearchProjectError as exc:
-        raise _project_http_error(exc) from exc
+        raise _to_http_error(exc, _PROJECT_STATUS_MAP) from exc
 
 
 @research.post("/projects/{project_id}/tasks", status_code=201)
@@ -875,7 +856,7 @@ async def create_task(
             **payload.model_dump(),
         )
     except ResearchProjectError as exc:
-        raise _project_http_error(exc) from exc
+        raise _to_http_error(exc, _PROJECT_STATUS_MAP) from exc
 
 
 @research.patch("/projects/{project_id}/tasks/{task_id}")
@@ -893,7 +874,7 @@ async def update_task(
             values=payload.model_dump(exclude_unset=True),
         )
     except ResearchProjectError as exc:
-        raise _project_http_error(exc) from exc
+        raise _to_http_error(exc, _PROJECT_STATUS_MAP) from exc
 
 
 @research.delete("/projects/{project_id}/tasks/{task_id}", status_code=204)
@@ -905,7 +886,7 @@ async def remove_task(
     try:
         await delete_project_task(project_id=project_id, task_id=task_id, current_user=current_user)
     except ResearchProjectError as exc:
-        raise _project_http_error(exc) from exc
+        raise _to_http_error(exc, _PROJECT_STATUS_MAP) from exc
 
 
 @research.put("/projects/{project_id}/tasks/order", status_code=204)
@@ -922,7 +903,7 @@ async def reorder_tasks(
             task_ids=payload.task_ids,
         )
     except ResearchProjectError as exc:
-        raise _project_http_error(exc) from exc
+        raise _to_http_error(exc, _PROJECT_STATUS_MAP) from exc
 
 
 @research.post("/projects/{project_id}/plan/asset-links", status_code=201)
@@ -938,7 +919,7 @@ async def create_plan_asset_link(
             **payload.model_dump(),
         )
     except ResearchProjectError as exc:
-        raise _project_http_error(exc) from exc
+        raise _to_http_error(exc, _PROJECT_STATUS_MAP) from exc
 
 
 @research.delete("/projects/{project_id}/plan/asset-links/{link_id}", status_code=204)
@@ -954,7 +935,7 @@ async def remove_plan_asset_link(
             current_user=current_user,
         )
     except ResearchProjectError as exc:
-        raise _project_http_error(exc) from exc
+        raise _to_http_error(exc, _PROJECT_STATUS_MAP) from exc
 
 
 @research.get("/projects/{project_id}/report")
@@ -975,7 +956,7 @@ async def project_report(
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
     except ResearchProjectError as exc:
-        raise _project_http_error(exc) from exc
+        raise _to_http_error(exc, _PROJECT_STATUS_MAP) from exc
 
 
 @research.get("/projects/{project_id}/asset-candidates")
@@ -1000,7 +981,7 @@ async def project_asset_candidates(
             limit=limit,
         )
     except ResearchProjectError as exc:
-        raise _project_http_error(exc) from exc
+        raise _to_http_error(exc, _PROJECT_STATUS_MAP) from exc
 
 
 @research.post("/projects/{project_id}/assets", status_code=201)
@@ -1016,7 +997,7 @@ async def add_assets_to_project(
             **payload.model_dump(),
         )
     except ResearchProjectError as exc:
-        raise _project_http_error(exc) from exc
+        raise _to_http_error(exc, _PROJECT_STATUS_MAP) from exc
 
 
 @research.get("/projects/{project_id}/assets")
@@ -1041,7 +1022,7 @@ async def project_assets(
             limit=limit,
         )
     except ResearchProjectError as exc:
-        raise _project_http_error(exc) from exc
+        raise _to_http_error(exc, _PROJECT_STATUS_MAP) from exc
 
 
 @research.patch("/projects/{project_id}/assets/{asset_id}")
@@ -1059,7 +1040,7 @@ async def update_project_asset(
             notes=payload.notes,
         )
     except ResearchProjectError as exc:
-        raise _project_http_error(exc) from exc
+        raise _to_http_error(exc, _PROJECT_STATUS_MAP) from exc
 
 
 @research.delete("/projects/{project_id}/assets/{asset_id}")
@@ -1075,7 +1056,7 @@ async def remove_asset_from_project(
             current_user=current_user,
         )
     except ResearchProjectError as exc:
-        raise _project_http_error(exc) from exc
+        raise _to_http_error(exc, _PROJECT_STATUS_MAP) from exc
 
 
 @research.get("/databases/{kb_id}/papers")
@@ -1121,7 +1102,9 @@ async def create_user_study(
             consent_text=payload.consent_text,
         )
     except ResearchUserStudyError as exc:
-        raise _user_study_http_error(exc) from exc
+        raise _to_http_error(
+            exc, _USER_STUDY_STATUS_MAP, headers={"Retry-After": str(exc.retry_after)} if exc.retry_after else None
+        ) from exc
 
 
 @research.get("/databases/{kb_id}/user-studies")
@@ -1129,7 +1112,9 @@ async def list_user_studies(kb_id: str, current_user: User = Depends(get_require
     try:
         return await ResearchUserStudyService().list_studies(kb_id=kb_id, current_user=current_user)
     except ResearchUserStudyError as exc:
-        raise _user_study_http_error(exc) from exc
+        raise _to_http_error(
+            exc, _USER_STUDY_STATUS_MAP, headers={"Retry-After": str(exc.retry_after)} if exc.retry_after else None
+        ) from exc
 
 
 @research.get("/databases/{kb_id}/user-studies/{study_id}")
@@ -1149,7 +1134,9 @@ async def get_user_study_report(
             page_size=page_size,
         )
     except ResearchUserStudyError as exc:
-        raise _user_study_http_error(exc) from exc
+        raise _to_http_error(
+            exc, _USER_STUDY_STATUS_MAP, headers={"Retry-After": str(exc.retry_after)} if exc.retry_after else None
+        ) from exc
 
 
 @research.post("/databases/{kb_id}/user-studies/{study_id}/close")
@@ -1158,7 +1145,9 @@ async def close_user_study(kb_id: str, study_id: str, current_user: User = Depen
         await ResearchUserStudyService().close_study(kb_id=kb_id, study_id=study_id, current_user=current_user)
         return {"status": "closed"}
     except ResearchUserStudyError as exc:
-        raise _user_study_http_error(exc) from exc
+        raise _to_http_error(
+            exc, _USER_STUDY_STATUS_MAP, headers={"Retry-After": str(exc.retry_after)} if exc.retry_after else None
+        ) from exc
 
 
 @research.get("/databases/{kb_id}/user-studies/{study_id}/export")
@@ -1173,7 +1162,9 @@ async def export_user_study(kb_id: str, study_id: str, current_user: User = Depe
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
     except ResearchUserStudyError as exc:
-        raise _user_study_http_error(exc) from exc
+        raise _to_http_error(
+            exc, _USER_STUDY_STATUS_MAP, headers={"Retry-After": str(exc.retry_after)} if exc.retry_after else None
+        ) from exc
 
 
 @research.post("/user-studies/public/resolve")
@@ -1184,7 +1175,9 @@ async def get_public_user_study(payload: PublicUserStudyTokenRequest, request: R
             client_key=_public_request_client_key(request),
         )
     except ResearchUserStudyError as exc:
-        raise _user_study_http_error(exc) from exc
+        raise _to_http_error(
+            exc, _USER_STUDY_STATUS_MAP, headers={"Retry-After": str(exc.retry_after)} if exc.retry_after else None
+        ) from exc
 
 
 @research.post("/user-studies/public/responses")
@@ -1203,7 +1196,9 @@ async def submit_public_user_study_response(payload: SubmitUserStudyResponseRequ
             client_key=_public_request_client_key(request),
         )
     except ResearchUserStudyError as exc:
-        raise _user_study_http_error(exc) from exc
+        raise _to_http_error(
+            exc, _USER_STUDY_STATUS_MAP, headers={"Retry-After": str(exc.retry_after)} if exc.retry_after else None
+        ) from exc
 
 
 @research.get("/databases/{kb_id}/trends")
@@ -1227,7 +1222,7 @@ async def academic_trends(
             top_keywords=top_keywords,
         )
     except AcademicTrendError as exc:
-        raise _trend_http_error(exc) from exc
+        raise _to_http_error(exc, _TREND_STATUS_MAP) from exc
 
 
 @research.get("/databases/{kb_id}/opportunities")
@@ -1247,7 +1242,7 @@ async def academic_opportunities(
             limit=limit,
         )
     except AcademicOpportunityError as exc:
-        raise _opportunity_http_error(exc) from exc
+        raise _to_http_error(exc, _OPPORTUNITY_STATUS_MAP) from exc
 
 
 @research.get("/databases/{kb_id}/external-papers/search")
@@ -1265,7 +1260,7 @@ async def search_external_paper_catalog(
             limit=limit,
         )
     except AcademicPaperImportError as exc:
-        raise _paper_import_http_error(exc) from exc
+        raise _to_http_error(exc, _PAPER_IMPORT_STATUS_MAP) from exc
 
 
 class ExternalPaperImportRequest(BaseModel):
@@ -1285,7 +1280,7 @@ async def import_external_paper_route(
             current_user=current_user,
         )
     except AcademicPaperImportError as exc:
-        raise _paper_import_http_error(exc) from exc
+        raise _to_http_error(exc, _PAPER_IMPORT_STATUS_MAP) from exc
 
 
 @research.post("/databases/{kb_id}/search")
@@ -1308,7 +1303,7 @@ async def research_search(
             reranker_model=payload.reranker_model,
         )
     except ResearchSearchError as exc:
-        raise _search_http_error(exc) from exc
+        raise _to_http_error(exc, _SEARCH_STATUS_MAP) from exc
 
 
 @research.get("/search-runs/{run_id}")
@@ -1316,7 +1311,7 @@ async def research_search_run(run_id: str, current_user: User = Depends(get_requ
     try:
         return await get_search_run(run_id=run_id, current_user=current_user)
     except ResearchSearchError as exc:
-        raise _search_http_error(exc) from exc
+        raise _to_http_error(exc, _SEARCH_STATUS_MAP) from exc
 
 
 @research.get("/databases/{kb_id}/search-runs")
@@ -1334,7 +1329,7 @@ async def research_search_runs(
             limit=limit,
         )
     except ResearchSearchError as exc:
-        raise _search_http_error(exc) from exc
+        raise _to_http_error(exc, _SEARCH_STATUS_MAP) from exc
 
 
 @research.patch("/search-runs/{run_id}")
@@ -1350,7 +1345,7 @@ async def update_research_search_run(
             is_pinned=payload.is_pinned,
         )
     except ResearchSearchError as exc:
-        raise _search_http_error(exc) from exc
+        raise _to_http_error(exc, _SEARCH_STATUS_MAP) from exc
 
 
 @research.delete("/search-runs/{run_id}", status_code=204)
@@ -1358,7 +1353,7 @@ async def remove_research_search_run(run_id: str, current_user: User = Depends(g
     try:
         await delete_search_run(run_id=run_id, current_user=current_user)
     except ResearchSearchError as exc:
-        raise _search_http_error(exc) from exc
+        raise _to_http_error(exc, _SEARCH_STATUS_MAP) from exc
 
 
 @research.post("/databases/{kb_id}/syntheses")
@@ -1380,7 +1375,7 @@ async def create_research_synthesis(
             reranker_model=payload.reranker_model,
         )
     except ResearchSynthesisError as exc:
-        raise _synthesis_http_error(exc) from exc
+        raise _to_http_error(exc, _SYNTHESIS_STATUS_MAP) from exc
 
 
 @research.get("/databases/{kb_id}/syntheses")
@@ -1398,7 +1393,7 @@ async def list_research_synthesis_runs(
             limit=limit,
         )
     except ResearchSynthesisError as exc:
-        raise _synthesis_http_error(exc) from exc
+        raise _to_http_error(exc, _SYNTHESIS_STATUS_MAP) from exc
 
 
 @research.get("/synthesis-runs/{run_id}")
@@ -1406,7 +1401,7 @@ async def research_synthesis_run(run_id: str, current_user: User = Depends(get_r
     try:
         return await get_research_synthesis(run_id=run_id, current_user=current_user)
     except ResearchSynthesisError as exc:
-        raise _synthesis_http_error(exc) from exc
+        raise _to_http_error(exc, _SYNTHESIS_STATUS_MAP) from exc
 
 
 @research.post("/synthesis-runs/{run_id}/cancel")
@@ -1414,7 +1409,7 @@ async def cancel_research_synthesis_run(run_id: str, current_user: User = Depend
     try:
         return await cancel_research_synthesis(run_id=run_id, current_user=current_user)
     except ResearchSynthesisError as exc:
-        raise _synthesis_http_error(exc) from exc
+        raise _to_http_error(exc, _SYNTHESIS_STATUS_MAP) from exc
 
 
 @research.post("/synthesis-runs/{run_id}/regenerate")
@@ -1422,7 +1417,7 @@ async def regenerate_research_synthesis_run(run_id: str, current_user: User = De
     try:
         return await regenerate_research_synthesis(run_id=run_id, current_user=current_user)
     except ResearchSynthesisError as exc:
-        raise _synthesis_http_error(exc) from exc
+        raise _to_http_error(exc, _SYNTHESIS_STATUS_MAP) from exc
 
 
 @research.get("/synthesis-runs/{run_id}/export")
@@ -1443,7 +1438,7 @@ async def export_research_synthesis_run(
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
     except ResearchSynthesisError as exc:
-        raise _synthesis_http_error(exc) from exc
+        raise _to_http_error(exc, _SYNTHESIS_STATUS_MAP) from exc
 
 
 @research.post("/databases/{kb_id}/academic-graph/sync")
@@ -1461,7 +1456,7 @@ async def sync_academic_graph(
             reference_limit=payload.reference_limit,
         )
     except AcademicGraphSyncError as exc:
-        raise _graph_http_error(exc) from exc
+        raise _to_http_error(exc, _GRAPH_STATUS_MAP) from exc
 
 
 @research.get("/academic-graph/sync-runs/{run_id}")
@@ -1469,7 +1464,7 @@ async def academic_graph_sync_run(run_id: str, current_user: User = Depends(get_
     try:
         return await get_academic_graph_sync_run(run_id=run_id, current_user=current_user)
     except AcademicGraphSyncError as exc:
-        raise _graph_http_error(exc) from exc
+        raise _to_http_error(exc, _GRAPH_STATUS_MAP) from exc
 
 
 @research.get("/academic-graph/sync-runs/{run_id}/conflicts")
@@ -1489,7 +1484,7 @@ async def academic_graph_conflicts(
             limit=limit,
         )
     except AcademicGraphSyncError as exc:
-        raise _graph_http_error(exc) from exc
+        raise _to_http_error(exc, _GRAPH_STATUS_MAP) from exc
 
 
 @research.get("/databases/{kb_id}/academic-graph")
@@ -1509,7 +1504,7 @@ async def academic_graph_network(
             limit=limit,
         )
     except AcademicGraphSyncError as exc:
-        raise _graph_http_error(exc) from exc
+        raise _to_http_error(exc, _GRAPH_STATUS_MAP) from exc
 
 
 @research.get("/databases/{kb_id}/academic-graph/relations/{graph_paper_id}")
@@ -1527,7 +1522,7 @@ async def academic_graph_relations(
             limit=limit,
         )
     except AcademicGraphSyncError as exc:
-        raise _graph_http_error(exc) from exc
+        raise _to_http_error(exc, _GRAPH_STATUS_MAP) from exc
 
 
 @research.get("/databases/{kb_id}/papers/export")
@@ -1601,7 +1596,7 @@ async def analyze_paper(
             model_spec=payload.model_spec,
         )
     except AcademicPaperAnalysisError as exc:
-        raise _analysis_http_error(exc) from exc
+        raise _to_http_error(exc, _ANALYSIS_STATUS_MAP) from exc
 
 
 @research.get("/paper-analysis-runs/{run_id}")
@@ -1609,7 +1604,7 @@ async def paper_analysis_run(run_id: str, current_user: User = Depends(get_requi
     try:
         return await get_paper_analysis_run(run_id=run_id, current_user=current_user)
     except AcademicPaperAnalysisError as exc:
-        raise _analysis_http_error(exc) from exc
+        raise _to_http_error(exc, _ANALYSIS_STATUS_MAP) from exc
 
 
 @research.get("/databases/{kb_id}/papers/{paper_id}/analysis/latest")
@@ -1617,7 +1612,7 @@ async def latest_paper_analysis(kb_id: str, paper_id: str, current_user: User = 
     try:
         return await get_latest_paper_analysis(kb_id=kb_id, paper_id=paper_id, current_user=current_user)
     except AcademicPaperAnalysisError as exc:
-        raise _analysis_http_error(exc) from exc
+        raise _to_http_error(exc, _ANALYSIS_STATUS_MAP) from exc
 
 
 @research.post("/databases/{kb_id}/paper-analysis-evaluations")
@@ -1636,7 +1631,7 @@ async def create_paper_analysis_evaluation(
             model_spec=payload.model_spec,
         )
     except AcademicPaperAnalysisEvaluationError as exc:
-        raise _analysis_evaluation_http_error(exc) from exc
+        raise _to_http_error(exc, _ANALYSIS_EVALUATION_STATUS_MAP) from exc
 
 
 @research.get("/databases/{kb_id}/paper-analysis-evaluations")
@@ -1644,7 +1639,7 @@ async def list_paper_analysis_evaluations(kb_id: str, current_user: User = Depen
     try:
         return await AcademicPaperAnalysisEvaluationService().list_evaluations(kb_id=kb_id, current_user=current_user)
     except AcademicPaperAnalysisEvaluationError as exc:
-        raise _analysis_evaluation_http_error(exc) from exc
+        raise _to_http_error(exc, _ANALYSIS_EVALUATION_STATUS_MAP) from exc
 
 
 @research.get("/databases/{kb_id}/paper-analysis-evaluations/{evaluation_id}")
@@ -1656,7 +1651,7 @@ async def get_paper_analysis_evaluation_report(
             kb_id=kb_id, evaluation_id=evaluation_id, current_user=current_user
         )
     except AcademicPaperAnalysisEvaluationError as exc:
-        raise _analysis_evaluation_http_error(exc) from exc
+        raise _to_http_error(exc, _ANALYSIS_EVALUATION_STATUS_MAP) from exc
 
 
 @research.get("/databases/{kb_id}/paper-analysis-evaluations/{evaluation_id}/blind-items")
@@ -1668,7 +1663,7 @@ async def list_paper_analysis_blind_items(
             kb_id=kb_id, evaluation_id=evaluation_id, current_user=current_user
         )
     except AcademicPaperAnalysisEvaluationError as exc:
-        raise _analysis_evaluation_http_error(exc) from exc
+        raise _to_http_error(exc, _ANALYSIS_EVALUATION_STATUS_MAP) from exc
 
 
 @research.get("/databases/{kb_id}/paper-analysis-evaluations/{evaluation_id}/blind-items/{item_id}")
@@ -1680,7 +1675,7 @@ async def get_paper_analysis_blind_item(
             kb_id=kb_id, evaluation_id=evaluation_id, item_id=item_id, current_user=current_user
         )
     except AcademicPaperAnalysisEvaluationError as exc:
-        raise _analysis_evaluation_http_error(exc) from exc
+        raise _to_http_error(exc, _ANALYSIS_EVALUATION_STATUS_MAP) from exc
 
 
 @research.post("/databases/{kb_id}/paper-analysis-evaluations/{evaluation_id}/blind-items/{item_id}/scores")
@@ -1701,7 +1696,7 @@ async def submit_paper_analysis_blind_score(
             notes=payload.notes,
         )
     except AcademicPaperAnalysisEvaluationError as exc:
-        raise _analysis_evaluation_http_error(exc) from exc
+        raise _to_http_error(exc, _ANALYSIS_EVALUATION_STATUS_MAP) from exc
 
 
 @research.get("/databases/{kb_id}/papers/{paper_id}/tags")
