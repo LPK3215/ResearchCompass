@@ -26,6 +26,8 @@
 - 修复 `test_export_synthesis_writes_file_and_returns_artifact_path` 在全量并行测试时间歇性失败的问题：原测试使用 `monkeypatch.setattr` 字符串路径 `"yuxi.agents.backends.sandbox.paths.ensure_thread_dirs"`，在全量测试并行运行时因模块 import 顺序问题导致路径解析失败（`AttributeError: 'module' object at yuxi.agents has no attribute 'agents'`）。改为在测试函数内显式 `from yuxi.agents.backends.sandbox import paths as sandbox_paths` 后用对象引用方式 monkeypatch，避免字符串路径解析对模块初始化时序的依赖，全量 unit 测试连续两次稳定通过（1483 passed, 1 skipped）。
 - 前端测试覆盖修复：发现 `web/src/utils/__tests__/` 下 9 个测试文件（passwordValidation、pixelAvatar、svgRenderer、toolApproval、subagentThread、runStreamResume、htmlPreviewRenderer、agentThreadQueueTransition、messageProcessor）使用 Node.js 原生 `assert` 脚本式格式且不在 `test/unit/` 目录下，导致 `npm run test:unit` 从未执行它们（"死测试"）。将其全部迁移到 `web/test/unit/` 目录并统一改写为 `node:test` 格式（`test('name', fn)` + `assert`），删除空目录。迁移后前端测试从 22 项增至 74 项（新增 52 项），覆盖头像生成、SVG 渲染、HTML 预览、工具审批、子智能体线程、流恢复、密码验证、消息处理等关键工具函数，全部通过且 ESLint 无告警。
 - 前端代码清理：删除 `useGraph.js` 中 `handleNodeClick`/`handleEdgeClick` 的 2 处 `console.log` 调试残留（`Node clicked`/`Edge clicked`），删除 `config.js` 中 `refreshConfig` 函数的 `console.log('config', data)` 调试残留。删除未被任何代码引用的遗留资源 `web/src/assets/defaults/agent.png`（品牌资源已替换为 SVG）。清理 `.gitignore` 中已失效的 `web/src/utils/__tests__/` 规则（目录已删除）。
+- 修复后端全量测试收集错误：`test/unit/routers/test_system_router.py` 与 `test/integration/api/test_system_router.py` 同名导致 pytest 同时收集 unit+integration 时报 `import file mismatch` 错误。将集成测试文件重命名为 `test_system_api.py` 以消除 basename 冲突，修复后全量测试（unit+integration+e2e）1515 passed, 168 skipped, 0 errors。
+- 前端死代码清理：删除未被任何文件引用的 `web/src/utils/agentPanelAutoOpen.js`（自项目初始化以来无消费者）和 `web/src/assets/icons/sidebar_left.svg`/`sidebar_right.svg` 两个未引用图标资源。
 
 ## v0.10.0
 
