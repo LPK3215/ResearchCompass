@@ -23,6 +23,7 @@
 - 忘记密码功能采用管理员重置方案：登录页"忘记密码？"链接点击后提示"如需重置密码，请联系管理员"，管理员通过用户管理页编辑用户时勾选"修改密码"即可重置，无需新增后端接口和邮件/短信基础设施，适合本地部署场景。
 - 阶段 B-F 全链路验收完成：混合检索（local_hybrid）全链路通过——查询改写、向量+BM25+RRF+Cross-Encoder 重排各路评分完整，3 个测试查询 Top1 命中率 100%，PDF 高亮定位 API 可用（Attention 论文含页码+矩形坐标）。知识图谱全链路通过——18/18 篇库内论文全部同步到 Neo4j（500 论文节点/543 引用边/2827 作者），两跳关联以 Attention 为中心可达 41 篇论文，strict_hybrid_citation_graph 检索通过（PPR 扩展 94 篇，Top1 正确命中目标论文）。多 Agent 论文分析全链路通过——LangGraph 四阶段流水线（structure→innovations→methodology→gaps）约 30 秒完成，各阶段输出字段完整。趋势分析数据完整——7 年发表趋势、9 个关键词统计、6 条引用趋势，A/B 盲评评测创建成功（单 Agent vs 多 Agent 对比），SUS 用户评测支持分享链接和 CSV 导出。
 - 修复 Semantic Scholar API 限流导致图谱同步中断：在 `SemanticScholarClient._get` 中添加 1.2 秒请求间最小间隔（仅首次请求生效，重试仍走 backoff 机制），避免连续快速请求触发 429 限流。修改 `academic_graph_sync_service.py` 中无效引用边处理逻辑：将 `raise AcademicGraphSyncError("invalid_citation_edge")` 改为 `logger.warning + continue`，跳过 Semantic Scholar 返回的缺少 paperId/title 的引用边而非中断整批同步。修复后 18 篇论文全部成功同步，strict 图谱检索全链路通过。
+- 修复 `test_export_synthesis_writes_file_and_returns_artifact_path` 在全量并行测试时间歇性失败的问题：原测试使用 `monkeypatch.setattr` 字符串路径 `"yuxi.agents.backends.sandbox.paths.ensure_thread_dirs"`，在全量测试并行运行时因模块 import 顺序问题导致路径解析失败（`AttributeError: 'module' object at yuxi.agents has no attribute 'agents'`）。改为在测试函数内显式 `from yuxi.agents.backends.sandbox import paths as sandbox_paths` 后用对象引用方式 monkeypatch，避免字符串路径解析对模块初始化时序的依赖，全量 unit 测试连续两次稳定通过（1483 passed, 1 skipped）。
 
 ## v0.10.0
 

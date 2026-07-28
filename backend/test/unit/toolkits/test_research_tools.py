@@ -300,14 +300,10 @@ async def test_export_synthesis_writes_file_and_returns_artifact_path(monkeypatc
         )
     )
 
-    monkeypatch.setattr(
-        "yuxi.agents.backends.sandbox.paths.ensure_thread_dirs",
-        lambda thread_id, uid: None,
-    )
-    monkeypatch.setattr(
-        "yuxi.agents.backends.sandbox.paths.sandbox_outputs_dir",
-        lambda thread_id: tmp_path,
-    )
+    from yuxi.agents.backends.sandbox import paths as sandbox_paths
+
+    monkeypatch.setattr(sandbox_paths, "ensure_thread_dirs", lambda thread_id, uid: None)
+    monkeypatch.setattr(sandbox_paths, "sandbox_outputs_dir", lambda thread_id: tmp_path)
 
     result = await research_tools.research_export_synthesis.coroutine(
         run_id="run-1",
