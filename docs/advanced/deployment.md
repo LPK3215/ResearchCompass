@@ -1,6 +1,8 @@
 # 生产部署指南
 
-本文档介绍如何在生产环境中部署 Yuxi。
+> ResearchCompass 基于开源智能体框架 Yuxi 二次开发，本文描述的部署能力来自 Yuxi 底座。
+
+本文档介绍如何在生产环境中部署 ResearchCompass（基于 Yuxi 框架）。
 
 ## 前置要求
 

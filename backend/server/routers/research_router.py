@@ -1,3 +1,11 @@
+"""ResearchCompass 科研业务 HTTP 路由。
+
+本路由是本仓库在 Yuxi 框架的 HTTP 适配层之上新增的科研业务入口，聚合论文管理、
+学术检索、证据综述、研究项目、引用图谱、论文分析、研究趋势、用户评测与实验评估
+等接口。路由层只做请求解析、认证上下文与响应装配，业务流程位于 ``yuxi.services``
+下的 ``research_*`` 与 ``academic_*`` 服务。
+"""
+
 from __future__ import annotations
 
 from datetime import UTC, date, datetime

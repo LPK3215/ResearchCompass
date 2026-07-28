@@ -1,3 +1,10 @@
+"""ResearchCompass 科研领域工具集。
+
+本模块是本仓库在开源智能体框架 Yuxi 的工具体系之上，针对科研场景实现的领域工具集。
+工具通过 Yuxi 的 ``@tool`` 注册机制挂载到智能体运行态，负责研究项目治理、论文检索、
+证据综述、成果归集等科研业务流程；通用智能体运行时、沙盒与中间件由 Yuxi 提供。
+"""
+
 from collections.abc import Awaitable
 from datetime import date
 from typing import Any, Literal

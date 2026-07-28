@@ -77,6 +77,10 @@
 </template>
 
 <script setup>
+// ResearchCompass 用户评测填写页
+// 本视图是本仓库在开源智能体框架 Yuxi 之上实现的科研业务界面，面向评测参与者，
+// 通过一次性匿名令牌收集任务体验、SUS 量表与整体反馈；不收集身份信息，提交后即
+// 作废链接。通用页面框架与请求基础设施由 Yuxi 提供。
 import { onMounted, reactive, ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { publicUserStudyApi } from '@/apis/research_api'

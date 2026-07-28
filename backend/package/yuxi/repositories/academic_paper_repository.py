@@ -1,3 +1,10 @@
+"""ResearchCompass 论文元数据数据访问层。
+
+本模块是本仓库在开源智能体框架 Yuxi 的持久化基础设施之上实现的论文元数据仓储，
+封装论文记录的入库、去重、元数据修订、重索引状态流转、检索过滤与用户标签查询；
+通用 PostgreSQL 连接池与 ORM 模型基类由 Yuxi 提供，本模块只负责论文元数据业务的读写逻辑。
+"""
+
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
@@ -135,7 +142,7 @@ class AcademicPaperRepository:
         doi: str | None,
         external_ids: dict[str, Any] | None,
     ) -> AcademicPaper | None:
-        """Find an existing paper by any stable external identity in one knowledge base."""
+        """在单个知识库内按任意稳定外部标识查重，命中则返回已存在的论文记录。"""
         identity_filters = [AcademicPaper.paper_id == paper_id]
         normalized_doi = str(doi or "").strip().casefold()
         if normalized_doi:

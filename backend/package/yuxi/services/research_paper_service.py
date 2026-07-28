@@ -1,3 +1,11 @@
+"""ResearchCompass 论文资料库与元数据同步服务。
+
+本模块是本仓库作者在开源智能体框架 Yuxi 之上实现的论文治理业务：维护论文元数据的
+查看、编辑、标签、BibTeX 导出，以及"元数据修订 → 重新切分索引"的异步同步流程。
+文件检索、切片索引、任务调度等通用知识库与任务运行时由 Yuxi 提供；本模块定义论文
+元数据的版本语义、再索引任务的可恢复执行协议，以及面向科研用户的论文视图投影。
+"""
+
 from __future__ import annotations
 
 from collections import Counter
@@ -414,7 +422,7 @@ async def _ensure_reindex_owner_can_write(operator_id: str | None, kb_id: str) -
 
 
 async def _resume_paper_reindex_task(context: TaskContext) -> dict[str, Any]:
-    """Resume a persisted reindex with the original writer still authorized."""
+    """恢复已持久化的论文再索引任务，并在执行前重新校验原写入者仍持有写权限。"""
     payload = context.payload
     try:
         kb_id = str(payload["kb_id"])

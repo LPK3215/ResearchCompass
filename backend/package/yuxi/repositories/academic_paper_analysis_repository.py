@@ -1,3 +1,10 @@
+"""ResearchCompass 论文分析运行数据访问层。
+
+本模块是本仓库在开源智能体框架 Yuxi 的持久化基础设施之上实现的论文分析运行仓储，
+封装单篇论文分析运行记录的创建、状态推进与序列化；通用 PostgreSQL 连接池与 ORM 模型
+基类由 Yuxi 提供，本模块只负责分析运行业务的读写逻辑。
+"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

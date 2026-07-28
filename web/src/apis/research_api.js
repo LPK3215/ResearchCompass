@@ -1,3 +1,8 @@
+// ResearchCompass 科研业务接口前端封装
+// 本文件是本仓库在开源智能体框架 Yuxi 之上实现的科研业务接口层，集中导出科研罗盘
+// 所需的项目、计划、论文、检索、综述、图谱、趋势、机会、分析对比与用户评测等
+// 接口；HTTP 请求、鉴权与错误处理复用 Yuxi 的 base.js，本文件只定义科研业务的
+// 路径与载荷。
 import { apiGet, apiRequest } from './base.js'
 
 const buildQuery = (params = {}) => {

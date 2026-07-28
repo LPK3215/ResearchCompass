@@ -1,3 +1,11 @@
+"""ResearchCompass 研究助手会话编排服务。
+
+本模块是本仓库作者在开源智能体框架 Yuxi 之上设计的科研协作入口，负责把"知识库 +
+研究项目 + 当前选中对象"组装成一份研究会话上下文，并将研究助手 Agent 绑定到该上下文，
+确保同一研究作用域下复用同一条会话。会话存储、Agent 注册与运行调度等通用智能体运行时
+能力由 Yuxi 提供，本模块仅决定科研上下文的语义与作用域归属。
+"""
+
 from __future__ import annotations
 
 from typing import Any, Literal

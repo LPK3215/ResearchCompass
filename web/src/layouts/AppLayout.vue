@@ -13,7 +13,8 @@ import {
   Radar,
   MessageCirclePlus,
   Plus,
-  Search
+  Search,
+  HelpCircle
 } from 'lucide-vue-next'
 
 import { useConfigStore } from '@/stores/config'
@@ -124,6 +125,14 @@ const organizationName = computed(() => {
 const mainList = computed(() => {
   const items = []
 
+  items.push({
+    name: '科研助手',
+    path: AGENT_ENTRY_PATH,
+    icon: MessageCirclePlus,
+    activeIcon: MessageCirclePlus,
+    section: 'product'
+  })
+
   if (!IS_LITE_MODE) {
     items.push({
       name: 'ResearchCompass',
@@ -133,14 +142,6 @@ const mainList = computed(() => {
       section: 'product'
     })
   }
-
-  items.push({
-    name: '科研助手',
-    path: AGENT_ENTRY_PATH,
-    icon: MessageCirclePlus,
-    activeIcon: MessageCirclePlus,
-    section: 'product'
-  })
 
   items.push({
     name: '工作区',
@@ -361,7 +362,6 @@ provide('settingsModal', {
         </RouterLink>
 
         <button
-          v-if="isAgentRoute"
           type="button"
           class="nav-item"
           :class="{ active: conversationSearchOpen }"
@@ -375,7 +375,6 @@ provide('settingsModal', {
         </button>
 
         <button
-          v-if="isAgentRoute"
           type="button"
           class="nav-item nav-item-action"
           aria-label="新对话"
@@ -437,6 +436,15 @@ provide('settingsModal', {
             <a href="https://github.com/LPK3215/ResearchCompass" target="_blank" class="github-link">
               <GithubOutlined class="icon" />
               <span class="nav-text">GitHub</span>
+            </a>
+          </a-tooltip>
+        </div>
+        <div class="github nav-item" @click.stop>
+          <a-tooltip placement="right" :open="sidebarCollapsed ? undefined : false">
+            <template #title>使用帮助文档</template>
+            <a href="https://lpk3215.github.io/ResearchCompass/" target="_blank" class="github-link">
+              <HelpCircle class="icon" />
+              <span class="nav-text">使用帮助</span>
             </a>
           </a-tooltip>
         </div>

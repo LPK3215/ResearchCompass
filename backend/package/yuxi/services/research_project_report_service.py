@@ -1,3 +1,10 @@
+"""ResearchCompass 研究项目报告导出服务。
+
+本模块是本仓库作者在开源智能体框架 Yuxi 之上实现的研究项目报告业务：将项目概览、
+执行计划与归集成果渲染为 Markdown / DOCX 报告，供科研用户导出与归档。项目数据、
+执行计划与资产可用性的获取复用 Yuxi 仓库与项目服务；报告的版式与文案由本模块决定。
+"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

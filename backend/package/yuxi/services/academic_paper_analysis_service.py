@@ -1,3 +1,12 @@
+"""ResearchCompass 论文分析服务。
+
+本模块是本仓库作者在开源智能体框架 Yuxi 之上实现的论文分析业务：提供"单 Agent
+全文分析"与"多 Agent 四阶段分析（结构 → 创新 → 方法论 → 研究空白）"两种策略，
+多 Agent 模式在 Yuxi 提供的 LangGraph 运行态之上编排四阶段图，并在研究空白阶段
+严格接入学术引用图谱邻域证据。模型调用、图谱数据、任务调度与持久化由 Yuxi 提供；
+本模块定义各阶段提示词契约、上下文预算校验、阶段结果校验与可恢复执行协议。
+"""
+
 from __future__ import annotations
 
 import asyncio

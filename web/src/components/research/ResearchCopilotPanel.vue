@@ -82,6 +82,11 @@
 </template>
 
 <script setup>
+// ResearchCompass 科研 Copilot 面板
+// 本组件是本仓库在开源智能体框架 Yuxi 之上实现的科研业务界面，负责把当前知识库、
+// 研究项目、工作区与选中对象封装成 Copilot 上下文，并按工作区类型提供对应的快捷
+// 起手提示；底层对话与智能体运行时复用 Yuxi 的 AgentChatComponent，本组件只负责
+// 科研上下文绑定与 surface starter 配置，不重写对话能力。
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import {
   Bot,

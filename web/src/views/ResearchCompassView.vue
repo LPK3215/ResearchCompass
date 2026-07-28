@@ -1164,6 +1164,10 @@
 </template>
 
 <script setup>
+// ResearchCompass 科研罗盘主页
+// 本视图是本仓库在开源智能体框架 Yuxi 之上实现的科研业务界面，负责在一个知识库下
+// 组织研究项目、论文库、智能检索、证据综述、引用图谱、研究趋势、研究机会、分析对比
+// 与用户评测等多张工作台；通用对话页与智能体运行时由 Yuxi 提供，本视图不重复实现。
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { useRouter } from 'vue-router'

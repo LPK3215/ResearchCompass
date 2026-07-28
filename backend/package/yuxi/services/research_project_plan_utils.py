@@ -1,3 +1,10 @@
+"""ResearchCompass 研究项目执行计划状态与摘要工具。
+
+本模块是本仓库作者为科研项目管理设计的纯计算工具：定义里程碑/任务的状态与优先级
+取值集合，并基于里程碑与任务的当前状态计算项目进度、健康度、逾期与即将到期统计。
+不涉及任何持久化或框架运行时，仅作为执行计划服务的纯函数辅助层。
+"""
+
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta

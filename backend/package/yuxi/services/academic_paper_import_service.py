@@ -1,3 +1,12 @@
+"""ResearchCompass 外部论文导入服务。
+
+本模块是本仓库作者在开源智能体框架 Yuxi 之上实现的论文导入业务：通过 Semantic
+Scholar 检索/解析外部论文，下载开放获取 PDF，写入对象存储与知识库文件记录，再
+异步走 Yuxi 的解析与学术切片索引流水线，把外部论文变成可检索、可分析的库内论文。
+Semantic Scholar 客户端、对象存储、知识库运行时与任务调度由 Yuxi 提供；本模块
+定义论文元数据校验、导入去重、文件状态恢复与可恢复执行协议。
+"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -123,10 +132,17 @@ def _paper_metadata(paper: dict[str, Any]) -> dict[str, Any]:
 
 def _open_access_url(paper: dict[str, Any]) -> str | None:
     open_access = paper.get("openAccessPdf")
-    if not isinstance(open_access, dict):
-        return None
-    url = str(open_access.get("url") or "").strip()
-    return url or None
+    if isinstance(open_access, dict):
+        url = str(open_access.get("url") or "").strip()
+        if url:
+            return url
+    # Fallback: 从 externalIds 构造 arXiv PDF URL
+    external_ids = paper.get("externalIds")
+    if isinstance(external_ids, dict):
+        arxiv_id = str(external_ids.get("ArXiv") or "").strip()
+        if arxiv_id:
+            return f"https://arxiv.org/pdf/{arxiv_id}.pdf"
+    return None
 
 
 async def search_external_papers(*, kb_id: str, current_user: User, query: str, limit: int) -> dict[str, Any]:
@@ -466,7 +482,7 @@ async def _resume_external_paper_import_task(context: TaskContext) -> dict[str, 
 
 
 async def recover_external_paper_imports() -> int:
-    """Requeue external imports whose file record survived an API restart."""
+    """重新入队那些文件记录在 API 重启后仍然存在的外部论文导入任务。"""
     recovered = 0
     file_repo = KnowledgeFileRepository()
     for kb in await KnowledgeBaseRepository().get_all():

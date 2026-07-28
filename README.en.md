@@ -22,7 +22,7 @@
 
 ## Introduction
 
-ResearchCompass is an LLM-powered research workspace built on the Yuxi agent platform. Its conversational Copilot carries the active knowledge base, research project, workspace, and selected-object context into every run, then uses permission-checked domain tools to plan work, search papers, produce evidence syntheses, and organize results. Projects, plans, evidence, and deliverables remain structured and auditable instead of living only in chat history.
+ResearchCompass is an LLM-powered research workspace that I designed and implemented on top of the open-source Yuxi agent framework, with research-specific domain extensions. Its conversational Copilot carries the active knowledge base, research project, workspace, and selected-object context into every run, then uses the permission-checked domain tools I built for research workflows to plan work, search papers, produce evidence syntheses, and organize results. Projects, plans, evidence, and deliverables remain structured and auditable instead of living only in chat history. Yuxi contributes the general agent runtime, multi-tenant knowledge base, sandbox, and middleware; this repository focuses on the scientific research workflow, domain tools, and evidence management.
 
 Navigation: [ResearchCompass](https://lpk3215.github.io/ResearchCompass/intro/research-compass) ｜ [Quick Start](https://lpk3215.github.io/ResearchCompass/intro/quick-start) ｜ [Roadmap](https://lpk3215.github.io/ResearchCompass/develop-guides/roadmap); for the latest updates, see the [changelog](https://lpk3215.github.io/ResearchCompass/develop-guides/changelog).
 
@@ -157,7 +157,7 @@ Once the services are ready, open `http://localhost:5173` in your browser and si
 
 ## Acknowledgements
 
-Yuxi references and builds on the following excellent open-source projects:
+ResearchCompass is built on the open-source [Yuxi](https://github.com/xerrors/Yuxi) agent framework, which provides the general agent runtime, multi-tenant knowledge base, sandbox, and middleware. The research-specific workflow, domain tools, evidence synthesis, and experiment capabilities in this repository are designed and implemented by the author. Both Yuxi and this repository reference and build on the following excellent open-source projects:
 
 - [LightRAG](https://github.com/HKUDS/LightRAG) - Used as the foundation for graph construction and retrieval.
 - [DeepAgents](https://github.com/langchain-ai/deepagents) - Used as the deep agent framework.

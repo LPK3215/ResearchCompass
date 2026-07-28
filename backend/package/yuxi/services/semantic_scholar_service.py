@@ -1,3 +1,11 @@
+"""ResearchCompass Semantic Scholar 外部学术数据源客户端。
+
+本模块是本仓库作者为科研场景接入的外部学术数据源客户端：封装 Semantic Scholar
+Graph API 的论文检索/解析、引用/参考文献边拉取与开放获取 PDF 下载，并对重试、
+限流、私有网络防 SSRF、PDF 签名校验等外部输入风险做显式处理。本模块不依赖 Yuxi
+的智能体运行时，仅作为科研业务（论文导入、引用图谱同步）的外部数据适配层。
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -6,6 +14,7 @@ import math
 import os
 import re
 import socket
+import time
 from typing import Any
 from urllib.parse import quote, urljoin, urlparse
 
@@ -97,6 +106,9 @@ def normalize_paper_identifier(value: str) -> str:
 
 
 class SemanticScholarClient:
+    # Semantic Scholar API 限流：免费 Key 约 1 请求/秒，主动间隔避免触发 429
+    _MIN_REQUEST_INTERVAL = 1.2
+
     def __init__(self) -> None:
         self.base_url = os.getenv("SEMANTIC_SCHOLAR_API_BASE", "https://api.semanticscholar.org/graph/v1").rstrip("/")
         api_key = os.getenv("SEMANTIC_SCHOLAR_API_KEY", "").strip()
@@ -104,6 +116,7 @@ class SemanticScholarClient:
         if api_key:
             self.headers["x-api-key"] = api_key
         self.timeout = httpx.Timeout(45.0, connect=10.0)
+        self._last_request_time = 0.0
 
     async def _get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         max_retries = 3
@@ -114,6 +127,11 @@ class SemanticScholarClient:
             trust_env=False,
         ) as client:
             for attempt in range(max_retries + 1):
+                if attempt == 0:
+                    elapsed = time.monotonic() - self._last_request_time
+                    if elapsed < self._MIN_REQUEST_INTERVAL:
+                        await asyncio.sleep(self._MIN_REQUEST_INTERVAL - elapsed)
+                    self._last_request_time = time.monotonic()
                 try:
                     response = await client.get(f"{self.base_url}{path}", params=params)
                 except httpx.TimeoutException as exc:
@@ -224,11 +242,10 @@ class SemanticScholarClient:
     async def download_open_access_pdf(
         self, url: str, *, max_size: int = MAX_OPEN_ACCESS_PDF_BYTES
     ) -> tuple[bytes, str]:
-        """Download a public PDF advertised by Semantic Scholar.
+        """下载 Semantic Scholar 标注的公开 PDF。
 
-        Redirects and private-network targets are checked explicitly because the
-        URL is external input, while the response is still required to contain a
-        real PDF signature rather than an HTML error page.
+        由于下载地址来自外部输入，需显式校验重定向目标与私有网络地址，并要求响应
+        体内含真实 PDF 签名，避免被 HTML 错误页或内网地址误导。
         """
         current_url = str(url or "").strip()
         if not current_url:

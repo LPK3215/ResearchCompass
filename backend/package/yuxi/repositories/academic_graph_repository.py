@@ -1,3 +1,10 @@
+"""ResearchCompass 学术引用图谱数据访问层。
+
+本模块是本仓库在开源智能体框架 Yuxi 的持久化基础设施之上实现的引用图谱仓储，
+封装图谱论文、作者、主题、引用边与同步任务相关的 SQLAlchemy 查询；通用 PostgreSQL
+连接池与 ORM 模型基类由 Yuxi 提供，本模块只负责科研图谱业务的读写逻辑。
+"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -347,11 +354,10 @@ class AcademicGraphRepository:
     async def find_two_hop_relations(
         self, *, kb_id: str, source_graph_paper_id: str, limit: int
     ) -> dict[str, Any] | None:
-        """Find explainable two-hop citation associations around one graph paper.
+        """围绕单篇图谱论文推演可解释的两跳引用关联。
 
-        The first hop is restricted to the source paper and the second hop to its
-        neighbours.  This keeps inference bounded while preserving the direction
-        of every citation edge for the explanation returned to callers.
+        第一跳限制在源论文本身、第二跳限制在其相邻节点，以此约束推理范围，
+        同时保留每条引用边的方向信息，供调用方生成可解释的关联说明。
         """
         limit = min(max(int(limit), 1), 100)
         edge_limit = min(max(limit * 100, 200), 5000)
@@ -568,7 +574,7 @@ class AcademicGraphRepository:
     async def list_neighbor_citations(
         self, *, kb_id: str, graph_paper_id: str, limit: int = 40
     ) -> dict[str, Any]:
-        """Return one-hop CITES neighbors with paper metadata for analysis context."""
+        """返回单篇论文的一跳 CITES 邻居及论文元数据，作为论文分析的上下文输入。"""
         limit = min(max(int(limit), 1), 100)
         async with pg_manager.get_async_session_context() as session:
             edges = list(

@@ -1,3 +1,12 @@
+"""ResearchCompass 学术引用图谱同步服务。
+
+本模块是本仓库作者在开源智能体框架 Yuxi 之上实现的学术图谱同步业务：把知识库内
+论文与 Semantic Scholar 对齐，拉取引用/参考文献边，写入图数据库与关系库，并记录
+身份冲突与可恢复的同步检查点。Semantic Scholar 客户端、Neo4j 图服务、任务调度
+与持久化由 Yuxi 提供；本模块定义图谱身份键、引用边投影、冲突记录与同步运行的状态
+机。
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -18,7 +27,7 @@ from yuxi.services.semantic_scholar_service import (
 )
 from yuxi.services.task_service import PublicTaskError, TaskContext, tasker
 from yuxi.storage.postgres.models_business import User
-from yuxi.utils import hashstr
+from yuxi.utils import hashstr, logger
 
 
 class AcademicGraphSyncError(PublicTaskError):
@@ -345,7 +354,8 @@ async def _run_sync(
                     await _ensure_graph_sync_owner_can_write(run)
                 related = edge.get(paper_field)
                 if not isinstance(related, dict) or not related.get("paperId") or not related.get("title"):
-                    raise AcademicGraphSyncError("invalid_citation_edge", "Semantic Scholar 引用边缺少论文数据")
+                    logger.warning("跳过无效引用边: paperId 或 title 缺失 (paper=%s)", local_paper.paper_id)
+                    continue
                 related_graph_id, related_author_count, related_topic_count = await _persist_paper(
                     repo=repo,
                     neo4j=neo4j,
@@ -696,7 +706,7 @@ async def get_academic_graph_network(
 async def get_academic_graph_relations(
     *, kb_id: str, current_user: User, graph_paper_id: str, limit: int
 ) -> dict[str, Any]:
-    """Return explainable two-hop citation associations for a graph paper."""
+    """返回某篇图谱论文的可解释两跳引用关联，包含中间节点、边方向与引用上下文。"""
     await _ensure_access(current_user, kb_id)
     result = await AcademicGraphRepository().find_two_hop_relations(
         kb_id=kb_id,

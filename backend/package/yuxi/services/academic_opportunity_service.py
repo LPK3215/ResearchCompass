@@ -1,3 +1,11 @@
+"""ResearchCompass 研究机会雷达服务。
+
+本模块是本仓库作者在开源智能体框架 Yuxi 之上设计的研究机会识别业务：基于知识库内
+论文的关键词增长、近期性、覆盖度、证据量与引用图谱连接缺口，按确定性证据信号计算
+研究机会分数与置信度，并给出可追溯的证据论文与下一步行动建议。论文与图谱数据由
+Yuxi 仓库提供；本模块定义机会评分公式、置信度规则与机会雷达的方法学说明。
+"""
+
 from __future__ import annotations
 
 from collections import defaultdict

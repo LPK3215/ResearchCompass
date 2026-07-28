@@ -33,6 +33,11 @@
 </template>
 
 <script setup>
+// ResearchCompass 用户评测管理器
+// 本组件是本仓库在开源智能体框架 Yuxi 之上实现的科研业务界面，负责创建匿名用户
+// 评测、生成一次性参与链接、查看 SUS / 任务评分 / 文字反馈报告与导出匿名原始
+// 响应；不收集参与者身份信息，未使用的链接可关闭作废。通用表格、模态框与请求
+// 基础设施由 Yuxi 提供。
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import { Plus } from 'lucide-vue-next'

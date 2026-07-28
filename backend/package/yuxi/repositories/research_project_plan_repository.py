@@ -1,3 +1,10 @@
+"""ResearchCompass 研究项目计划数据访问层。
+
+本模块是本仓库在开源智能体框架 Yuxi 的持久化基础设施之上实现的研究项目计划仓储，
+封装里程碑、任务、计划-资产关联的增删改查与排序，并在变更时回写项目进度与活动流；
+通用 PostgreSQL 连接池与 ORM 模型基类由 Yuxi 提供，本模块只负责计划业务的读写逻辑。
+"""
+
 from __future__ import annotations
 
 import uuid

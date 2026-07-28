@@ -523,6 +523,11 @@
 </template>
 
 <script setup>
+// ResearchCompass 研究项目工作台
+// 本组件是本仓库在开源智能体框架 Yuxi 之上实现的科研业务界面，负责研究项目的列表
+// 浏览、筛选、创建编辑、状态流转、成果归集（论文 / 检索 / 综述 / 分析 / 实验）、
+// 执行计划与最近活动展示，以及 Markdown / Word 报告导出。通用对话框、抽屉与请求
+// 基础设施由 Yuxi 提供。
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import {

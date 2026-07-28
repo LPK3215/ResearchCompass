@@ -1,10 +1,10 @@
 # 界面设计规范
 
-本文档定义 Yuxi 前端界面的基础设计规范，适用于 `web/src` 下的新页面、新组件和现有 UI 调整。它同时面向人类开发者和 AI coding agent：修改界面前先阅读本页，优先复用现有组件、CSS 变量和交互模式。
+> ResearchCompass 基于开源智能体框架 ResearchCompass 二次开发，本文档定义其前端界面的基础设计规范，适用于 `web/src` 下的新页面、新组件和现有 UI 调整。它同时面向人类开发者和 AI coding agent：修改界面前先阅读本页，优先复用现有组件、CSS 变量和交互模式。
 
 ## 1. 视觉气质
 
-Yuxi 是知识库、知识图谱与 Agent 开发平台，界面应保持克制、清晰、工程化。设计服务于长时间阅读、配置、调试和数据管理，不做营销页式装饰。
+ResearchCompass 是知识库、知识图谱与 Agent 开发平台，界面应保持克制、清晰、工程化。设计服务于长时间阅读、配置、调试和数据管理，不做营销页式装饰。
 
 核心原则：
 
@@ -63,7 +63,7 @@ Yuxi 是知识库、知识图谱与 Agent 开发平台，界面应保持克制�
 
 ### 暗色模式
 
-Yuxi 通过 `:root.dark` 覆盖同名 token。新增 UI 必须使用 CSS 变量而不是固定浅色值，并检查浅色、暗色两套表现。
+ResearchCompass 通过 `:root.dark` 覆盖同名 token。新增 UI 必须使用 CSS 变量而不是固定浅色值，并检查浅色、暗色两套表现。
 
 新增组件时至少检查：
 
@@ -136,7 +136,7 @@ Yuxi 通过 `:root.dark` 覆盖同名 token。新增 UI 必须使用 CSS 变量�
 
 ### 卡片、列表与表格
 
-Yuxi 的信息界面以配置卡片、列表和表格为主，默认使用轻量分层：
+ResearchCompass 的信息界面以配置卡片、列表和表格为主，默认使用轻量分层：
 
 - 普通卡片：`background: var(--gray-0); border: 1px solid var(--gray-150); border-radius: 8px;`
 - 次级区域：可使用 `var(--gray-10)` / `var(--gray-25)` 做轻背景。
@@ -190,7 +190,7 @@ Yuxi 的信息界面以配置卡片、列表和表格为主，默认使用轻量
 
 ## 6. 深度与层级
 
-Yuxi 默认采用“背景 + 边框”的轻量层级：
+ResearchCompass 默认采用“背景 + 边框”的轻量层级：
 
 | 层级 | 处理方式 | 使用场景 |
 | --- | --- | --- |
@@ -236,7 +236,7 @@ Yuxi 默认采用“背景 + 边框”的轻量层级：
 
 ## 9. Agent Prompt Guide
 
-AI agent 修改或生成 Yuxi UI 时，优先按这一节执行。
+AI agent 修改或生成 ResearchCompass UI 时，优先按这一节执行。
 
 ### Quick Reference
 
@@ -258,7 +258,7 @@ AI agent 修改或生成 Yuxi UI 时，优先按这一节执行。
 实现配置卡片：
 
 ```text
-实现一个 Yuxi 风格的配置卡片：背景使用 var(--gray-0)，边框 1px solid var(--gray-150)，圆角 8px，不加阴影。标题使用 var(--color-text)，说明文字使用 var(--color-text-secondary)。hover 只轻微改变边框或背景，不使用 transform。
+实现一个 ResearchCompass 风格的配置卡片：背景使用 var(--gray-0)，边框 1px solid var(--gray-150)，圆角 8px，不加阴影。标题使用 var(--color-text)，说明文字使用 var(--color-text-secondary)。hover 只轻微改变边框或背景，不使用 transform。
 ```
 
 实现工具栏按钮：

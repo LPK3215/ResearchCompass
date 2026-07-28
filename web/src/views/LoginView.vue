@@ -216,15 +216,23 @@
                       type="primary"
                       html-type="submit"
                       :loading="loading"
-                      :disabled="isLocked"
+                      :disabled="isLocked || !canSubmitLogin"
                       block
                       size="large"
                     >
                       <span v-if="isLocked">账户已锁定 {{ formatTime(lockRemainingTime) }}</span>
+                      <span v-else-if="showAgreementConsent && !agreementAccepted">请先勾选协议</span>
                       <span v-else>登录</span>
                     </a-button>
                   </a-form-item>
                 </a-form>
+
+                <!-- 商业版本必备：辅助入口 -->
+                <div class="login-aux-links">
+                  <a class="aux-link" @click="goRegister">没有账号？立即注册</a>
+                  <span class="aux-divider">·</span>
+                  <a class="aux-link" @click="goForgotPassword">忘记密码？</a>
+                </div>
 
                 <!-- OIDC 登录选项  -->
                 <div v-if="oidcChecking || oidcEnabled" class="third-party-login">
@@ -303,7 +311,7 @@ const infoStore = useInfoStore()
 
 // 品牌展示数据
 const loginBgImage = computed(() => {
-  return infoStore.organization?.login_bg || '/login-bg.jpg'
+  return infoStore.organization?.login_bg || '/login-bg.svg'
 })
 const brandLogo = computed(() => {
   return infoStore.organization?.logo || ''
@@ -368,6 +376,23 @@ const adminForm = reactive({
 const goHome = () => {
   router.push('/')
 }
+
+// 商业版本必备：辅助导航
+const goRegister = () => {
+  router.push('/register')
+}
+
+const goForgotPassword = () => {
+  message.info('如需重置密码，请联系管理员或发送邮件至支持邮箱')
+}
+
+// 登录提交前置校验：协议未勾选时按钮 disabled
+const canSubmitLogin = computed(() => {
+  if (!showAgreementConsent.value) {
+    return true
+  }
+  return agreementAccepted.value
+})
 
 // 清理倒计时器
 const clearLockCountdown = () => {
@@ -838,6 +863,27 @@ onUnmounted(() => {
 
 .login-form.login-form--init :deep(.ant-form-item) {
   margin-bottom: 14px;
+}
+
+.login-aux-links {
+  margin-top: 16px;
+  text-align: center;
+  font-size: 13px;
+
+  .aux-link {
+    color: #046a82;
+    cursor: pointer;
+
+    &:hover {
+      text-decoration: underline;
+      color: #035065;
+    }
+  }
+
+  .aux-divider {
+    margin: 0 8px;
+    color: #d1d5db;
+  }
 }
 
 .third-party-login {

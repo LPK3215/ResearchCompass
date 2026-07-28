@@ -1,3 +1,10 @@
+"""ResearchCompass 研究用户调研数据访问层。
+
+本模块是本仓库在开源智能体框架 Yuxi 的持久化基础设施之上实现的研究用户调研仓储，
+封装调研、邀请、回收响应的创建与状态流转；通用 PostgreSQL 连接池与 ORM 模型基类
+由 Yuxi 提供，本模块只负责调研业务的读写逻辑。
+"""
+
 from __future__ import annotations
 
 from typing import Any

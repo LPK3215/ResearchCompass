@@ -1,4 +1,7 @@
 # 第三方登录认证
+
+> 本文描述的能力由开源智能体框架 Yuxi 提供，ResearchCompass 复用该能力作为科研智能体平台的通用底座。
+
 Yuxi 支持以OIDC接入第三方登录认证，方便企业用户集成现有的身份认证系统。
 > 此功能默认关闭，需要在配置文件中启用并提供相关参数。
 
@@ -11,8 +14,8 @@ Yuxi 支持以OIDC接入第三方登录认证，方便企业用户集成现有�
 
 填入回调地址（Redirect URI）：https://<your_yuxi_host>/api/auth/oidc/callback
 
-### 2. 配置Yuxi
-在Yuxi的.env文件中添加以下配置项：
+### 2. 配置 ResearchCompass（基于 Yuxi 框架）
+在 ResearchCompass 的 .env 文件中添加以下配置项：
 
 ```sh
 # 是否启用 OIDC 认证 (true/false)
@@ -82,7 +85,7 @@ Yuxi 支持以OIDC接入第三方登录认证，方便企业用户集成现有�
 # OIDC_FORCE_PROMPT_LOGIN=true
 
 ```
-### 3. 重启Yuxi服务使配置生效
+### 3. 重启 ResearchCompass 服务使配置生效
 ```bash
 docker restart api-dev web-dev
 ```

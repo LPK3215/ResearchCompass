@@ -1,3 +1,12 @@
+"""ResearchCompass 论文分析对比盲评服务。
+
+本模块是本仓库作者在开源智能体框架 Yuxi 之上设计的单/多 Agent 论文分析对比业务：
+对同一篇论文分别运行单 Agent 与多 Agent（图谱增强）两种分析策略，随机分配盲标
+A/B，由人工评审按统一量表打分，最终汇总策略对比报告。分析运行复用
+academic_paper_analysis_service 的执行协议，任务调度与持久化由 Yuxi 提供；本模块
+定义盲评量表、盲分配规则与策略对比的汇总语义。
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -65,7 +74,7 @@ def _duration_ms(run: Any) -> int | None:
 
 
 class _EvaluationAnalysisContext:
-    """Map one report run's progress into its pair's segment of the parent task."""
+    """把对比中某条分析运行的进度映射到所属评测任务的对应进度区间。"""
 
     def __init__(self, parent: TaskContext, start: float, end: float) -> None:
         self.parent = parent

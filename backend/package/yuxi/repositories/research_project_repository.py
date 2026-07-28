@@ -1,3 +1,11 @@
+"""ResearchCompass 研究项目数据访问层。
+
+本模块是本仓库在开源智能体框架 Yuxi 的持久化基础设施之上实现的研究项目仓储，
+封装研究项目、项目资产、活动流的增删改查，以及论文、检索、综述、分析、评估实验等
+多种资产类型的候选项聚合；通用 PostgreSQL 连接池与 ORM 模型基类由 Yuxi 提供，
+本模块只负责研究项目业务的读写逻辑。
+"""
+
 from __future__ import annotations
 
 import uuid

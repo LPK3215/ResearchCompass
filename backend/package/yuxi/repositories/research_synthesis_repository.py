@@ -1,3 +1,10 @@
+"""ResearchCompass 研究综述数据访问层。
+
+本模块是本仓库在开源智能体框架 Yuxi 的持久化基础设施之上实现的研究综述仓储，
+封装综述运行记录的创建、状态推进、取消语义、可恢复任务列举与序列化；
+通用 PostgreSQL 连接池与 ORM 模型基类由 Yuxi 提供，本模块只负责综述业务的读写逻辑。
+"""
+
 from __future__ import annotations
 
 from typing import Any
@@ -100,7 +107,7 @@ class ResearchSynthesisRepository:
             return record
 
     async def update_if_not_cancelled(self, run_id: str, values: dict[str, Any]) -> ResearchSynthesisRun | None:
-        """Persist a worker transition unless the user has already cancelled it."""
+        """持久化 worker 的状态推进；若用户已取消则跳过本次写入。"""
         updates = self._prepare_updates(values)
         if not updates:
             return await self.get(run_id)
@@ -118,7 +125,7 @@ class ResearchSynthesisRepository:
             return result.scalar_one_or_none()
 
     async def mark_cancelled(self, run_id: str, *, completed_at: Any) -> ResearchSynthesisRun | None:
-        """Make a run terminal without allowing a completed result to be revoked."""
+        """将综述运行置为终态取消，但不会撤销已成功完成的结果。"""
         async with pg_manager.get_async_session_context() as session:
             statement = (
                 update(ResearchSynthesisRun)

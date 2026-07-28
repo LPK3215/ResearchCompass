@@ -108,6 +108,10 @@
 </template>
 
 <script setup>
+// ResearchCompass 论文分析报告页
+// 本视图是本仓库在开源智能体框架 Yuxi 之上实现的科研业务界面，负责展示单篇论文的
+// 四阶段分析报告（结构化提取、核心创新点、方法论与复现性、研究空白），并通过轮询
+// 跟踪分析任务执行状态；分析流水线后端由本仓库实现，通用智能体运行时由 Yuxi 提供。
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'

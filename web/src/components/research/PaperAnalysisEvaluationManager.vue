@@ -127,6 +127,11 @@
 </template>
 
 <script setup>
+// ResearchCompass 单 / 多 Agent 分析对比管理器
+// 本组件是本仓库在开源智能体框架 Yuxi 之上实现的科研业务界面，负责创建和管理
+// 单 Agent 与四阶段多 Agent 报告的盲审对比实验：固定模型与论文集生成两份报告，
+// 评审者以 A/B 盲审完成四维量表评分，汇总只统计真实人工评分。通用对话框、表格
+// 等基础组件与智能体运行时由 Yuxi 提供。
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { researchApi } from '@/apis/research_api'

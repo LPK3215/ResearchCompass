@@ -301,6 +301,11 @@
 </template>
 
 <script setup>
+// ResearchCompass 论文检索工作台
+// 本组件是本仓库在开源智能体框架 Yuxi 之上实现的科研业务界面，负责自然语言研究
+// 问题的检索执行、检索历史管理（置顶 / 删除 / 重跑）、结果证据查看与一键转入证据
+// 综述；支持本地混合与严格图谱两种检索模式。通用表格、抽屉与请求基础设施由 Yuxi
+// 提供。
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { FileText, Pin, PinOff, RefreshCw, RotateCcw, Search, Trash2 } from 'lucide-vue-next'

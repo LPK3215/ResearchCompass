@@ -1,3 +1,10 @@
+"""ResearchCompass 学术引用图谱 Neo4j 投影服务。
+
+本模块是本仓库在开源智能体框架 Yuxi 的 Neo4j 存储基础设施之上实现的论文引用图谱服务，
+负责将论文、作者、主题与 CITES 引用边投影到 Neo4j，并提供两跳关联解释与知识库投影清理；
+通用 Neo4j 连接池与事务封装由 Yuxi 提供。
+"""
+
 from __future__ import annotations
 
 import asyncio

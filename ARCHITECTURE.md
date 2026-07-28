@@ -1,10 +1,10 @@
 # ARCHITECTURE.md
 
-本文档是 Yuxi 的代码地图，参考 matklad 的 `ARCHITECTURE.md` 建议维护：只描述相对稳定的系统边界、目录职责和跨切面约束，避免同步易变的实现细节。新贡献者如果不确定“某个能力应该改哪里”，先读这里，再用符号搜索定位具体类型、函数或路由。
+本文档是 ResearchCompass 科研智能体平台的代码地图，参考 matklad 的 `ARCHITECTURE.md` 建议维护：只描述相对稳定的系统边界、目录职责和跨切面约束，避免同步易变的实现细节。新贡献者如果不确定“某个能力应该改哪里”，先读这里，再用符号搜索定位具体类型、函数或路由。ResearchCompass 在开源智能体框架 Yuxi 之上进行科研领域二次开发：Yuxi 提供多租户知识库、智能体运行态、工具与沙盒等通用底座，本仓库在此基础上实现科研业务流程、领域工具与证据管理能力。
 
 ## 鸟瞰
 
-Yuxi 是一个面向 RAG、知识图谱和多智能体工作流的知识库平台。用户在 Vue 前端中配置智能体、知识库、工具、Skills、MCP 与 SubAgents；前端通过 `/api` 调用 FastAPI；后端服务层协调数据库、对象存储、向量库、图数据库、LangGraph 运行态和沙盒；长耗时智能体运行交给 worker 异步执行，并通过事件流回到前端。
+ResearchCompass 复用 Yuxi 的 RAG、知识图谱与多智能体工作流通用底座，并面向科研场景扩展。用户在 Vue 前端中配置智能体、知识库、工具、Skills、MCP 与 SubAgents；前端通过 `/api` 调用 FastAPI；后端服务层协调数据库、对象存储、向量库、图数据库、LangGraph 运行态和沙盒；长耗时智能体运行交给 worker 异步执行，并通过事件流回到前端。
 
 开发与运行拓扑以 `docker-compose.yml` 为准。核心开发服务包括：
 
@@ -17,20 +17,20 @@ Yuxi 是一个面向 RAG、知识图谱和多智能体工作流的知识库平�
 
 ## 后端代码地图
 
-后端分成两个顶层边界：`backend/server` 是 Web 应用入口与 HTTP 适配层，`backend/package/yuxi` 是可复用业务包。新增业务逻辑通常优先放在 `yuxi` 包中，路由层只做请求解析、认证上下文和响应装配。
+后端分成两个顶层边界：`backend/server` 是 Web 应用入口与 HTTP 适配层，`backend/package/yuxi` 是可复用业务包。该包名沿用上游开源框架 Yuxi 的命名，其中既包含从框架继承的通用智能体与知识库能力，也包含本仓库针对科研场景新增的 `research_*` / `academic_*` 服务、仓储与工具。新增业务逻辑通常优先放在 `yuxi` 包中，路由层只做请求解析、认证上下文和响应装配。
 
 - `server/main.py` 创建 FastAPI 应用，注册中间件，并把所有业务接口统一挂到 `/api`。
-- `server/routers` 是 HTTP 路由边界。路由按领域拆分，集中在 `server/routers/__init__.py` 注册；知识库、图谱、评估和思维导图接口在 `LITE_MODE` 下不会注册。
+- `server/routers` 是 HTTP 路由边界。路由按领域拆分，集中在 `server/routers/__init__.py` 注册；知识库、图谱、评估和思维导图接口在 `LITE_MODE` 下不会注册；`research_router.py` 是本仓库科研业务接口的入口。
 - `server/utils` 放 Web 层通用能力，例如生命周期、认证、日志与迁移辅助。
 - `server/worker_main.py` 是 worker 入口，实际 worker 设置来自 `yuxi.services.run_worker`。
 
 `backend/package/yuxi` 是后端主体：
 
-- `agents` 定义 LangGraph 智能体体系。`BaseAgent` 是智能体基类，`BaseContext` 是运行配置上下文；`buildin` 放内置智能体；`middlewares` 负责把知识库、Skills、MCP、附件、运行配置等能力挂到运行时；`toolkits` 放工具注册与内置工具；`backends` 对接沙盒和 Skills 等外部执行/资源后端。
-- `services` 是用例层，负责串联 repositories、agents、knowledge、storage 和外部系统。聊天、运行队列、文件视图、Skills、MCP、SubAgents、评估等跨模块流程都从这里找入口。
-- `repositories` 是数据库访问边界，封装业务对象和知识库元数据的 SQLAlchemy 查询。不要让路由绕过 repository 直接操作模型，除非已有局部模式要求这样做。
+- `agents` 定义 LangGraph 智能体体系。`BaseAgent` 是智能体基类，`BaseContext` 是运行配置上下文；`buildin` 放内置智能体；`middlewares` 负责把知识库、Skills、MCP、附件、运行配置等能力挂到运行时；`toolkits` 放工具注册与内置工具，其中 `toolkits/research` 是本仓库为科研场景实现的领域工具集；`backends` 对接沙盒和 Skills 等外部执行/资源后端。
+- `services` 是用例层，负责串联 repositories、agents、knowledge、storage 和外部系统。聊天、运行队列、文件视图、Skills、MCP、SubAgents、评估等跨模块流程都从这里找入口；`research_*` 与 `academic_*` 系列服务是本仓库为科研业务设计的流程编排。
+- `repositories` 是数据库访问边界，封装业务对象和知识库元数据的 SQLAlchemy 查询。不要让路由绕过 repository 直接操作模型，除非已有局部模式要求这样做。`academic_*` 与 `research_*` 系列仓储对应科研业务的持久化对象。
 - `storage` 放持久化基础设施。`storage/postgres` 管理业务表、知识库表和 LangGraph checkpoint 所需连接池；`storage/minio` 管理对象存储。
-- `knowledge` 是知识库和图谱领域。`KnowledgeBaseManager` 根据知识库类型分发到具体实现；`implementations` 放 Milvus、Dify 等知识库实现；`graphs` 放 Milvus 知识库图谱适配与构建服务；`chunking` 放文档分块策略。
+- `knowledge` 是知识库和图谱领域。`KnowledgeBaseManager` 根据知识库类型分发到具体实现；`implementations` 放 Milvus、Dify 等知识库实现；`graphs` 放 Milvus 知识库图谱适配与构建服务，其中 `academic_graph_service.py` 是本仓库为论文引用图谱扩展的服务；`chunking` 放文档分块策略，其中 `parsers/academic.py` 是本仓库为论文结构化分块新增的解析器。
 - `knowledge/parser` 是文档解析边界，统一封装 MinerU、PaddleX、RapidOCR、DeepSeek OCR 等解析实现。
 - `models` 封装 chat、embedding、rerank 模型适配；`config` 维护应用配置和内置模型信息；`utils` 放跨领域但足够通用的工具。
 
@@ -41,10 +41,10 @@ Yuxi 是一个面向 RAG、知识图谱和多智能体工作流的知识库平�
 前端是 Vue 3 + Vite 应用，业务入口集中在 `web/src`。
 
 - `main.js` 挂载应用，`App.vue` 是根组件。
-- `router` 定义页面路由和权限跳转。完整模式下认证用户默认进入 ResearchCompass，Lite 模式回退到通用助手；仪表盘及管理页面继续按角色约束。
-- `apis` 是唯一推荐的后端接口封装位置。新增后端接口时，同步在这里补对应 API 方法，复用 `base.js` 的请求、鉴权和错误处理。
+- `router` 定义页面路由和权限跳转。完整模式下认证用户默认进入 ResearchCompass（本仓库为科研场景设计的主入口），Lite 模式回退到通用助手；仪表盘及管理页面继续按角色约束。
+- `apis` 是唯一推荐的后端接口封装位置。新增后端接口时，同步在这里补对应 API 方法，复用 `base.js` 的请求、鉴权和错误处理；`research_api.js` 是本仓库科研业务接口的前端封装。
 - `stores` 放 Pinia 状态，例如用户、智能体配置、主题、图谱和任务状态。
-- `views` 是页面级入口，`components` 是可复用界面块；智能体对话、知识库、图谱、扩展管理等复杂页面由 view 组合多个 component。
+- `views` 是页面级入口，`components` 是可复用界面块；智能体对话、知识库、图谱、扩展管理等复杂页面由 view 组合多个 component；`ResearchCompassView.vue`、`ResearchPaperAnalysisView.vue`、`ResearchUserStudyView.vue` 及 `components/research/*` 是本仓库为科研工作台实现的界面层。
 - `composables` 放可组合的前端运行逻辑，例如流式消息处理、运行事件订阅、审批、人机输入和智能体线程状态。
 - `utils` 放前端通用工具和轻量转换逻辑；样式集中在 `assets/css`，颜色和基础规范优先复用 `base.css` 与现有 less 文件。
 

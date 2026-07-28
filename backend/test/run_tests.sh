@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-echo "Yuxi 测试运行器"
+echo "ResearchCompass 测试运行器"
 echo "========================"
 
 PYTEST_CMD=("docker" "compose" "exec" "api" "uv" "run" "--group" "test" "pytest")

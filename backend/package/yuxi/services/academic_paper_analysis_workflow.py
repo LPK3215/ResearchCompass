@@ -1,3 +1,12 @@
+"""ResearchCompass 论文分析四阶段 LangGraph 工作流。
+
+本模块是本仓库作者在 Yuxi 提供的 LangGraph 运行态之上编排的论文分析流程图：把
+论文分析拆为 structure / innovations / methodology / gaps 四个阶段节点，按线性
+顺序串联，每个节点只负责调用一次阶段执行器并把结果合并进共享状态。LangGraph 的
+StateGraph、节点编排与运行时由 Yuxi（LangGraph）提供；本模块仅定义四阶段图的
+拓扑与状态合并语义。
+"""
+
 from __future__ import annotations
 
 import json

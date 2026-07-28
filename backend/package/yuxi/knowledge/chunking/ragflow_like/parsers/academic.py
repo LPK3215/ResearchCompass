@@ -1,3 +1,10 @@
+"""ResearchCompass 学术论文章节分块解析器。
+
+本模块是本仓库在开源智能体框架 Yuxi 的 RAGFlow 风格分块体系之上新增的学术论文分块策略，
+按 Abstract、Introduction、Related Work、Method、Experiments、Conclusion 等中英文章节结构
+组织论文内容，保留公式、表格、代码块完整并记录原文字符区间；通用分块调度与 NLP 工具由 Yuxi 提供。
+"""
+
 from __future__ import annotations
 
 import hashlib

@@ -1,5 +1,7 @@
 # 子智能体
 
+> 本文描述的能力由开源智能体框架 Yuxi 提供，ResearchCompass 复用该能力作为科研智能体平台的通用底座。
+
 Yuxi 的子智能体是 Agent-backed 形态：它仍然是 `agents` 表中的一级 Agent，只是额外带有 `is_subagent=true` 标记，并使用专用后端 `SubAgentBackend`。子智能体不再有独立的创建入口、独立表或独立管理接口。
 
 ## 用户视角

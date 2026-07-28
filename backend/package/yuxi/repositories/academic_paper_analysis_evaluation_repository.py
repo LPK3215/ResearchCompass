@@ -1,3 +1,10 @@
+"""ResearchCompass 论文分析评估数据访问层。
+
+本模块是本仓库在开源智能体框架 Yuxi 的持久化基础设施之上实现的论文分析评估仓储，
+封装评估批次、评估条目、盲评打分的创建与查询；通用 PostgreSQL 连接池与 ORM 模型基类
+由 Yuxi 提供，本模块只负责评估业务的读写逻辑。
+"""
+
 from __future__ import annotations
 
 import uuid

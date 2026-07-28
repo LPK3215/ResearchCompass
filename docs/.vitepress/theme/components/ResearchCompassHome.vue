@@ -14,6 +14,7 @@ const stats = [
 ]
 
 // Harness 能力中枢（bento）
+// 以下能力由开源框架 Yuxi 提供，ResearchCompass 在此之上扩展科研领域工具与流程
 const capabilities = [
   {
     icon: 'box', span: true,
@@ -37,7 +38,7 @@ const capabilities = [
   {
     icon: 'wrench',
     title: '内置工具',
-    desc: 'present_artifacts 交付产物、提问中断等待用户、按需安装技能、联网检索等开箱即用。',
+    desc: 'present_artifacts 交付产物、提问中断等待用户、按需安装技能、联网检索等开箱即用；本仓库在此之上新增了科研检索、证据综述等领域工具。',
     tags: ['开箱即用']
   },
   {
@@ -61,25 +62,26 @@ const capabilities = [
 ]
 
 // 知识引擎：可切换的能力 tab，右侧媒体随选中项切换
+// 该部分为 Yuxi 框架通用知识库能力，ResearchCompass 复用并扩展学术分块与引用图谱
 const engineTabs = [
   {
     key: 'parse', icon: 'scan', title: '多格式解析',
-    desc: 'MinerU、PaddleX、RapidOCR 统一解析 PDF、Office、图片等为结构化 Markdown。',
+    desc: 'MinerU、PaddleX、RapidOCR 统一解析 PDF、Office、图片等为结构化 Markdown；本仓库新增 Academic Paper 论文章节分块策略。',
     shot: 'https://xerrors.oss-cn-shanghai.aliyuncs.com/github/image-20260605205221908.png'
   },
   {
     key: 'retrieval', icon: 'database', title: 'Agentic RAG',
-    desc: '智能体自主决定检索时机与查询，多轮向量检索 + Rerank，回答带可溯源引用。',
+    desc: '智能体自主决定检索时机与查询，多轮向量检索 + Rerank，回答带可溯源引用；本仓库在此基础上实现本地混合与严格图谱双模式科研检索。',
     shot: 'https://xerrors.oss-cn-shanghai.aliyuncs.com/github/image-20260604205342546.png'
   },
   {
     key: 'graph', icon: 'share', title: '知识图谱',
-    desc: '抽取实体与关系构建知识图谱，子图检索参与增强，并支持可视化探索。',
+    desc: '抽取实体与关系构建知识图谱，子图检索参与增强，并支持可视化探索；本仓库扩展了论文引用图谱同步与 PPR 检索能力。',
     shot: 'https://xerrors.oss-cn-shanghai.aliyuncs.com/github/image-20260604204056298.png'
   },
   {
     key: 'eval', icon: 'chart', title: '检索评估',
-    desc: '内置检索质量评估，支持命名运行与指标对比，量化召回与回答效果。',
+    desc: '内置检索质量评估，支持命名运行与指标对比，量化召回与回答效果；本仓库扩展了科研消融实验与多 Agent 盲评。',
     shot: 'https://xerrors.oss-cn-shanghai.aliyuncs.com/github/image-20260604210111977.png'
   },
   {
@@ -209,12 +211,13 @@ const vReveal = {
         <div class="yx-grid"></div>
       </div>
       <div class="yx-container yx-hero__inner">
-        <span class="yx-badge">v0.11.0 · MIT 开源 · LangGraph 驱动</span>
+        <span class="yx-badge">v0.11.0 · MIT 开源 · 基于开源框架 Yuxi 二次开发</span>
         <h1 class="yx-hero__title"><span class="yx-accent">ResearchCompass</span></h1>
-        <p class="yx-hero__subtitle">贯穿研究项目、证据与交付的对话式 Copilot</p>
+        <p class="yx-hero__subtitle">贯穿研究项目、证据与交付的对话式科研 Copilot</p>
         <p class="yx-hero__desc">
+          ResearchCompass 在开源智能体框架 Yuxi 之上，针对科研领域二次开发。
           AI 研究助手理解当前知识库、研究项目和工作区，
-          通过受权限与审批约束的领域工具完成规划、检索、综述与成果归集，
+          通过我设计的受权限与审批约束的领域工具完成规划、检索、综述与成果归集，
           让每次对话都沉淀为可查看、可审计、可导出的结构化研究结果。
         </p>
         <div class="yx-hero__actions">
@@ -226,7 +229,7 @@ const vReveal = {
           <img
             class="yx-hero__img"
             src="https://xerrors.oss-cn-shanghai.aliyuncs.com/github/image-20260608002434299.png"
-            alt="语析 Yuxi 产品界面预览"
+            alt="ResearchCompass 科研智能体平台界面预览"
             loading="lazy"
           />
         </div>
@@ -247,9 +250,9 @@ const vReveal = {
     <section class="yx-section">
       <div class="yx-container">
         <header v-reveal class="yx-head">
-          <span class="yx-head__eyebrow">智能体运行时</span>
+          <span class="yx-head__eyebrow">智能体运行时（来自开源框架 Yuxi）</span>
           <h2 class="yx-head__title">不止于对话，更能执行与交付</h2>
-          <p class="yx-head__sub">Yuxi 内置一套完整的 Harness——沙盒、技能、工具、子智能体与中间件，让智能体真正动手完成任务。</p>
+          <p class="yx-head__sub">Yuxi 提供一套完整的 Harness——沙盒、技能、工具、子智能体与中间件，让智能体真正动手完成任务；ResearchCompass 复用该运行时并挂载科研领域工具。</p>
         </header>
         <div class="yx-bento">
           <article
@@ -470,14 +473,14 @@ open http://localhost:5173</code></pre>
     <section class="yx-section yx-section--soft">
       <div class="yx-container yx-center">
         <header v-reveal class="yx-head">
-          <span class="yx-head__eyebrow">社区</span>
-          <h2 class="yx-head__title">由开源社区共同构建</h2>
+          <span class="yx-head__eyebrow">社区与致谢</span>
+          <h2 class="yx-head__title">站在开源框架的肩上</h2>
         </header>
         <a v-reveal :href="GITHUB + '/graphs/contributors'" target="_blank" rel="noreferrer" class="yx-contrib">
-          <img src="https://contrib.rocks/image?repo=xerrors/Yuxi&max=60&columns=12" alt="Yuxi 贡献者头像墙" loading="lazy" />
+          <img src="https://contrib.rocks/image?repo=xerrors/Yuxi&max=60&columns=12" alt="上游开源框架 Yuxi 贡献者头像墙" loading="lazy" />
         </a>
         <p v-reveal class="yx-credits">
-          站在巨人的肩上 ——
+          ResearchCompass 的科研业务由本仓库作者设计与实现，通用智能体底座来自开源框架 Yuxi，并复用以下开源能力 ——
           <template v-for="(c, i) in credits" :key="c.name">
             <a :href="c.url" target="_blank" rel="noreferrer">{{ c.name }}</a><span v-if="i < credits.length - 1"> · </span>
           </template>
@@ -488,8 +491,8 @@ open http://localhost:5173</code></pre>
     <!-- ===== 最终 CTA ===== -->
     <section class="yx-cta">
       <div class="yx-container yx-cta__inner" v-reveal>
-        <h2>立即开始构建你的智能体</h2>
-        <p>开源、可自托管、面向真实业务场景。</p>
+        <h2>立即开始构建你的科研工作流</h2>
+        <p>开源、可自托管、面向科研真实场景。</p>
         <div class="yx-hero__actions yx-cta__actions">
           <a class="yx-btn yx-btn--primary" :href="withBase('/intro/quick-start')">快速开始</a>
           <a class="yx-btn yx-btn--ghost" :href="GITHUB" target="_blank" rel="noreferrer">前往 GitHub ★</a>

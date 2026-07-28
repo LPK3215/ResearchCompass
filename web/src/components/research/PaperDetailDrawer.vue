@@ -334,6 +334,10 @@
 </template>
 
 <script setup>
+// ResearchCompass 论文详情抽屉
+// 本组件是本仓库在开源智能体框架 Yuxi 之上实现的科研业务界面，负责展示论文元数据、
+// 摘要、自定义标签、论文章节分块浏览与四阶段分析报告，并支持管理员校正元数据后
+// 触发后台重建学术分块与检索索引。通用抽屉、表单与请求基础设施由 Yuxi 提供。
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { useRouter } from 'vue-router'

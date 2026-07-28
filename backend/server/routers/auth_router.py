@@ -109,6 +109,19 @@ class InitializeAdmin(BaseModel):
     phone_number: str | None = None
 
 
+class RegisterRequest(BaseModel):
+    """自助注册请求。商业版本必备：允许用户不通过管理员自助开户。"""
+    username: str
+    password: str = Field(min_length=8)
+    phone_number: str | None = None
+
+
+class RegisterResponse(BaseModel):
+    uid: str
+    username: str
+    message: str
+
+
 class UsernameValidation(BaseModel):
     username: str
 
@@ -290,6 +303,61 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
         "department_id": user.department_id,
         "department_name": department_name,
     }
+
+
+# 路由：用户自助注册（公开接口）
+@auth.post("/register", response_model=RegisterResponse)
+async def self_register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
+    """用户自助注册。商业版本必备：允许用户不通过管理员自助开户。
+
+    安全约束：
+    - 仅创建 role=user 的普通用户，无法通过此接口创建管理员
+    - 用户名格式校验（防注入）
+    - 密码最少 8 位
+    - 限流通过 LoginRateLimitMiddleware 覆盖
+    """
+    is_valid, error_msg = validate_username(data.username)
+    if not is_valid:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg)
+
+    user_repo = UserRepository()
+    users = await user_repo.list_users()
+    if any(u.username == data.username for u in users):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="用户名已存在")
+
+    if data.phone_number:
+        if not is_valid_phone_number(data.phone_number):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="手机号格式不正确")
+        if await user_repo.exists_by_phone(data.phone_number):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="手机号已存在")
+
+    existing_uids = await user_repo.get_all_uids()
+    uid = generate_unique_uid(data.username, existing_uids)
+
+    hashed_password = AuthUtils.hash_password(data.password)
+    dept_repo = DepartmentRepository()
+    departments = await dept_repo.list_departments()
+    default_dept = next((d for d in departments if d.name == "默认部门"), None)
+    department_id = default_dept.id if default_dept else None
+
+    new_user = await user_repo.create(
+        {
+            "username": data.username,
+            "uid": uid,
+            "phone_number": data.phone_number,
+            "password_hash": hashed_password,
+            "role": "user",
+            "department_id": department_id,
+        }
+    )
+
+    await log_operation(db, new_user.id, "自助注册")
+
+    return RegisterResponse(
+        uid=new_user.uid,
+        username=new_user.username,
+        message="注册成功，请使用 UID 或手机号登录",
+    )
 
 
 # =============================================================================

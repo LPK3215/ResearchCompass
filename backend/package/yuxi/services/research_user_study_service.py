@@ -1,3 +1,11 @@
+"""ResearchCompass 用户评测服务。
+
+本模块是本仓库作者为科研平台设计的匿名用户评测业务：管理员创建评测并生成一次性
+邀请令牌，参与者通过令牌匿名提交任务评分、SUS 量表与开放反馈，系统按匿名汇总
+形成研究报告与 CSV 导出。Redis 限流与持久化由 Yuxi 提供；本模块定义评测邀请
+令牌、SUS 评分计算与匿名化的问卷语义。
+"""
+
 from __future__ import annotations
 
 import csv

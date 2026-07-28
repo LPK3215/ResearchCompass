@@ -1,3 +1,11 @@
+"""ResearchCompass 学术趋势分析服务。
+
+本模块是本仓库作者在开源智能体框架 Yuxi 之上设计的学术趋势业务：基于知识库内
+论文的发表年份、关键词分布与引用图谱数据，计算发表趋势、关键词热度、新兴方向与
+引用趋势。论文与图谱数据由 Yuxi 仓库提供；本模块定义趋势统计的聚合规则、新兴
+关键词的判定窗口与趋势报告的投影语义。
+"""
+
 from __future__ import annotations
 
 from collections import defaultdict

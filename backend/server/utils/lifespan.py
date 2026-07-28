@@ -230,7 +230,7 @@ async def lifespan(app: FastAPI):
     ░██      ░█████░██ ░██    ░██ ░██  v{get_version()}
 
     """)
-    logger.info("Yuxi backend startup complete")
+    logger.info("ResearchCompass backend startup complete")
     try:
         yield
     finally:

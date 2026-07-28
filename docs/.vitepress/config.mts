@@ -6,7 +6,7 @@ import markdownItTaskCheckbox from 'markdown-it-task-checkbox'
 export default defineConfig({
   lang: 'zh-CN',
   title: 'ResearchCompass',
-  description: '基于知识图谱与多 Agent 的学术文献智能分析平台',
+  description: '基于开源智能体框架 Yuxi 二次开发的科研智能体平台',
   base: '/ResearchCompass/',
   ignoreDeadLinks: [
     /localhost/,
@@ -34,7 +34,7 @@ export default defineConfig({
         items: [
           { text: '科研罗盘', link: '/intro/research-compass' },
           { text: 'AI 研究助手', link: '/intro/research-compass#ai-研究助手' },
-          { text: '什么是 Yuxi？', link: '/intro/project-overview' },
+          { text: '项目简介', link: '/intro/project-overview' },
           { text: '快速开始', link: '/intro/quick-start' },
           { text: '命令行工具', link: '/intro/cli' },
           { text: '模型配置', link: '/intro/model-config' },

@@ -340,6 +340,10 @@
 </template>
 
 <script setup>
+// ResearchCompass 研究项目执行计划
+// 本组件是本仓库在开源智能体框架 Yuxi 之上实现的科研业务界面，负责单个研究项目的
+// 里程碑、任务、未分配任务与成果证据关联的增删改查与排序，并展示进度、受阻、逾期
+// 等计划健康指标。通用表单、模态框与请求基础设施由 Yuxi 提供。
 import { computed, reactive, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import {

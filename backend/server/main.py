@@ -7,7 +7,7 @@ import sys
 # 注意：这段代码必须放在应用的极早期，最好在导入 FastAPI 或初始化数据库之前
 # ==============================================================================
 if sys.platform == "win32":
-    # 把当前文件 (main.py) 的上一级的上一级 (即根目录 Yuxi) 加入到 sys.path
+    # 把当前文件 (main.py) 的上一级的上一级 (即项目根目录) 加入到 sys.path
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
@@ -32,7 +32,7 @@ setup_logging()
 
 RATE_LIMIT_MAX_ATTEMPTS = 10
 RATE_LIMIT_WINDOW_SECONDS = 60
-RATE_LIMIT_ENDPOINTS = {("/api/auth/token", "POST")}
+RATE_LIMIT_ENDPOINTS = {("/api/auth/token", "POST"), ("/api/auth/register", "POST")}
 DEFAULT_DEVELOPMENT_CORS_ORIGINS = ("http://localhost:5173", "http://127.0.0.1:5173")
 EXPLICIT_CORS_METHODS = ("DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT")
 EXPLICIT_CORS_HEADERS = ("Accept", "Authorization", "Content-Type", "Last-Event-ID", "X-Requested-With")
@@ -74,7 +74,19 @@ def _build_cors_options(origins: list[str] | None = None) -> dict[str, object]:
     }
 
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(
+    lifespan=lifespan,
+    title="ResearchCompass API",
+    description="科研罗盘 - 基于 RAG 与知识图谱的科研智能体平台。融合论文管理、学术检索、证据综述、研究项目、引用图谱、论文分析等科研业务流程。",
+    version="0.11.0",
+    openapi_tags=[
+        {"name": "authentication", "description": "用户认证与账户管理"},
+        {"name": "knowledge", "description": "知识库管理与文档检索"},
+        {"name": "research", "description": "科研业务：论文、检索、综述、项目、图谱"},
+        {"name": "chat", "description": "智能体对话与会话管理"},
+        {"name": "agent", "description": "智能体配置与运行管理"},
+    ],
+)
 
 
 class SafeExceptionMiddleware:

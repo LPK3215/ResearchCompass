@@ -90,11 +90,32 @@ async function approveCLIAuthSession(userCode) {
   return apiPost(`/api/auth/cli/sessions/${encoded}/approve`, {})
 }
 
+/**
+ * 用户自助注册
+ * @param {Object} payload - { username, password, phone_number? }
+ * @returns {Promise<{uid: string, username: string, message: string}>}
+ */
+async function register(payload) {
+  const response = await fetch('/api/auth/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+
+  if (!response.ok) {
+    const detail = await parseErrorDetail(response, '注册失败')
+    throw new Error(detail)
+  }
+
+  return response.json()
+}
+
 export const authApi = {
   getOIDCConfig,
   getOIDCLoginUrl,
   getUserAccessOptions,
   exchangeOIDCCode,
   getCLIAuthSession,
-  approveCLIAuthSession
+  approveCLIAuthSession,
+  register
 }
