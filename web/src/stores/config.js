@@ -18,7 +18,6 @@ export const useConfigStore = defineStore('config', () => {
 
   async function refreshConfig() {
     const data = await configApi.getConfig()
-    console.log('config', data)
     setConfig(data)
     return data
   }
