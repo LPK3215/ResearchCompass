@@ -140,6 +140,11 @@ class RunReferenceInput(BaseModel):
     run_id: str = Field(min_length=1, max_length=64)
 
 
+class ExportSynthesisInput(BaseModel):
+    run_id: str = Field(min_length=1, max_length=64)
+    format: Literal["markdown", "docx"] = Field(default="markdown", description="导出格式")
+
+
 class CreateSynthesisInput(BaseModel):
     query: str = Field(min_length=1, max_length=4000)
     top_k: int = Field(default=8, ge=2, le=20)
@@ -607,6 +612,60 @@ async def research_regenerate_synthesis(run_id: str, runtime: ToolRuntime) -> di
 
 @tool(
     category="research",
+    tags=["科研", "综述", "导出"],
+    display_name="导出证据综述为文件",
+    args_schema=ExportSynthesisInput,
+)
+async def research_export_synthesis(
+    run_id: str,
+    format: str,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """将已验证成功的证据综述导出为 Markdown 或 DOCX 文件，写入交付物目录供用户下载。
+
+    导出完成后应调用 present_artifacts 工具将文件展示给用户。
+    """
+    from yuxi.agents.backends.sandbox.paths import (
+        ensure_thread_dirs,
+        sandbox_outputs_dir,
+    )
+    from yuxi.utils.paths import VIRTUAL_PATH_OUTPUTS
+    from yuxi.services.research_synthesis_service import (
+        export_research_synthesis,
+        get_research_synthesis,
+    )
+
+    user = await _current_user(runtime)
+    source = await _call(get_research_synthesis(run_id=run_id, current_user=user))
+    _ensure_context_kb(runtime, source.get("kb_id"), "综述运行")
+
+    filename, content, media_type = await _call(
+        export_research_synthesis(run_id=run_id, current_user=user, export_format=format)
+    )
+
+    context = getattr(runtime, "context", None)
+    thread_id = getattr(context, "file_thread_id", None) or getattr(context, "thread_id", None)
+    uid = getattr(context, "uid", None)
+    if not thread_id or not uid:
+        raise ToolException("当前运行时缺少线程或用户标识，无法保存导出文件")
+
+    ensure_thread_dirs(thread_id, str(uid))
+    file_path = sandbox_outputs_dir(thread_id) / filename
+    file_path.write_bytes(content)
+
+    artifact_path = f"{VIRTUAL_PATH_OUTPUTS}/{filename}"
+    return {
+        "run_id": run_id,
+        "filename": filename,
+        "format": format,
+        "media_type": media_type,
+        "artifact_path": artifact_path,
+        "message": f"综述已导出为 {filename}，请调用 present_artifacts 工具展示该文件",
+    }
+
+
+@tool(
+    category="research",
     tags=["科研", "成果"],
     display_name="查询可归集成果",
     args_schema=ListAssetCandidatesInput,
@@ -768,6 +827,7 @@ RESEARCH_TOOLS = [
     research_create_synthesis,
     research_get_synthesis,
     research_regenerate_synthesis,
+    research_export_synthesis,
     research_list_project_asset_candidates,
     research_add_project_assets,
     research_list_project_assets,

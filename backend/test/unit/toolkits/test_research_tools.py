@@ -238,6 +238,94 @@ async def test_regenerate_synthesis_rejects_cross_kb_before_creating_run(monkeyp
     assert regenerated is False
 
 
+@pytest.mark.asyncio
+async def test_export_synthesis_rejects_cross_kb_before_exporting(monkeypatch):
+    current_user = object()
+
+    async def get_current_user(_runtime):
+        return current_user
+
+    async def get_synthesis(**_kwargs):
+        return {"run_id": "source-run", "kb_id": "kb-2"}
+
+    monkeypatch.setattr(research_tools, "_current_user", get_current_user)
+    monkeypatch.setattr(
+        research_synthesis_service,
+        "get_research_synthesis",
+        get_synthesis,
+    )
+
+    with pytest.raises(ToolException, match="综述运行不属于当前知识库"):
+        await research_tools.research_export_synthesis.coroutine(
+            run_id="source-run",
+            format="markdown",
+            runtime=_runtime(),
+        )
+
+
+@pytest.mark.asyncio
+async def test_export_synthesis_writes_file_and_returns_artifact_path(monkeypatch, tmp_path):
+    current_user = object()
+    captured = {}
+
+    async def get_current_user(_runtime):
+        return current_user
+
+    async def get_synthesis(**kwargs):
+        captured["get"] = kwargs
+        return {"run_id": "run-1", "kb_id": "kb-1"}
+
+    async def export_synthesis(**kwargs):
+        captured["export"] = kwargs
+        return "research_synthesis_run1.md", b"# Markdown content", "text/markdown; charset=utf-8"
+
+    monkeypatch.setattr(research_tools, "_current_user", get_current_user)
+    monkeypatch.setattr(
+        research_synthesis_service,
+        "get_research_synthesis",
+        get_synthesis,
+    )
+    monkeypatch.setattr(
+        research_synthesis_service,
+        "export_research_synthesis",
+        export_synthesis,
+    )
+
+    runtime = SimpleNamespace(
+        context=SimpleNamespace(
+            uid="user-1",
+            thread_id="thread-1",
+            file_thread_id=None,
+            research_context={"kb_id": "kb-1", "project_id": "project-1"},
+        )
+    )
+
+    monkeypatch.setattr(
+        "yuxi.agents.backends.sandbox.paths.ensure_thread_dirs",
+        lambda thread_id, uid: None,
+    )
+    monkeypatch.setattr(
+        "yuxi.agents.backends.sandbox.paths.sandbox_outputs_dir",
+        lambda thread_id: tmp_path,
+    )
+
+    result = await research_tools.research_export_synthesis.coroutine(
+        run_id="run-1",
+        format="markdown",
+        runtime=runtime,
+    )
+
+    assert result["run_id"] == "run-1"
+    assert result["filename"] == "research_synthesis_run1.md"
+    assert result["format"] == "markdown"
+    assert result["artifact_path"].endswith("/research_synthesis_run1.md")
+    assert (tmp_path / "research_synthesis_run1.md").read_bytes() == b"# Markdown content"
+    assert captured["export"]["export_format"] == "markdown"
+
+
 def test_research_copilot_registers_the_complete_tool_set():
-    assert [tool.name for tool in research_tools.RESEARCH_TOOLS] == RESEARCH_COPILOT_TOOL_SLUGS
+    research_tool_names = [tool.name for tool in research_tools.RESEARCH_TOOLS]
+    # research-copilot 启用全部 research 类工具，并额外启用 present_artifacts 用于展示导出文件
+    assert set(research_tool_names).issubset(set(RESEARCH_COPILOT_TOOL_SLUGS))
+    assert "present_artifacts" in RESEARCH_COPILOT_TOOL_SLUGS
     assert {get_extra_metadata(tool.name).category for tool in research_tools.RESEARCH_TOOLS} == {"research"}

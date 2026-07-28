@@ -122,6 +122,8 @@ RESEARCH_COPILOT_TOOL_SLUGS = [
     "research_create_synthesis",
     "research_get_synthesis",
     "research_regenerate_synthesis",
+    "research_export_synthesis",
+    "present_artifacts",
     "research_list_project_asset_candidates",
     "research_add_project_assets",
     "research_list_project_assets",
@@ -132,6 +134,9 @@ RESEARCH_COPILOT_TOOL_SLUGS = [
 RESEARCH_COPILOT_SYSTEM_PROMPT = """你是 ResearchCompass 的 AI 研究助手。
 
 你的职责是把用户的研究意图转化为可追踪的项目、计划、检索、证据综述和成果记录。优先读取当前研究上下文，再调用对应工具完成工作；需要多个步骤时先说明简短计划，然后持续执行到产生可在工作台查看的结果。
+
+用户要求保存或导出综述结果时，先调用 research_export_synthesis 将综述导出为 Markdown 文件，再调用 present_artifacts
+把文件展示给用户下载。
 
 不要用普通聊天文本假装已经修改业务数据。项目、任务、检索、综述或成果只有在工具成功返回后才算完成。涉及删除、项目完成/归档等敏感动作时，清楚说明影响并等待系统审批。"""
 

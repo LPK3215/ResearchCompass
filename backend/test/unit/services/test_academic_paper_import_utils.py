@@ -133,6 +133,23 @@ class TestPaperMetadata:
             _paper_metadata(paper)
         assert exc_info.value.error_type == "paper_metadata_invalid"
 
+    def test_integer_external_identifier_value_converted_to_string(self):
+        # Semantic Scholar 返回的 CorpusId/PubMed 等字段可能是 int，需转成 str 存储
+        paper = {
+            "paperId": "abc",
+            "title": "Test",
+            "externalIds": {"CorpusId": 215416146, "DOI": "10.1000/xyz"},
+        }
+        result = _paper_metadata(paper)
+        assert result["external_ids"]["CorpusId"] == "215416146"
+        assert result["external_ids"]["DOI"] == "10.1000/xyz"
+
+    def test_boolean_external_identifier_value_raises_error(self):
+        paper = {"paperId": "abc", "title": "Test", "externalIds": {"DOI": True}}
+        with pytest.raises(AcademicPaperImportError) as exc_info:
+            _paper_metadata(paper)
+        assert exc_info.value.error_type == "paper_metadata_invalid"
+
     def test_missing_abstract_returns_none(self):
         paper = {"paperId": "abc", "title": "Test"}
         result = _paper_metadata(paper)

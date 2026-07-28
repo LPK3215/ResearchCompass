@@ -81,10 +81,14 @@ def _paper_metadata(paper: dict[str, Any]) -> dict[str, Any]:
         raise AcademicPaperImportError("paper_metadata_invalid", "Semantic Scholar DOI 超出长度限制")
     normalized_external_ids: dict[str, str] = {}
     for key, value in external_ids.items():
-        if not isinstance(key, str) or not isinstance(value, str):
+        if not isinstance(key, str):
             raise AcademicPaperImportError("paper_metadata_invalid", "Semantic Scholar 外部标识格式无效")
         normalized_key = key.strip()
-        normalized_value = value.strip()
+        # CorpusId/PubMed 等字段在 Semantic Scholar 响应中可能以 int 形式返回，需转换为字符串。
+        # 仅接受 str 与 int（排除 bool 子类），其他类型（list/dict 等）视为无效。
+        if isinstance(value, bool) or not isinstance(value, (str, int)):
+            raise AcademicPaperImportError("paper_metadata_invalid", "Semantic Scholar 外部标识值格式无效")
+        normalized_value = str(value).strip()
         if not normalized_key or not normalized_value:
             continue
         if len(normalized_key) > 64 or len(normalized_value) > 512:
