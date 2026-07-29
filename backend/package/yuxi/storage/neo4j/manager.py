@@ -55,7 +55,6 @@ class Neo4jConnectionManager:
             self.driver = GD.driver(
                 uri,
                 auth=(username, password),
-                notifications_min_severity="ERROR",
             )
             with self.driver.session() as session:
                 session.run("RETURN 1")
