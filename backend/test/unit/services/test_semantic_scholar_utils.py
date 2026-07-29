@@ -2,6 +2,7 @@
 
 不依赖外部 API 或数据库，只验证标识符识别、归一化和标题比较逻辑。
 """
+
 from __future__ import annotations
 
 
@@ -15,6 +16,7 @@ from yuxi.services.semantic_scholar_service import (
 # ---------------------------------------------------------------------------
 # is_paper_identifier
 # ---------------------------------------------------------------------------
+
 
 class TestIsPaperIdentifier:
     def test_doi_returns_true(self):
@@ -63,6 +65,7 @@ class TestIsPaperIdentifier:
 # normalize_paper_identifier
 # ---------------------------------------------------------------------------
 
+
 class TestNormalizePaperIdentifier:
     def test_doi_gets_doi_prefix(self):
         result = normalize_paper_identifier("10.48550/arXiv.1706.03762")
@@ -96,6 +99,7 @@ class TestNormalizePaperIdentifier:
 # ---------------------------------------------------------------------------
 # normalize_paper_title
 # ---------------------------------------------------------------------------
+
 
 class TestNormalizePaperTitle:
     def test_casefold_and_collapse_whitespace(self):

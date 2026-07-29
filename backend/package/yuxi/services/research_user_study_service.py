@@ -110,6 +110,21 @@ def _sus_score(sus_scores: dict[str, int]) -> float:
     return round(sum(adjusted) * 2.5, 1)
 
 
+def _validate_stored_score_maps(
+    task_scores: Any,
+    sus_scores: Any,
+) -> tuple[dict[str, int], dict[str, int]]:
+    if not isinstance(task_scores, dict) or not isinstance(sus_scores, dict):
+        raise ResearchUserStudyError("response_data_invalid", "用户评测历史响应数据不完整")
+    try:
+        return (
+            _validate_score_map(task_scores, TASK_SCORE_KEYS, minimum=1, maximum=5, label="任务评分"),
+            _validate_score_map(sus_scores, SUS_SCORE_KEYS, minimum=1, maximum=5, label="SUS 评分"),
+        )
+    except ResearchUserStudyError as exc:
+        raise ResearchUserStudyError("response_data_invalid", "用户评测历史响应数据不完整") from exc
+
+
 def _csv_cell(value: Any) -> str:
     text = "" if value is None else str(value)
     if text.lstrip().startswith(("=", "+", "-", "@")):
@@ -118,8 +133,9 @@ def _csv_cell(value: Any) -> str:
 
 
 def _summary(responses: list[Any]) -> dict[str, Any]:
-    task_scores = {key: _mean([response.task_scores[key] for response in responses]) for key in TASK_SCORE_KEYS}
-    sus_scores = [_sus_score(response.sus_scores) for response in responses]
+    score_maps = [_validate_stored_score_maps(response.task_scores, response.sus_scores) for response in responses]
+    task_scores = {key: _mean([tasks[key] for tasks, _ in score_maps]) for key in TASK_SCORE_KEYS}
+    sus_scores = [_sus_score(sus) for _, sus in score_maps]
     return {
         "response_count": len(responses),
         "task_score_means": task_scores,
@@ -374,6 +390,10 @@ class ResearchUserStudyService:
             ]
         )
         for response in responses:
+            task_scores, sus_scores = _validate_stored_score_maps(
+                response["task_scores"],
+                response["sus_scores"],
+            )
             writer.writerow(
                 [
                     _csv_cell(value)
@@ -381,9 +401,9 @@ class ResearchUserStudyService:
                         response["response_id"],
                         response["research_stage"],
                         response["research_experience"],
-                        *[response["task_scores"][key] for key in TASK_SCORE_KEYS],
-                        *[response["sus_scores"][key] for key in SUS_SCORE_KEYS],
-                        _sus_score(response["sus_scores"]),
+                        *[task_scores[key] for key in TASK_SCORE_KEYS],
+                        *[sus_scores[key] for key in SUS_SCORE_KEYS],
+                        _sus_score(sus_scores),
                         response["overall_rating"],
                         response["recommend_score"],
                         response["feedback"],

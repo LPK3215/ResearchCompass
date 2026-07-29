@@ -67,9 +67,7 @@ class ResearchUserStudyRepository:
     ) -> tuple[ResearchUserStudyResponse | None, str | None]:
         async with pg_manager.get_async_session_context() as session:
             study = await session.scalar(
-                select(ResearchUserStudy)
-                .where(ResearchUserStudy.study_id == study_id)
-                .with_for_update()
+                select(ResearchUserStudy).where(ResearchUserStudy.study_id == study_id).with_for_update()
             )
             if study is None:
                 return None, "study_not_found"

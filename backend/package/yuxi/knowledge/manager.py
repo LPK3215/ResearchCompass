@@ -1118,10 +1118,8 @@ class KnowledgeBaseManager:
         milvus_kb = self.kb_instances["milvus"]
 
         try:
-            from pymilvus import utility
-
             # 获取 Milvus 中所有实际的集合
-            actual_collection_names = set(utility.list_collections(using=milvus_kb.connection_alias))
+            actual_collection_names = set(milvus_kb.client.list_collections())
 
             # 从数据库获取所有已知的数据库ID
             kb_repo = KnowledgeBaseRepository()
@@ -1150,15 +1148,12 @@ class KnowledgeBaseManager:
 
                 # 尝试获取集合的基本信息
                 try:
-                    from pymilvus import Collection
-
-                    collection = Collection(name=collection_name, using=milvus_kb.connection_alias)
-                    collection_info["count"] = collection.num_entities
-                    collection_info["description"] = collection.description
+                    stats = milvus_kb.client.get_collection_stats(collection_name)
+                    collection_info["count"] = stats.get("row_count", "unknown")
+                    description = milvus_kb.client.describe_collection(collection_name).get("description", "")
+                    collection_info["description"] = description
                 except Exception as e:
-                    logger.warning(
-                        f"无法获取集合 {collection_name} 的详细信息 (error_type={type(e).__name__})"
-                    )
+                    logger.warning(f"无法获取集合 {collection_name} 的详细信息 (error_type={type(e).__name__})")
                     collection_info["count"] = "unknown"
 
                 inconsistencies["missing_collections"].append(collection_info)
@@ -1173,11 +1168,8 @@ class KnowledgeBaseManager:
             # 检查文件级别的不一致（针对已知的数据库）
             for kb_id in metadata_collection_names:
                 try:
-                    if utility.has_collection(kb_id, using=milvus_kb.connection_alias):
-                        from pymilvus import Collection
-
-                        collection = Collection(name=kb_id, using=milvus_kb.connection_alias)
-                        actual_count = collection.num_entities
+                    if milvus_kb.client.has_collection(kb_id):
+                        actual_count = milvus_kb.client.get_collection_stats(kb_id).get("row_count", 0)
 
                         # 获取 metadata 中记录的文件数量
                         from yuxi.repositories.knowledge_file_repository import KnowledgeFileRepository

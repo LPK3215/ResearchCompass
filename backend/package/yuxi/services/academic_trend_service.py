@@ -79,9 +79,7 @@ def _emerging_keywords(keyword_trends: list[dict[str, Any]]) -> list[dict[str, A
     emerging = []
     for item in keyword_trends:
         recent_count = sum(
-            int(year_item["count"])
-            for year_item in item["years"]
-            if int(year_item["year"]) >= latest_year - 1
+            int(year_item["count"]) for year_item in item["years"] if int(year_item["year"]) >= latest_year - 1
         )
         previous_count = sum(
             int(year_item["count"])
@@ -156,8 +154,7 @@ async def get_academic_trends(
     keywords = _serialize_keyword_trends(keyword_year_counts, keyword_display)
     emerging_directions = _emerging_keywords(keywords)
     keyword_totals = [
-        {"keyword": item["keyword"], "total": item["total"]}
-        for item in keywords[: max(int(top_keywords), 1)]
+        {"keyword": item["keyword"], "total": item["total"]} for item in keywords[: max(int(top_keywords), 1)]
     ]
     citation_trend = await AcademicGraphRepository().citation_trend(
         kb_id=kb_id,

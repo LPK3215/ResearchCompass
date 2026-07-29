@@ -64,7 +64,12 @@ async def export_research_project_report(
     for asset in assets:
         counts[asset.asset_type] += 1
     counts["total"] = len(assets)
-    plan = await get_research_project_plan(project_id=project_id, current_user=current_user)
+    plan = await get_research_project_plan(
+        project_id=project_id,
+        current_user=current_user,
+        project=project,
+        available_asset_ids=available_asset_ids,
+    )
     project_payload = serialize_project(project, counts, plan["summary"])
     asset_payloads = [
         serialize_project_asset(asset, available=asset.asset_id in available_asset_ids) for asset in assets

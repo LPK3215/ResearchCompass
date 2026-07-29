@@ -176,9 +176,7 @@ async def test_generate_database_mindmap_reports_persistence_failure(monkeypatch
 
     class FakeModel:
         async def call(self, messages, stream):
-            return SimpleNamespace(
-                content='{"content":"知识库","children":[{"content":"outside.pdf","children":[]}]}'
-            )
+            return SimpleNamespace(content='{"content":"知识库","children":[{"content":"outside.pdf","children":[]}]}')
 
     monkeypatch.setattr(mm, "KnowledgeBaseRepository", lambda: kb_repo)
     monkeypatch.setattr(

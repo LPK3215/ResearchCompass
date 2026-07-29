@@ -276,7 +276,10 @@ async def create_database(
                 status_code=400,
                 detail="reranker_config 已移除，请在查询参数中使用 reranker_model spec",
             )
-        additional_params = kb_class.normalize_additional_params(additional_params)
+        try:
+            additional_params = kb_class.normalize_additional_params(additional_params)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         if kb_class.requires_embedding_model:
             if not embedding_model_spec:
@@ -450,12 +453,15 @@ async def update_database_info(
             kb_class = KnowledgeBaseFactory.get_kb_class(kb_type)
             merged_params = dict(db_info.get("additional_params") or {})
             merged_params.update(additional_params)
-            kb_class.normalize_additional_params(merged_params)
-            additional_params = (
-                kb_class.normalize_additional_params(additional_params)
-                if kb_class.apply_chunk_defaults
-                else kb_class.normalize_additional_params(merged_params)
-            )
+            try:
+                kb_class.normalize_additional_params(merged_params)
+                additional_params = (
+                    kb_class.normalize_additional_params(additional_params)
+                    if kb_class.apply_chunk_defaults
+                    else kb_class.normalize_additional_params(merged_params)
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         database = await knowledge_base.update_database(
             kb_id,
@@ -790,9 +796,7 @@ async def add_documents(
                         }
                     )
                 except Exception as add_error:
-                    logger.error(
-                        f"添加文件记录失败 (kb_id={kb_id}, error_type={type(add_error).__name__})"
-                    )
+                    logger.error(f"添加文件记录失败 (kb_id={kb_id}, error_type={type(add_error).__name__})")
                     error_type = "timeout" if isinstance(add_error, TimeoutError) else "add_failed"
                     error_msg = "添加超时" if isinstance(add_error, TimeoutError) else DOCUMENT_ADD_FAILED_MESSAGE
                     processed_items[idx - 1] = {
@@ -820,8 +824,7 @@ async def add_documents(
                         processed_items[record["index"]] = file_meta
                 except Exception as parse_error:
                     logger.error(
-                        "解析文件失败 "
-                        f"(kb_id={kb_id}, file_id={file_id}, error_type={type(parse_error).__name__})"
+                        f"解析文件失败 (kb_id={kb_id}, file_id={file_id}, error_type={type(parse_error).__name__})"
                     )
                     error_type = "timeout" if isinstance(parse_error, TimeoutError) else "parse_failed"
                     error_msg = "解析超时" if isinstance(parse_error, TimeoutError) else DOCUMENT_PARSE_FAILED_MESSAGE
@@ -835,9 +838,7 @@ async def add_documents(
             if auto_index:
                 await context.set_message("第三阶段：自动入库")
                 parsed_files = [
-                    record
-                    for record in added_files
-                    if (record.get("file_meta") or {}).get("status") == "parsed"
+                    record for record in added_files if (record.get("file_meta") or {}).get("status") == "parsed"
                 ]
                 total_parsed = len(parsed_files)
 
@@ -859,8 +860,7 @@ async def add_documents(
                         processed_items[record["index"]] = result
                     except Exception as index_error:
                         logger.error(
-                            "自动入库失败 "
-                            f"(kb_id={kb_id}, file_id={file_id}, error_type={type(index_error).__name__})"
+                            f"自动入库失败 (kb_id={kb_id}, file_id={file_id}, error_type={type(index_error).__name__})"
                         )
                         processed_items[record["index"]] = {
                             "item": item,
@@ -1047,12 +1047,8 @@ async def _run_parse_file_ids(
             result = await knowledge_base.parse_file(kb_id, file_id, operator_id=operator_id)
             processed_items.append(result)
         except Exception as exc:
-            logger.error(
-                f"文档解析失败 (kb_id={kb_id}, file_id={file_id}, error_type={type(exc).__name__})"
-            )
-            processed_items.append(
-                {"file_id": file_id, "status": "failed", "error": DOCUMENT_PARSE_FAILED_MESSAGE}
-            )
+            logger.error(f"文档解析失败 (kb_id={kb_id}, file_id={file_id}, error_type={type(exc).__name__})")
+            processed_items.append({"file_id": file_id, "status": "failed", "error": DOCUMENT_PARSE_FAILED_MESSAGE})
 
     failed_count = len([p for p in processed_items if _is_failed_item(p)])
     message = f"解析完成，失败 {failed_count} 个"
@@ -1084,10 +1080,7 @@ async def _run_index_file_ids(
             try:
                 await knowledge_base.update_file_params(kb_id, file_id, params, operator_id=operator_id)
             except Exception as exc:
-                logger.error(
-                    "文档参数更新失败 "
-                    f"(kb_id={kb_id}, file_id={file_id}, error_type={type(exc).__name__})"
-                )
+                logger.error(f"文档参数更新失败 (kb_id={kb_id}, file_id={file_id}, error_type={type(exc).__name__})")
                 param_update_failed.add(file_id)
                 processed_items.append(
                     {"file_id": file_id, "status": "failed", "error": DOCUMENT_PARAM_UPDATE_FAILED_MESSAGE}
@@ -1107,12 +1100,8 @@ async def _run_index_file_ids(
             result = await knowledge_base.index_file(kb_id, file_id, operator_id=operator_id, params=params)
             processed_items.append(result)
         except Exception as exc:
-            logger.error(
-                f"文档入库失败 (kb_id={kb_id}, file_id={file_id}, error_type={type(exc).__name__})"
-            )
-            processed_items.append(
-                {"file_id": file_id, "status": "failed", "error": DOCUMENT_INDEX_FAILED_MESSAGE}
-            )
+            logger.error(f"文档入库失败 (kb_id={kb_id}, file_id={file_id}, error_type={type(exc).__name__})")
+            processed_items.append({"file_id": file_id, "status": "failed", "error": DOCUMENT_INDEX_FAILED_MESSAGE})
 
     failed_count = len([p for p in processed_items if _is_failed_item(p)])
     message = f"入库完成，失败 {failed_count} 个"
@@ -1163,9 +1152,7 @@ async def _run_parse_pending_statuses(
                 _append_document_action_result_sample(result_items, result)
             except Exception as exc:
                 failed_count += 1
-                logger.error(
-                    f"文档解析失败 (kb_id={kb_id}, file_id={file_id}, error_type={type(exc).__name__})"
-                )
+                logger.error(f"文档解析失败 (kb_id={kb_id}, file_id={file_id}, error_type={type(exc).__name__})")
                 _append_document_action_result_sample(
                     result_items,
                     {"file_id": file_id, "status": "failed", "error": DOCUMENT_PARSE_FAILED_MESSAGE},
@@ -1227,9 +1214,7 @@ async def _run_index_pending_statuses(
                 _append_document_action_result_sample(result_items, result)
             except Exception as exc:
                 failed_count += 1
-                logger.error(
-                    f"文档入库失败 (kb_id={kb_id}, file_id={file_id}, error_type={type(exc).__name__})"
-                )
+                logger.error(f"文档入库失败 (kb_id={kb_id}, file_id={file_id}, error_type={type(exc).__name__})")
                 _append_document_action_result_sample(
                     result_items,
                     {"file_id": file_id, "status": "failed", "error": DOCUMENT_INDEX_FAILED_MESSAGE},
@@ -1422,8 +1407,10 @@ async def _resume_parse_task(context: TaskContext) -> dict:
         )
 
     file_ids = payload.get("file_ids")
-    has_valid_file_ids = isinstance(file_ids, list) and bool(file_ids) and all(
-        isinstance(file_id, str) and file_id for file_id in file_ids
+    has_valid_file_ids = (
+        isinstance(file_ids, list)
+        and bool(file_ids)
+        and all(isinstance(file_id, str) and file_id for file_id in file_ids)
     )
     if not has_valid_file_ids:
         raise ValueError("文档解析恢复任务缺少有效 file_ids")
@@ -1448,8 +1435,10 @@ async def _resume_index_task(context: TaskContext) -> dict:
         )
 
     file_ids = payload.get("file_ids")
-    has_valid_file_ids = isinstance(file_ids, list) and bool(file_ids) and all(
-        isinstance(file_id, str) and file_id for file_id in file_ids
+    has_valid_file_ids = (
+        isinstance(file_ids, list)
+        and bool(file_ids)
+        and all(isinstance(file_id, str) and file_id for file_id in file_ids)
     )
     if not has_valid_file_ids:
         raise ValueError("文档入库恢复任务缺少有效 file_ids")
@@ -1526,9 +1515,7 @@ async def get_document_info(kb_id: str, doc_id: str, current_user: User = Depend
         info = await knowledge_base.get_file_info(kb_id, doc_id)
         return info
     except Exception as exc:
-        logger.error(
-            f"获取文档详情失败 (kb_id={kb_id}, doc_id={doc_id}, error_type={type(exc).__name__})"
-        )
+        logger.error(f"获取文档详情失败 (kb_id={kb_id}, doc_id={doc_id}, error_type={type(exc).__name__})")
         raise HTTPException(status_code=500, detail="获取文档详情失败") from exc
 
 
@@ -1542,9 +1529,7 @@ async def get_document_basic_info(kb_id: str, doc_id: str, current_user: User = 
         info = await knowledge_base.get_file_basic_info(kb_id, doc_id)
         return info
     except Exception as exc:
-        logger.error(
-            f"获取文档基本信息失败 (kb_id={kb_id}, doc_id={doc_id}, error_type={type(exc).__name__})"
-        )
+        logger.error(f"获取文档基本信息失败 (kb_id={kb_id}, doc_id={doc_id}, error_type={type(exc).__name__})")
         raise HTTPException(status_code=500, detail="获取文档基本信息失败") from exc
 
 
@@ -1558,9 +1543,7 @@ async def get_document_content(kb_id: str, doc_id: str, current_user: User = Dep
         info = await knowledge_base.get_file_content(kb_id, doc_id)
         return info
     except Exception as exc:
-        logger.error(
-            f"获取文档内容失败 (kb_id={kb_id}, doc_id={doc_id}, error_type={type(exc).__name__})"
-        )
+        logger.error(f"获取文档内容失败 (kb_id={kb_id}, doc_id={doc_id}, error_type={type(exc).__name__})")
         raise HTTPException(status_code=500, detail="获取文档内容失败") from exc
 
 
@@ -1600,9 +1583,7 @@ async def batch_delete_documents(
             if removed_filename:
                 mindmap_removals.append((doc_id, removed_filename))
         except Exception as exc:
-            logger.error(
-                f"批量删除文档失败 (kb_id={kb_id}, doc_id={doc_id}, error_type={type(exc).__name__})"
-            )
+            logger.error(f"批量删除文档失败 (kb_id={kb_id}, doc_id={doc_id}, error_type={type(exc).__name__})")
             failed_items.append({"doc_id": doc_id, "error": "删除失败"})
 
     # 同步清理导图快照，移除已删除文件对应的叶子节点
@@ -1692,9 +1673,7 @@ async def download_document(kb_id: str, doc_id: str, current_user: User = Depend
             )
 
         except Exception as exc:
-            logger.error(
-                f"下载 MinIO 文件失败 (kb_id={kb_id}, doc_id={doc_id}, error_type={type(exc).__name__})"
-            )
+            logger.error(f"下载 MinIO 文件失败 (kb_id={kb_id}, doc_id={doc_id}, error_type={type(exc).__name__})")
             raise StorageError("下载文件失败") from exc
 
         # 创建流式生成器
@@ -1909,9 +1888,7 @@ async def move_document(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as exc:
-        logger.error(
-            f"移动文件失败 (kb_id={kb_id}, doc_id={doc_id}, error_type={type(exc).__name__})"
-        )
+        logger.error(f"移动文件失败 (kb_id={kb_id}, doc_id={doc_id}, error_type={type(exc).__name__})")
         raise HTTPException(status_code=500, detail="移动文件失败") from exc
 
 

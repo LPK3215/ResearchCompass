@@ -4,15 +4,9 @@ Integration tests for the task management router.
 
 from __future__ import annotations
 
-import asyncio
-import os
-import uuid
-
 import pytest
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
-
-_LITE_MODE = os.getenv("LITE_MODE", "").lower() in {"true", "1"}
 
 
 async def test_task_routes_require_admin(test_client, standard_user):
@@ -50,73 +44,25 @@ async def test_cancel_unknown_task_returns_client_error(test_client, admin_heade
 async def test_enqueue_document_creates_task(
     test_client,
     admin_headers,
+    knowledge_document,
 ):
     """Trigger knowledge ingestion to ensure a task record is materialised."""
-    if _LITE_MODE:
-        enqueue_response = await test_client.post(
-            "/api/knowledge/databases/lite-mode-disabled/documents",
-            json={"items": [], "params": {"content_type": "file"}},
-            headers=admin_headers,
-        )
-        assert enqueue_response.status_code == 404
-        return
+    task_id = knowledge_document["task_id"]
+    detail_response = await test_client.get(f"/api/tasks/{task_id}", headers=admin_headers)
+    assert detail_response.status_code == 200, detail_response.text
+    assert detail_response.json()["task"]["status"] == "success"
 
-    create_response = await test_client.post(
-        "/api/knowledge/databases",
-        json={
-            "database_name": f"pytest_task_router_{uuid.uuid4().hex[:8]}",
-            "description": "Task router integration test",
-            "embedding_model_spec": "siliconflow-cn:BAAI/bge-m3",
-            "kb_type": "milvus",
-            "additional_params": {},
-        },
+    list_response = await test_client.get("/api/tasks", headers=admin_headers)
+    assert list_response.status_code == 200, list_response.text
+    assert any(entry.get("id") == task_id for entry in list_response.json().get("tasks", []))
+
+
+async def test_enqueue_document_rejects_empty_items(test_client, admin_headers, knowledge_database):
+    response = await test_client.post(
+        f"/api/knowledge/databases/{knowledge_database['kb_id']}/documents",
+        json={"items": [], "params": {"content_type": "file"}},
         headers=admin_headers,
     )
-    assert create_response.status_code == 200, create_response.text
-    kb_id = create_response.json()["kb_id"]
 
-    try:
-        enqueue_response = await test_client.post(
-            f"/api/knowledge/databases/{kb_id}/documents",
-            json={
-                "items": [],
-                "params": {"content_type": "file"},
-            },
-            headers=admin_headers,
-        )
-        assert enqueue_response.status_code == 200, enqueue_response.text
-
-        enqueue_payload = enqueue_response.json()
-        assert enqueue_payload.get("status") == "queued"
-        task_id = enqueue_payload.get("task_id")
-        assert task_id, "Knowledge ingestion did not return a task_id"
-
-        # The task should be queryable immediately after enqueueing.
-        detail_response = await test_client.get(f"/api/tasks/{task_id}", headers=admin_headers)
-        assert detail_response.status_code == 200, detail_response.text
-        detail_payload = detail_response.json().get("task", {})
-        assert detail_payload.get("id") == task_id
-        assert detail_payload.get("status") in {"queued", "pending", "running", "failed", "success", "cancelled"}
-
-        # Ensure the task surfaces in the list endpoint within a short window.
-        for _ in range(10):
-            list_response = await test_client.get("/api/tasks", headers=admin_headers)
-            assert list_response.status_code == 200, list_response.text
-            all_tasks = list_response.json().get("tasks", [])
-            if any(entry.get("id") == task_id for entry in all_tasks):
-                break
-            await asyncio.sleep(0.2)
-        else:
-            pytest.fail("Task did not appear in list endpoint within timeout window")
-
-        # Poll for terminal state to validate worker bookkeeping.
-        for _ in range(20):
-            detail_response = await test_client.get(f"/api/tasks/{task_id}", headers=admin_headers)
-            task_status = detail_response.json().get("task", {}).get("status")
-            if task_status in {"success", "failed", "cancelled"}:
-                break
-            await asyncio.sleep(0.5)
-        else:
-            pytest.fail("Task did not reach a terminal status within timeout window")
-    finally:
-        await test_client.delete(f"/api/knowledge/databases/{kb_id}", headers=admin_headers)
+    assert response.status_code == 400, response.text
+    assert response.json()["detail"] == "items must not be empty"

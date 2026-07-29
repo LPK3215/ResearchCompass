@@ -321,9 +321,7 @@ class AcademicPaperAnalysisEvaluationService:
             final_status = (
                 "completed_with_failures" if any(item.status == "failed" for item in final_items) else "completed"
             )
-            await self.repo.update_evaluation(
-                evaluation_id, {"status": final_status, "completed_at": utc_now_naive()}
-            )
+            await self.repo.update_evaluation(evaluation_id, {"status": final_status, "completed_at": utc_now_naive()})
             completed_pairs = len([item for item in final_items if item.status == "completed"])
             result = {"evaluation_id": evaluation_id, "completed_pairs": completed_pairs}
             await context.set_result(result)
@@ -343,9 +341,7 @@ class AcademicPaperAnalysisEvaluationService:
             elif isinstance(exc, AcademicPaperAnalysisError):
                 failure = AcademicPaperAnalysisEvaluationError(exc.error_type, exc.message)
             else:
-                failure = AcademicPaperAnalysisEvaluationError(
-                    "analysis_evaluation_failed", "分析对比任务执行失败"
-                )
+                failure = AcademicPaperAnalysisEvaluationError("analysis_evaluation_failed", "分析对比任务执行失败")
             await self.repo.update_evaluation(
                 evaluation_id,
                 {"status": "failed", "error_message": failure.message, "completed_at": utc_now_naive()},
@@ -373,14 +369,9 @@ class AcademicPaperAnalysisEvaluationService:
 
     async def list_evaluations(self, *, kb_id: str, current_user: User) -> list[dict[str, Any]]:
         await _ensure_access(current_user, kb_id)
-        return [
-            self._serialize_evaluation(item, include_model=False)
-            for item in await self.repo.list_by_kb_id(kb_id)
-        ]
+        return [self._serialize_evaluation(item, include_model=False) for item in await self.repo.list_by_kb_id(kb_id)]
 
-    async def list_blind_items(
-        self, *, kb_id: str, evaluation_id: str, current_user: User
-    ) -> list[dict[str, Any]]:
+    async def list_blind_items(self, *, kb_id: str, evaluation_id: str, current_user: User) -> list[dict[str, Any]]:
         await self._get_evaluation(kb_id=kb_id, evaluation_id=evaluation_id, current_user=current_user)
         scores = await self.repo.list_scores(evaluation_id)
         scored_item_ids = {score.item_id for score in scores if score.scorer_uid == str(current_user.uid)}
@@ -453,9 +444,7 @@ class AcademicPaperAnalysisEvaluationService:
         blind_scores: dict[str, Any],
         notes: str,
     ) -> dict[str, Any]:
-        await self.get_blind_item(
-            kb_id=kb_id, evaluation_id=evaluation_id, item_id=item_id, current_user=current_user
-        )
+        await self.get_blind_item(kb_id=kb_id, evaluation_id=evaluation_id, item_id=item_id, current_user=current_user)
         self._validate_blind_scores(blind_scores)
         score = await self.repo.upsert_score(
             evaluation_id=evaluation_id,
@@ -477,9 +466,7 @@ class AcademicPaperAnalysisEvaluationService:
             if not isinstance(values, dict) or set(values) != set(RUBRIC_DIMENSIONS):
                 raise AcademicPaperAnalysisEvaluationError("invalid_score", f"报告 {label} 必须完成全部量表项")
             is_invalid = any(
-                not isinstance(values[key], int)
-                or isinstance(values[key], bool)
-                or not 1 <= values[key] <= 5
+                not isinstance(values[key], int) or isinstance(values[key], bool) or not 1 <= values[key] <= 5
                 for key in RUBRIC_DIMENSIONS
             )
             if is_invalid:

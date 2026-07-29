@@ -111,6 +111,7 @@ class InitializeAdmin(BaseModel):
 
 class RegisterRequest(BaseModel):
     """自助注册请求。商业版本必备：允许用户不通过管理员自助开户。"""
+
     username: str
     password: str = Field(min_length=8)
     phone_number: str | None = None

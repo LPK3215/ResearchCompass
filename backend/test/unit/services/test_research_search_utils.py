@@ -2,6 +2,7 @@
 
 不依赖外部服务，只验证查询改写解析和检索结果聚合逻辑。
 """
+
 from __future__ import annotations
 
 import pytest
@@ -16,6 +17,7 @@ from yuxi.services.research_search_service import (
 # ---------------------------------------------------------------------------
 # _parse_rewrite
 # ---------------------------------------------------------------------------
+
 
 class TestParseRewrite:
     def test_valid_json_returns_rewritten_query_and_keywords(self):
@@ -37,6 +39,7 @@ class TestParseRewrite:
 
     def test_keywords_truncated_to_20(self):
         import json
+
         keywords = [f"k{i}" for i in range(30)]
         content = json.dumps({"rewritten_query": "q", "keywords": keywords})
         result = _parse_rewrite(content)
@@ -86,6 +89,7 @@ class TestParseRewrite:
 # ---------------------------------------------------------------------------
 # _aggregate_results
 # ---------------------------------------------------------------------------
+
 
 def _make_chunk(
     *,
@@ -153,18 +157,12 @@ class TestAggregateResults:
         assert results[0]["paper_id"] == "p2"  # higher score first
 
     def test_top_k_limits_results(self):
-        chunks = [
-            _make_chunk(paper_id=f"p{i}", chunk_id=f"c{i}", rerank_score=1.0 - i * 0.1)
-            for i in range(5)
-        ]
+        chunks = [_make_chunk(paper_id=f"p{i}", chunk_id=f"c{i}", rerank_score=1.0 - i * 0.1) for i in range(5)]
         results = _aggregate_results("kb1", chunks, top_k=3)
         assert len(results) == 3
 
     def test_evidence_limited_to_10_per_paper(self):
-        chunks = [
-            _make_chunk(chunk_id=f"c{i}", vector_score=0.5 + i * 0.01)
-            for i in range(15)
-        ]
+        chunks = [_make_chunk(chunk_id=f"c{i}", vector_score=0.5 + i * 0.01) for i in range(15)]
         results = _aggregate_results("kb1", chunks, top_k=10)
         assert len(results[0]["evidence"]) == 10
 

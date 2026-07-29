@@ -148,9 +148,7 @@ class ResearchProjectPlanRepository:
             await session.flush()
             return record
 
-    async def delete_milestone(
-        self, project_id: str, milestone_id: str
-    ) -> tuple[ResearchProjectMilestone | None, int]:
+    async def delete_milestone(self, project_id: str, milestone_id: str) -> tuple[ResearchProjectMilestone | None, int]:
         async with pg_manager.get_async_session_context() as session:
             record = await session.scalar(
                 select(ResearchProjectMilestone)
@@ -164,7 +162,9 @@ class ResearchProjectPlanRepository:
                 return None, 0
             task_count = int(
                 await session.scalar(
-                    select(func.count()).select_from(ResearchProjectTask).where(
+                    select(func.count())
+                    .select_from(ResearchProjectTask)
+                    .where(
                         ResearchProjectTask.project_id == project_id,
                         ResearchProjectTask.milestone_id == milestone_id,
                     )
@@ -365,9 +365,7 @@ class ResearchProjectPlanRepository:
         if milestone_id is not None:
             filters.append(ResearchProjectTask.milestone_id == milestone_id)
         async with pg_manager.get_async_session_context() as session:
-            return int(
-                await session.scalar(select(func.count()).select_from(ResearchProjectTask).where(*filters)) or 0
-            )
+            return int(await session.scalar(select(func.count()).select_from(ResearchProjectTask).where(*filters)) or 0)
 
     async def asset_link_exists(
         self,

@@ -60,7 +60,7 @@ class _JsonResponse:
 
 
 class _GetAsyncClient:
-    def __init__(self, responses: list[_JsonResponse]):
+    def __init__(self, responses: list[_JsonResponse | Exception]):
         self.responses = list(responses)
         self.get_calls = 0
         self.closed = False
@@ -77,6 +77,8 @@ class _GetAsyncClient:
         assert params == {"fields": "paperId"}
         response = self.responses[self.get_calls]
         self.get_calls += 1
+        if isinstance(response, Exception):
+            raise response
         return response
 
 
@@ -117,9 +119,7 @@ async def test_pdf_download_ignores_environment_proxy_settings(monkeypatch):
     monkeypatch.setattr(semantic_scholar_service, "_is_private_or_unresolvable_host", public_dns)
     monkeypatch.setattr(semantic_scholar_service.httpx, "AsyncClient", async_client)
 
-    content, final_url = await SemanticScholarClient().download_open_access_pdf(
-        "https://papers.example/paper.pdf"
-    )
+    content, final_url = await SemanticScholarClient().download_open_access_pdf("https://papers.example/paper.pdf")
 
     assert content == b"%PDF-test"
     assert final_url == "https://papers.example/paper.pdf"
@@ -136,6 +136,7 @@ async def test_semantic_scholar_get_reuses_client_and_caps_retry_after(monkeypat
         ]
     )
     sleeps: list[float] = []
+    now = [100.0]
 
     def async_client(**kwargs):
         captured.kwargs = kwargs
@@ -143,9 +144,11 @@ async def test_semantic_scholar_get_reuses_client_and_caps_retry_after(monkeypat
 
     async def fake_sleep(seconds: float):
         sleeps.append(seconds)
+        now[0] += seconds
 
     monkeypatch.setattr(semantic_scholar_service.httpx, "AsyncClient", async_client)
     monkeypatch.setattr(semantic_scholar_service.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(semantic_scholar_service.time, "monotonic", lambda: now[0])
 
     result = await SemanticScholarClient()._get("/paper/test", {"fields": "paperId"})
 
@@ -157,6 +160,57 @@ async def test_semantic_scholar_get_reuses_client_and_caps_retry_after(monkeypat
 
 
 @pytest.mark.asyncio
+async def test_semantic_scholar_get_retries_server_error(monkeypatch):
+    client = _GetAsyncClient([_JsonResponse(503), _JsonResponse(200)])
+    sleeps: list[float] = []
+    now = [100.0]
+
+    monkeypatch.setattr(semantic_scholar_service.httpx, "AsyncClient", lambda **_kwargs: client)
+
+    async def fake_sleep(seconds: float):
+        sleeps.append(seconds)
+        now[0] += seconds
+
+    monkeypatch.setattr(semantic_scholar_service.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(semantic_scholar_service.time, "monotonic", lambda: now[0])
+
+    result = await SemanticScholarClient()._get("/paper/test", {"fields": "paperId"})
+
+    assert result == {"paperId": "paper-1"}
+    assert client.get_calls == 2
+    assert 10 in sleeps
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "transient_error",
+    [
+        pytest.param(semantic_scholar_service.httpx.ReadTimeout("timed out"), id="timeout"),
+        pytest.param(semantic_scholar_service.httpx.ConnectError("connection failed"), id="network"),
+    ],
+)
+async def test_semantic_scholar_get_retries_transient_transport_error(monkeypatch, transient_error):
+    client = _GetAsyncClient([transient_error, _JsonResponse(200)])
+    sleeps: list[float] = []
+    now = [100.0]
+
+    monkeypatch.setattr(semantic_scholar_service.httpx, "AsyncClient", lambda **_kwargs: client)
+
+    async def fake_sleep(seconds: float):
+        sleeps.append(seconds)
+        now[0] += seconds
+
+    monkeypatch.setattr(semantic_scholar_service.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(semantic_scholar_service.time, "monotonic", lambda: now[0])
+
+    result = await SemanticScholarClient()._get("/paper/test", {"fields": "paperId"})
+
+    assert result == {"paperId": "paper-1"}
+    assert client.get_calls == 2
+    assert 10 in sleeps
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("retry_after", ["invalid", "nan", "-1"])
 async def test_semantic_scholar_get_uses_bounded_fallback_for_invalid_retry_after(
     monkeypatch,
@@ -164,13 +218,16 @@ async def test_semantic_scholar_get_uses_bounded_fallback_for_invalid_retry_afte
 ):
     client = _GetAsyncClient([_JsonResponse(429, retry_after=retry_after), _JsonResponse(200)])
     sleeps: list[float] = []
+    now = [100.0]
 
     monkeypatch.setattr(semantic_scholar_service.httpx, "AsyncClient", lambda **_kwargs: client)
 
     async def fake_sleep(seconds: float):
         sleeps.append(seconds)
+        now[0] += seconds
 
     monkeypatch.setattr(semantic_scholar_service.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(semantic_scholar_service.time, "monotonic", lambda: now[0])
 
     await SemanticScholarClient()._get("/paper/test", {"fields": "paperId"})
 

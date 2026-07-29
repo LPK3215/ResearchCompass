@@ -11,6 +11,9 @@ from langchain_openai import ChatOpenAI
 from yuxi.agents.toolkits.buildin.tools import ocr_parse_file
 
 _TOOL_IMAGE_USER_TEXT = "Images returned by read_file are attached below. Inspect them when answering."
+_EMPTY_IMAGE_RESPONSE_RETRY_TEXT = (
+    "Answer the user's image question now. Return a non-empty textual answer and do not call another tool."
+)
 _IMAGE_ERROR_TERMS = ("image", "vision", "multimodal", "multi-modal")
 _REJECTION_TERMS = (
     "does not support",
@@ -20,6 +23,7 @@ _REJECTION_TERMS = (
     "not supported",
     "text-only prompts",
     "unsupported",
+    "unknown variant",
 )
 
 
@@ -36,7 +40,13 @@ class ImageInputCompatibilityMiddleware(AgentMiddleware[Any, Any, Any]):
         image_paths = _read_file_image_paths(request.messages)
         request = _bridge_openai_tool_images(request)
         try:
-            return handler(request)
+            response = handler(request)
+            if image_paths and _is_empty_model_response(response):
+                request = request.override(
+                    messages=[*request.messages, HumanMessage(content=_EMPTY_IMAGE_RESPONSE_RETRY_TEXT)]
+                )
+                return handler(request)
+            return response
         except Exception as exc:  # noqa: BLE001
             if _has_image(request.messages) and _is_image_input_rejection(exc):
                 return _ocr_fallback_response(image_paths)
@@ -50,7 +60,13 @@ class ImageInputCompatibilityMiddleware(AgentMiddleware[Any, Any, Any]):
         image_paths = _read_file_image_paths(request.messages)
         request = _bridge_openai_tool_images(request)
         try:
-            return await handler(request)
+            response = await handler(request)
+            if image_paths and _is_empty_model_response(response):
+                request = request.override(
+                    messages=[*request.messages, HumanMessage(content=_EMPTY_IMAGE_RESPONSE_RETRY_TEXT)]
+                )
+                return await handler(request)
+            return response
         except Exception as exc:  # noqa: BLE001
             if _has_image(request.messages) and _is_image_input_rejection(exc):
                 return _ocr_fallback_response(image_paths)
@@ -157,6 +173,21 @@ def _ocr_fallback_response(image_paths: list[str]) -> ModelResponse:
             )
         ]
     )
+
+
+def _is_empty_model_response(response: ModelResponse) -> bool:
+    for message in response.result:
+        if not isinstance(message, AIMessage):
+            continue
+        if message.tool_calls:
+            return False
+        if isinstance(message.content, str) and message.content.strip():
+            return False
+        if any(
+            block.get("type") == "text" and str(block.get("text") or "").strip() for block in message.content_blocks
+        ):
+            return False
+    return True
 
 
 def _has_image(messages: list[Any]) -> bool:

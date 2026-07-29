@@ -2,6 +2,7 @@
 
 不依赖外部 LLM 或数据库，只验证 JSON 解析和阶段校验逻辑。
 """
+
 from __future__ import annotations
 
 import pytest
@@ -18,6 +19,7 @@ from yuxi.services.academic_paper_analysis_service import (
 # ---------------------------------------------------------------------------
 # _parse_json
 # ---------------------------------------------------------------------------
+
 
 class TestParseJson:
     def test_plain_json_object_returns_dict(self):
@@ -62,6 +64,7 @@ class TestParseJson:
 # ---------------------------------------------------------------------------
 # _validate_stage - structure
 # ---------------------------------------------------------------------------
+
 
 class TestValidateStageStructure:
     REQUIRED_FIELDS = {"title", "authors", "problem", "method", "datasets", "results", "limitations"}
@@ -108,13 +111,16 @@ class TestValidateStageStructure:
 # _validate_stage - innovations
 # ---------------------------------------------------------------------------
 
+
 class TestValidateStageInnovations:
     def test_valid_innovations_with_3_items_passes(self):
-        payload = {"items": [
-            {"claim": "c1", "evidence": "e1", "confidence": "high"},
-            {"claim": "c2", "evidence": "e2", "confidence": "medium"},
-            {"claim": "c3", "evidence": "e3", "confidence": "low"},
-        ]}
+        payload = {
+            "items": [
+                {"claim": "c1", "evidence": "e1", "confidence": "high"},
+                {"claim": "c2", "evidence": "e2", "confidence": "medium"},
+                {"claim": "c3", "evidence": "e3", "confidence": "low"},
+            ]
+        }
         result = _validate_stage("innovations", payload)
         assert result is payload
 
@@ -149,6 +155,7 @@ class TestValidateStageInnovations:
 # _validate_stage - methodology
 # ---------------------------------------------------------------------------
 
+
 class TestValidateStageMethodology:
     def test_valid_methodology_passes(self):
         payload = {
@@ -174,6 +181,7 @@ class TestValidateStageMethodology:
 # ---------------------------------------------------------------------------
 # _validate_stage - gaps
 # ---------------------------------------------------------------------------
+
 
 class TestValidateStageGaps:
     def test_valid_gaps_passes(self):
@@ -205,6 +213,7 @@ class TestValidateStageGaps:
 # ---------------------------------------------------------------------------
 # STAGE_INSTRUCTIONS
 # ---------------------------------------------------------------------------
+
 
 class TestStageInstructions:
     def test_all_four_stages_present(self):

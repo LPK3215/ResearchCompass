@@ -30,6 +30,7 @@ from yuxi.services.research_project_service import (
 )
 from yuxi.storage.postgres.models_business import User
 from yuxi.storage.postgres.models_knowledge import (
+    ResearchProject,
     ResearchProjectAsset,
     ResearchProjectMilestone,
     ResearchProjectPlanAssetLink,
@@ -104,12 +105,19 @@ def serialize_asset_link(
     }
 
 
-async def get_research_project_plan(*, project_id: str, current_user: User) -> dict[str, Any]:
-    project = await get_owned_project(project_id, current_user)
+async def get_research_project_plan(
+    *,
+    project_id: str,
+    current_user: User,
+    project: ResearchProject | None = None,
+    available_asset_ids: set[str] | None = None,
+) -> dict[str, Any]:
+    project = project or await get_owned_project(project_id, current_user)
     repository = ResearchProjectPlanRepository()
     milestones, tasks, link_records = await repository.get_plan_records(project_id)
     assets = list({asset.asset_id: asset for _, asset in link_records}.values())
-    available_asset_ids = await get_available_project_asset_ids(project, current_user, assets)
+    if available_asset_ids is None:
+        available_asset_ids = await get_available_project_asset_ids(project, current_user, assets)
     links = [
         serialize_asset_link(link, asset, available=asset.asset_id in available_asset_ids)
         for link, asset in link_records
@@ -207,9 +215,7 @@ async def delete_project_milestone(*, project_id: str, milestone_id: str, curren
         raise ResearchProjectError("milestone_has_tasks", "里程碑包含任务，请先移动或删除这些任务")
 
 
-async def reorder_project_milestones(
-    *, project_id: str, current_user: User, milestone_ids: list[str]
-) -> None:
+async def reorder_project_milestones(*, project_id: str, current_user: User, milestone_ids: list[str]) -> None:
     project = await get_owned_project(project_id, current_user)
     ensure_project_writable(project)
     if not await ResearchProjectPlanRepository().reorder_milestones(project_id, milestone_ids):

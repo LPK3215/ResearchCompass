@@ -490,6 +490,7 @@ async def test_cancelled_run_cannot_be_overwritten_by_a_late_stage_write(monkeyp
     monkeypatch.setattr(research_synthesis_service, "ResearchSynthesisRepository", FakeRepository)
     monkeypatch.setattr(research_synthesis_service, "search_papers", lambda **kwargs: asyncio.sleep(0, result={}))
     monkeypatch.setattr(research_synthesis_service, "_build_snapshot", lambda result: {"papers": [{}, {}]})
+
     async def unexpected_model_call(*args):
         raise AssertionError("Cancelled synthesis must stop before invoking the model")
 
@@ -696,9 +697,7 @@ async def test_synthesis_stops_before_model_when_owner_access_is_revoked_after_r
         nonlocal access_checks
         access_checks += 1
         if access_checks > 1:
-            raise research_synthesis_service.ResearchSynthesisError(
-                "forbidden", "综述任务所有者已失去知识库访问权限"
-            )
+            raise research_synthesis_service.ResearchSynthesisError("forbidden", "综述任务所有者已失去知识库访问权限")
         return current_user
 
     async def unexpected_model_call(*args):

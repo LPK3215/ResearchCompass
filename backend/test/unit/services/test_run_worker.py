@@ -722,6 +722,12 @@ async def test_worker_startup_ensures_builtin_mcp_servers(monkeypatch: pytest.Mo
     async def fake_ensure_business_schema():
         calls.append("ensure_business_schema")
 
+    @asynccontextmanager
+    async def fake_schema_initialization_lock():
+        calls.append("schema_lock_acquired")
+        yield
+        calls.append("schema_lock_released")
+
     async def fake_ensure_builtin_mcp_servers_in_db():
         calls.append("ensure_builtin_mcp_servers_in_db")
 
@@ -743,6 +749,7 @@ async def test_worker_startup_ensures_builtin_mcp_servers(monkeypatch: pytest.Mo
     monkeypatch.setattr(run_worker.pg_manager, "open_langgraph_pool", fake_open_langgraph_pool)
     monkeypatch.setattr(run_worker.pg_manager, "create_business_tables", fake_create_business_tables)
     monkeypatch.setattr(run_worker.pg_manager, "ensure_business_schema", fake_ensure_business_schema)
+    monkeypatch.setattr(run_worker.pg_manager, "schema_initialization_lock", fake_schema_initialization_lock)
     monkeypatch.setattr(run_worker.pg_manager, "get_async_session_context", fake_session_ctx)
     monkeypatch.setattr(run_worker, "ensure_builtin_mcp_servers_in_db", fake_ensure_builtin_mcp_servers_in_db)
     monkeypatch.setattr(run_worker, "init_builtin_skills", fake_init_builtin_skills)
@@ -754,8 +761,10 @@ async def test_worker_startup_ensures_builtin_mcp_servers(monkeypatch: pytest.Mo
     assert calls == [
         "initialize",
         "open_langgraph_pool",
+        "schema_lock_acquired",
         "create_business_tables",
         "ensure_business_schema",
+        "schema_lock_released",
         "ensure_builtin_mcp_servers_in_db",
         "init_builtin_skills",
         "start_runtime_sync",

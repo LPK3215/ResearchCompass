@@ -275,9 +275,7 @@ def test_remote_skill_prepare_sanitizes_item_failures(monkeypatch):
     )
 
     assert resp.status_code == 200, resp.text
-    assert resp.json()["data"]["items"] == [
-        {"slug": "demo", "success": False, "error": "远程 Skill 解析失败"}
-    ]
+    assert resp.json()["data"]["items"] == [{"slug": "demo", "success": False, "error": "远程 Skill 解析失败"}]
     assert SECRET not in resp.text
 
 

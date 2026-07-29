@@ -219,7 +219,13 @@ class AcademicGraphRepository:
         return len(topics)
 
     async def upsert_citation(self, data: dict[str, Any]) -> None:
-        values = {**data, "last_synced_at": _utc_now()}
+        await self.upsert_citations([data])
+
+    async def upsert_citations(self, records: list[dict[str, Any]]) -> None:
+        if not records:
+            return
+        synced_at = _utc_now()
+        values = [{**record, "last_synced_at": synced_at} for record in records]
         async with pg_manager.get_async_session_context() as session:
             stmt = insert(AcademicCitation).values(values)
             await session.execute(
@@ -265,10 +271,7 @@ class AcademicGraphRepository:
             filters.append(AcademicMetadataConflict.resolution_status == resolution_status)
         async with pg_manager.get_async_session_context() as session:
             total = int(
-                await session.scalar(
-                    select(func.count()).select_from(AcademicMetadataConflict).where(*filters)
-                )
-                or 0
+                await session.scalar(select(func.count()).select_from(AcademicMetadataConflict).where(*filters)) or 0
             )
             result = await session.execute(
                 select(AcademicMetadataConflict)
@@ -293,13 +296,10 @@ class AcademicGraphRepository:
                 )
             )
             return {
-                str(graph_paper_id): float(paper_scores[str(paper_id)])
-                for graph_paper_id, paper_id in result.all()
+                str(graph_paper_id): float(paper_scores[str(paper_id)]) for graph_paper_id, paper_id in result.all()
             }
 
-    async def list_library_paper_ids(
-        self, *, kb_id: str, graph_paper_ids: list[str]
-    ) -> dict[str, str]:
+    async def list_library_paper_ids(self, *, kb_id: str, graph_paper_ids: list[str]) -> dict[str, str]:
         if not graph_paper_ids:
             return {}
         async with pg_manager.get_async_session_context() as session:
@@ -328,7 +328,10 @@ class AcademicGraphRepository:
             citations = list(
                 (
                     await session.execute(
-                        select(AcademicCitation).where(*citation_filter).order_by(AcademicCitation.id.desc()).limit(limit)
+                        select(AcademicCitation)
+                        .where(*citation_filter)
+                        .order_by(AcademicCitation.id.desc())
+                        .limit(limit)
                     )
                 )
                 .scalars()
@@ -337,18 +340,22 @@ class AcademicGraphRepository:
             paper_ids = {paper_id for edge in citations for paper_id in (edge.citing_paper_id, edge.cited_paper_id)}
             if center_paper_id:
                 paper_ids.add(center_paper_id)
-            papers = list(
-                (
-                    await session.execute(
-                        select(AcademicGraphPaper).where(
-                            AcademicGraphPaper.kb_id == kb_id,
-                            AcademicGraphPaper.graph_paper_id.in_(paper_ids),
+            papers = (
+                list(
+                    (
+                        await session.execute(
+                            select(AcademicGraphPaper).where(
+                                AcademicGraphPaper.kb_id == kb_id,
+                                AcademicGraphPaper.graph_paper_id.in_(paper_ids),
+                            )
                         )
                     )
+                    .scalars()
+                    .all()
                 )
-                .scalars()
-                .all()
-            ) if paper_ids else []
+                if paper_ids
+                else []
+            )
             return {"papers": papers, "citations": citations}
 
     async def find_two_hop_relations(
@@ -428,9 +435,7 @@ class AcademicGraphRepository:
                     if first_edge.citing_paper_id == source_graph_paper_id
                     else first_edge.citing_paper_id
                 )
-                first_direction = (
-                    "outgoing" if first_edge.citing_paper_id == source_graph_paper_id else "incoming"
-                )
+                first_direction = "outgoing" if first_edge.citing_paper_id == source_graph_paper_id else "incoming"
                 for second_edge in edges_by_node.get(middle_id, []):
                     target_id = (
                         second_edge.cited_paper_id
@@ -473,6 +478,7 @@ class AcademicGraphRepository:
 
     async def counts(self, kb_id: str) -> dict[str, int]:
         async with pg_manager.get_async_session_context() as session:
+
             async def count(model) -> int:
                 return int(
                     await session.scalar(select(func.count()).select_from(model).where(model.kb_id == kb_id)) or 0
@@ -571,9 +577,7 @@ class AcademicGraphRepository:
             )
             return result.scalar_one_or_none()
 
-    async def list_neighbor_citations(
-        self, *, kb_id: str, graph_paper_id: str, limit: int = 40
-    ) -> dict[str, Any]:
+    async def list_neighbor_citations(self, *, kb_id: str, graph_paper_id: str, limit: int = 40) -> dict[str, Any]:
         """返回单篇论文的一跳 CITES 邻居及论文元数据，作为论文分析的上下文输入。"""
         limit = min(max(int(limit), 1), 100)
         async with pg_manager.get_async_session_context() as session:

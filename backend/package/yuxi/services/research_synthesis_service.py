@@ -317,9 +317,7 @@ def _validate_report(
             raise ResearchSynthesisError("synthesis_invalid_schema", "claims.confidence 必须是 high、medium 或 low")
         if confidence == "high" and len(paper_ids) < 2:
             confidence = "medium"
-            adjustments.append(
-                {"claim_id": claim_id, "reason": "高置信结论只有一篇论文支持，已按验证规则降为 medium"}
-            )
+            adjustments.append({"claim_id": claim_id, "reason": "高置信结论只有一篇论文支持，已按验证规则降为 medium"})
         claims.append(
             {
                 "claim_id": claim_id,
@@ -833,9 +831,7 @@ async def cancel_research_synthesis(*, run_id: str, current_user: User) -> dict[
     return ResearchSynthesisRepository.serialize(cancelled)
 
 
-async def list_research_syntheses(
-    *, kb_id: str, current_user: User, offset: int, limit: int
-) -> dict[str, Any]:
+async def list_research_syntheses(*, kb_id: str, current_user: User, offset: int, limit: int) -> dict[str, Any]:
     await _ensure_access(current_user, kb_id)
     items, total = await ResearchSynthesisRepository().list_for_user(
         kb_id=kb_id,
@@ -1018,9 +1014,7 @@ def _render_docx(result: dict[str, Any]) -> bytes:
     return output.getvalue()
 
 
-async def export_research_synthesis(
-    *, run_id: str, current_user: User, export_format: str
-) -> tuple[str, bytes, str]:
+async def export_research_synthesis(*, run_id: str, current_user: User, export_format: str) -> tuple[str, bytes, str]:
     record = await _authorized_run(run_id, current_user)
     result = record.result if isinstance(record.result, dict) else None
     if record.status != "success" or not result or (result.get("validation") or {}).get("status") != "verified":

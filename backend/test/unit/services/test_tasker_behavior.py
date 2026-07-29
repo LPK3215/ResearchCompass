@@ -50,9 +50,7 @@ class FakeRepo:
         return [FakeRecord(data) for data in [*active, *terminal[:terminal_limit]]]
 
     async def list(self, status: str | None = None, limit: int = 100) -> list[FakeRecord]:
-        records = [
-            data for data in self.records.values() if status is None or data.get("status") == status
-        ]
+        records = [data for data in self.records.values() if status is None or data.get("status") == status]
         records.sort(key=lambda data: str(data.get("created_at") or ""), reverse=True)
         return [FakeRecord(data) for data in records[:limit]]
 

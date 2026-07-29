@@ -20,9 +20,10 @@ DEFAULT_SHARE_CONFIG = {"access_level": "global", "department_ids": [], "user_ui
 
 GENERAL_PURPOSE_AGENT_SLUG = "general-purpose"
 GENERAL_PURPOSE_AGENT_NAME = "通用任务"
-GENERAL_PURPOSE_AGENT_DESCRIPTION = (
+LEGACY_GENERAL_PURPOSE_AGENT_DESCRIPTION = (
     "面向没有专用角色约束的一般任务，使用默认运行配置独立完成分析、整理、写作或文件处理。"
 )
+GENERAL_PURPOSE_AGENT_DESCRIPTION = "面向一般任务独立完成分析、整理和写作；文件处理仅在完全信任模式下可用。"
 
 WEB_SEARCH_AGENT_SLUG = "web-search"
 WEB_SEARCH_AGENT_NAME = "网页检索"
@@ -286,7 +287,7 @@ class AgentRepository:
         return agent
 
     async def ensure_general_purpose_subagent(self, *, created_by: str | None = None) -> Agent:
-        return await self._ensure_builtin_agent(
+        agent = await self._ensure_builtin_agent(
             slug=GENERAL_PURPOSE_AGENT_SLUG,
             backend_id=SUB_AGENT_BACKEND_ID,
             name=GENERAL_PURPOSE_AGENT_NAME,
@@ -295,6 +296,13 @@ class AgentRepository:
             is_subagent=True,
             created_by=created_by,
         )
+        if getattr(agent, "description", None) == LEGACY_GENERAL_PURPOSE_AGENT_DESCRIPTION:
+            agent.description = GENERAL_PURPOSE_AGENT_DESCRIPTION
+            agent.updated_by = created_by
+            agent.updated_at = utc_now_naive()
+            await self.db.commit()
+            await self.db.refresh(agent)
+        return agent
 
     async def _ensure_builtin_agent(
         self,

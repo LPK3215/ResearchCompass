@@ -77,7 +77,10 @@ def _build_cors_options(origins: list[str] | None = None) -> dict[str, object]:
 app = FastAPI(
     lifespan=lifespan,
     title="ResearchCompass API",
-    description="科研罗盘 - 基于 RAG 与知识图谱的科研智能体平台。融合论文管理、学术检索、证据综述、研究项目、引用图谱、论文分析等科研业务流程。",
+    description=(
+        "科研罗盘 - 基于 RAG 与知识图谱的科研智能体平台。"
+        "融合论文管理、学术检索、证据综述、研究项目、引用图谱、论文分析等科研业务流程。"
+    ),
     version="0.11.0",
     openapi_tags=[
         {"name": "authentication", "description": "用户认证与账户管理"},

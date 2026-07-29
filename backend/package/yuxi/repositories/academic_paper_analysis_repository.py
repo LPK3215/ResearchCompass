@@ -73,9 +73,7 @@ class AcademicPaperAnalysisRepository:
     async def list_recoverable(self) -> list[AcademicPaperAnalysisRun]:
         async with pg_manager.get_async_session_context() as session:
             result = await session.execute(
-                select(AcademicPaperAnalysisRun).where(
-                    AcademicPaperAnalysisRun.status.in_(["pending", "running"])
-                )
+                select(AcademicPaperAnalysisRun).where(AcademicPaperAnalysisRun.status.in_(["pending", "running"]))
             )
             return list(result.scalars().all())
 

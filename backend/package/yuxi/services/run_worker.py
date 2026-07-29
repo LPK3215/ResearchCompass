@@ -700,8 +700,9 @@ async def _worker_startup(ctx):
     del ctx
     pg_manager.initialize()
     await pg_manager.open_langgraph_pool()
-    await pg_manager.create_business_tables()
-    await pg_manager.ensure_business_schema()
+    async with pg_manager.schema_initialization_lock():
+        await pg_manager.create_business_tables()
+        await pg_manager.ensure_business_schema()
     await ensure_builtin_mcp_servers_in_db()
     async with pg_manager.get_async_session_context() as session:
         await init_builtin_skills(session)

@@ -1,9 +1,12 @@
 """PostgreSQL 数据库管理器 - 支持知识库和业务数据"""
 
+import asyncio
 import json
 import os
 from contextlib import asynccontextmanager
 
+from fastapi.exceptions import RequestValidationError
+from pydantic import ValidationError
 from psycopg_pool import AsyncConnectionPool
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
@@ -18,6 +21,7 @@ from yuxi.utils.singleton import SingletonMeta
 # 合并两个 Base
 CombinedBase = declarative_base()
 AGENT_RUN_TERMINAL_STATUS_SQL = ", ".join(f"'{status}'" for status in AGENT_RUN_TERMINAL_STATUSES)
+SCHEMA_INITIALIZATION_LOCK_ID = 0x52434F4D50415353
 
 
 def _redact_database_url(database_url: str) -> str:
@@ -30,12 +34,22 @@ def _redact_database_url(database_url: str) -> str:
 
 def _log_async_session_rollback(error: Exception) -> None:
     """记录异步事务回滚原因，避免把预期 4xx 业务控制流记为 ERROR。"""
-    status_code = getattr(error, "status_code", None)
-    if isinstance(status_code, int) and 400 <= status_code < 500:
-        logger.debug(f"PostgreSQL async operation rolled back for expected HTTP {status_code}: {error}")
+    if isinstance(error, (RequestValidationError, ValidationError)):
+        logger.debug(
+            "PostgreSQL async operation rolled back for request validation "
+            f"(error_type={type(error).__name__}, error_count={len(error.errors())})"
+        )
         return
 
-    logger.error(f"PostgreSQL async operation failed: {error}")
+    status_code = getattr(error, "status_code", None)
+    if isinstance(status_code, int) and 400 <= status_code < 500:
+        logger.debug(
+            f"PostgreSQL async operation rolled back for expected HTTP {status_code} "
+            f"(error_type={type(error).__name__})"
+        )
+        return
+
+    logger.error(f"PostgreSQL async operation failed (error_type={type(error).__name__})")
 
 
 # 继承所有表
@@ -124,6 +138,19 @@ class PostgresManager(metaclass=SingletonMeta):
             raise RuntimeError("LangGraph PostgreSQL pool is not initialized.")
         if self.langgraph_pool.closed:
             await self.langgraph_pool.open(wait=True)
+
+    @asynccontextmanager
+    async def schema_initialization_lock(self):
+        """串行化 API 与 worker 的运行时 schema 迁移。"""
+        self._check_initialized()
+        async with self.async_engine.connect() as connection:
+            await connection.execute(text(f"SELECT pg_advisory_lock({SCHEMA_INITIALIZATION_LOCK_ID})"))
+            try:
+                yield
+            finally:
+                await asyncio.shield(
+                    connection.execute(text(f"SELECT pg_advisory_unlock({SCHEMA_INITIALIZATION_LOCK_ID})"))
+                )
 
     async def create_tables(self):
         """创建所有表（知识库和业务表）"""
@@ -1048,12 +1075,15 @@ class PostgresManager(metaclass=SingletonMeta):
         try:
             yield session
             await session.commit()
+        except asyncio.CancelledError:
+            await asyncio.shield(session.rollback())
+            raise
         except Exception as e:
             await session.rollback()
             _log_async_session_rollback(e)
             raise
         finally:
-            await session.close()
+            await asyncio.shield(session.close())
 
     async def close(self):
         """关闭引擎"""

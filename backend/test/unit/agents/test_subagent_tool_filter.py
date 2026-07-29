@@ -28,9 +28,7 @@ def test_filter_disabled_tools_keeps_allowed_tools_order():
         SimpleNamespace(name="calculator"),
     ]
 
-    filtered = subagent_graph._filter_disabled_tools(
-        tools, subagent_graph._disabled_tools_for("default")
-    )
+    filtered = subagent_graph._filter_disabled_tools(tools, subagent_graph._disabled_tools_for("default"))
 
     assert [subagent_graph._tool_name(tool) for tool in filtered] == ["search", "calculator"]
 
@@ -43,17 +41,18 @@ def test_filter_disabled_tools_removes_sensitive_backend_tools_only_in_default_m
         SimpleNamespace(name="execute"),
     ]
 
-    default_mode_filtered = subagent_graph._filter_disabled_tools(
-        tools, subagent_graph._disabled_tools_for("default")
-    )
+    default_mode_filtered = subagent_graph._filter_disabled_tools(tools, subagent_graph._disabled_tools_for("default"))
     assert [subagent_graph._tool_name(tool) for tool in default_mode_filtered] == ["read_file"]
 
     always_trust_filtered = subagent_graph._filter_disabled_tools(
         tools, subagent_graph._disabled_tools_for("always_trust")
     )
-    assert [
-        subagent_graph._tool_name(tool) for tool in always_trust_filtered
-    ] == ["read_file", "write_file", "edit_file", "execute"]
+    assert [subagent_graph._tool_name(tool) for tool in always_trust_filtered] == [
+        "read_file",
+        "write_file",
+        "edit_file",
+        "execute",
+    ]
 
 
 def test_subagent_tool_filter_middleware_filters_before_handler():
@@ -65,10 +64,12 @@ def test_subagent_tool_filter_middleware_filters_before_handler():
         return "ok"
 
     result = middleware.wrap_model_call(
-        _Request([
-            SimpleNamespace(name="present_artifacts"),
-            SimpleNamespace(name="allowed_tool"),
-        ]),
+        _Request(
+            [
+                SimpleNamespace(name="present_artifacts"),
+                SimpleNamespace(name="allowed_tool"),
+            ]
+        ),
         handler,
     )
 
@@ -86,10 +87,12 @@ async def test_subagent_tool_filter_middleware_filters_async_before_handler():
         return "ok"
 
     result = await middleware.awrap_model_call(
-        _Request([
-            {"name": "ask_user_question"},
-            SimpleNamespace(name="allowed_tool"),
-        ]),
+        _Request(
+            [
+                {"name": "ask_user_question"},
+                SimpleNamespace(name="allowed_tool"),
+            ]
+        ),
         handler,
     )
 

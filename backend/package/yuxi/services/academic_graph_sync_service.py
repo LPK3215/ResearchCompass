@@ -128,9 +128,7 @@ def _topic_records(kb_id: str, paper: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
-def _citation_record(
-    *, kb_id: str, citing_paper_id: str, cited_paper_id: str, edge: dict[str, Any]
-) -> dict[str, Any]:
+def _citation_record(*, kb_id: str, citing_paper_id: str, cited_paper_id: str, edge: dict[str, Any]) -> dict[str, Any]:
     return {
         "citation_id": hashstr(f"{kb_id}:{citing_paper_id}:CITES:{cited_paper_id}", length=32),
         "kb_id": kb_id,
@@ -241,9 +239,7 @@ async def _run_sync(
     run = await repo.get_sync_run(run_id)
     if run is None:
         raise AcademicGraphSyncError("graph_sync_run_missing", "学术图谱同步运行不存在")
-    processed_paper_ids = {
-        str(item).strip() for item in (run.processed_paper_ids or []) if str(item).strip()
-    }
+    processed_paper_ids = {str(item).strip() for item in (run.processed_paper_ids or []) if str(item).strip()}
     await repo.update_sync_run(
         run_id,
         {
@@ -327,11 +323,7 @@ async def _run_sync(
                 paper_id=local_paper.paper_id,
                 external_ids={
                     **(local_paper.external_ids or {}),
-                    **(
-                        remote.get("externalIds")
-                        if isinstance(remote.get("externalIds"), dict)
-                        else {}
-                    ),
+                    **(remote.get("externalIds") if isinstance(remote.get("externalIds"), dict) else {}),
                     "SemanticScholar": remote["paperId"],
                 },
                 citation_count=remote.get("citationCount"),
@@ -342,10 +334,13 @@ async def _run_sync(
                 client.list_references(remote["paperId"], reference_limit),
             )
             await _ensure_graph_sync_owner_can_write(run)
-            for edge_index, (edge, paper_field, local_is_citing) in enumerate([
-                *((edge, "citingPaper", False) for edge in citations),
-                *((edge, "citedPaper", True) for edge in references),
-            ]):
+            citation_records = []
+            for edge_index, (edge, paper_field, local_is_citing) in enumerate(
+                [
+                    *((edge, "citingPaper", False) for edge in citations),
+                    *((edge, "citedPaper", True) for edge in references),
+                ]
+            ):
                 if edge_index and edge_index % 100 == 0:
                     await _ensure_graph_sync_owner_can_write(run)
                 related = edge.get(paper_field)
@@ -369,7 +364,13 @@ async def _run_sync(
                     cited_paper_id=related_graph_id if local_is_citing else local_graph_id,
                     edge=edge,
                 )
-                await repo.upsert_citation(citation)
+                citation_records.append(citation)
+
+            if citation_records:
+                await repo.upsert_citations(citation_records)
+            for edge_index, citation in enumerate(citation_records):
+                if edge_index and edge_index % 100 == 0:
+                    await _ensure_graph_sync_owner_can_write(run)
                 await neo4j.project_citation(kb_id=kb_id, citation=citation)
                 counts["citations"] += 1
             processed_paper_ids.add(local_paper.paper_id)

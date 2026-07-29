@@ -30,9 +30,7 @@ def _normalize_keyword(value: Any) -> tuple[str, str] | None:
     return (normalized, display) if normalized else None
 
 
-def _opportunity_score(
-    *, paper_count: int, recent_count: int, growth: int, is_new: bool, graph_gap: float
-) -> float:
+def _opportunity_score(*, paper_count: int, recent_count: int, growth: int, is_new: bool, graph_gap: float) -> float:
     momentum = min(40.0, 15.0 + recent_count * 5.0 + max(growth, 0) * 5.0)
     recency = 15.0 if is_new else min(15.0, 8.0 + max(growth, 0) * 2.0)
     scarcity = max(4.0, 20.0 - max(paper_count - 2, 0) * 2.0)
@@ -117,9 +115,7 @@ async def get_academic_opportunities(
         if not keyword_years:
             continue
         recent_count = sum(stat["years"][year] for year in keyword_years if year >= recent_start)
-        previous_count = sum(
-            stat["years"][year] for year in keyword_years if previous_start <= year <= latest_year - 2
-        )
+        previous_count = sum(stat["years"][year] for year in keyword_years if previous_start <= year <= latest_year - 2)
         growth = recent_count - previous_count
         first_year = keyword_years[0]
         last_year = keyword_years[-1]

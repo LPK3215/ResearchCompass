@@ -3,6 +3,8 @@ x-api-worker-env: &api-worker-env
   LITE_MODE: ${LITE_MODE:-false}
   RUNNING_IN_DOCKER: "true"
   YUXI_ENV: development
+  # Docker Desktop bind mounts can exhaust the native watcher during startup.
+  WATCHFILES_FORCE_POLLING: ${WATCHFILES_FORCE_POLLING:-true}
   # DBs and other services
   POSTGRES_URL: ${POSTGRES_URL:-postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-yuxi}}
   REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
@@ -72,7 +74,7 @@ services:
       <<: *api-worker-env
     # endregion api_envs
     command: uv run --no-sync --no-dev uvicorn server.main:app --host 0.0.0.0 --port 5050 --reload --reload-dir /app/server --reload-dir /app/package --timeout-graceful-shutdown 5
-    restart: unless-stopped
+    restart: "no"
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:5050/api/system/health || exit 1"]
       interval: 30s
@@ -116,8 +118,12 @@ services:
       - .env
     environment:
       <<: *api-worker-env
-    command: watchfiles --filter python "arq server.worker_main.WorkerSettings" /app/server /app/package
-    restart: unless-stopped
+    # Worker runs long-lived jobs; an outer watchfiles process can terminate an
+    # active run when Docker Desktop's native watcher exhausts memory.
+    # API keeps reload for development; worker code changes take effect on the
+    # next worker restart/redeploy so a live task is never interrupted by reload.
+    command: uv run --no-sync --no-dev arq server.worker_main.WorkerSettings
+    restart: "no"
     depends_on:
       postgres:
         condition: service_healthy
@@ -180,7 +186,7 @@ services:
       timeout: 5s
       retries: 6
       start_period: 10s
-    restart: unless-stopped
+    restart: "no"
 
   web:
     build:
@@ -208,7 +214,7 @@ services:
       - VITE_USE_RUNS_API=${VITE_USE_RUNS_API:-false}
       - VITE_LITE_MODE=${LITE_MODE:-}
     command: pnpm run server
-    restart: unless-stopped
+    restart: "no"
 
   # region neo4j
   graph:
@@ -233,7 +239,7 @@ services:
       - ENTITY_EMBEDDING=true
     networks:
       - app-network
-    restart: unless-stopped
+    restart: "no"
   # endregion neo4j
 
   etcd:
@@ -255,7 +261,7 @@ services:
       start_period: 30s
     networks:
       - app-network
-    restart: unless-stopped
+    restart: "no"
 
   minio:
     container_name: minio
@@ -278,7 +284,7 @@ services:
       - "127.0.0.1:9001:9001"
     networks:
       - app-network
-    restart: unless-stopped
+    restart: "no"
 
   milvus:
     image: milvusdb/milvus:v2.5.6
@@ -307,7 +313,7 @@ services:
       - "minio"
     networks:
       - app-network
-    restart: unless-stopped
+    restart: "no"
 
   postgres:
     image: postgres:16
@@ -328,7 +334,7 @@ services:
       retries: 30
     networks:
       - app-network
-    restart: unless-stopped
+    restart: "no"
 
   redis:
     image: redis:7-alpine
@@ -345,7 +351,7 @@ services:
       - ./docker/volumes/redis:/data
     networks:
       - app-network
-    restart: unless-stopped
+    restart: "no"
 
   # lastest version: wget https://gcore.jsdelivr.net/gh/opendatalab/MinerU@master/docker/compose.yaml
   mineru-api:
@@ -385,7 +391,7 @@ services:
               capabilities: [gpu]
     networks:
       - app-network
-    restart: unless-stopped
+    restart: "no"
 
   paddlex:
     build:
@@ -414,7 +420,7 @@ services:
               capabilities: [gpu]
     networks:
       - app-network
-    restart: unless-stopped
+    restart: "no"
 
 volumes:
   nltk_data:

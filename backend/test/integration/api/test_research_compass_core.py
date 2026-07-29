@@ -337,6 +337,18 @@ async def _exercise_research_compass_core_business(
     assert papers["items"][0]["publication_year"] == 2025
     assert papers["has_more"] is False
 
+    for export_params in ({"paper_ids": seeded["paper_id"]}, None):
+        bibtex_response = await test_client.get(
+            f"/api/research/databases/{kb_id}/papers/export",
+            params=export_params,
+            headers=admin_headers,
+        )
+        assert bibtex_response.status_code == 200, bibtex_response.text
+        assert bibtex_response.content.startswith(b"\xef\xbb\xbf")
+        bibtex = bibtex_response.content.decode("utf-8-sig")
+        assert "title = {Evidence-grounded Research Opportunity Discovery}" in bibtex
+        assert bibtex.count("@article{") == 1
+
     detail_response = await test_client.get(
         f"/api/research/databases/{kb_id}/papers/{seeded['paper_id']}",
         headers=admin_headers,

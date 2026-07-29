@@ -46,12 +46,8 @@ class TaskRepository:
 
     async def get_list_summary(self, *, status: str | None) -> dict[str, Any]:
         async with pg_manager.get_async_session_context() as session:
-            status_rows = await session.execute(
-                select(TaskRecord.status, func.count()).group_by(TaskRecord.status)
-            )
-            type_rows = await session.execute(
-                select(TaskRecord.type, func.count()).group_by(TaskRecord.type)
-            )
+            status_rows = await session.execute(select(TaskRecord.status, func.count()).group_by(TaskRecord.status))
+            type_rows = await session.execute(select(TaskRecord.type, func.count()).group_by(TaskRecord.type))
         status_counts = {str(value): int(count) for value, count in status_rows}
         return {
             "total": sum(status_counts.values()),

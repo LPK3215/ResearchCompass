@@ -2,6 +2,7 @@
 
 不依赖外部 API 或数据库，只验证文件名生成、元数据提取和开放获取 URL 解析。
 """
+
 from __future__ import annotations
 
 import pytest
@@ -17,6 +18,7 @@ from yuxi.services.academic_paper_import_service import (
 # ---------------------------------------------------------------------------
 # _safe_filename
 # ---------------------------------------------------------------------------
+
 
 class TestSafeFilename:
     def test_normal_title_returns_pdf_filename(self):
@@ -55,6 +57,7 @@ class TestSafeFilename:
 # ---------------------------------------------------------------------------
 # _paper_metadata
 # ---------------------------------------------------------------------------
+
 
 class TestPaperMetadata:
     def test_full_paper_dict_returns_metadata(self):
@@ -188,6 +191,7 @@ class TestPaperMetadata:
 # ---------------------------------------------------------------------------
 # _open_access_url
 # ---------------------------------------------------------------------------
+
 
 class TestOpenAccessUrl:
     def test_valid_open_access_pdf_returns_url(self):

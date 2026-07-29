@@ -108,9 +108,7 @@ async def test_delete_by_payload_only_removes_matching_terminal_tasks():
 
         assert deleted_ids == [task_ids[0]]
         async with pg_manager.get_async_session_context() as session:
-            remaining_ids = set(
-                await session.scalars(select(TaskRecord.id).where(TaskRecord.id.in_(task_ids)))
-            )
+            remaining_ids = set(await session.scalars(select(TaskRecord.id).where(TaskRecord.id.in_(task_ids))))
         assert remaining_ids == {task_ids[1], task_ids[2]}
     finally:
         async with pg_manager.get_async_session_context() as session:

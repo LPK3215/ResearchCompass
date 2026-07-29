@@ -187,7 +187,7 @@ async def test_subagent_stream_records_run_and_shares_output_files(
     _assert_ok(me_response)
     me = me_response.json()
     if me.get("role") not in {"admin", "superadmin"}:
-        pytest.skip("Subagent E2E needs an admin user to create temporary agents.")
+        pytest.fail("Subagent E2E requires an admin user to create temporary agents.")
     uid = str(me.get("uid") or "")
     assert uid, me
 
@@ -204,7 +204,13 @@ async def test_subagent_stream_records_run_and_shares_output_files(
     default_response = await e2e_client.get("/api/agent/default", headers=e2e_headers)
     _assert_ok(default_response)
     default_context = ((default_response.json().get("agent") or {}).get("config_json") or {}).get("context") or {}
-    base_context: dict[str, Any] = {"tools": [], "knowledges": [], "mcps": [], "skills": []}
+    base_context: dict[str, Any] = {
+        "tools": [],
+        "knowledges": [],
+        "mcps": [],
+        "skills": [],
+        "tool_approval_mode": "always_trust",
+    }
     if default_context.get("model"):
         base_context["model"] = default_context["model"]
 

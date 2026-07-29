@@ -148,10 +148,26 @@ class TestSummary:
                 self.research_stage = stage
                 self.research_experience = "beginner"
 
-        result = _summary([
-            MockResponse("lit_review", 4),
-            MockResponse("data_analysis", 5),
-        ])
+        result = _summary(
+            [
+                MockResponse("lit_review", 4),
+                MockResponse("data_analysis", 5),
+            ]
+        )
         assert result["response_count"] == 2
         assert result["overall_rating_mean"] == 4.5
         assert result["research_stage_distribution"] == {"lit_review": 1, "data_analysis": 1}
+
+    def test_invalid_historical_response_fails_explicitly(self):
+        class MockResponse:
+            task_scores = {key: 3 for key in TASK_SCORE_KEYS if key != TASK_SCORE_KEYS[0]}
+            sus_scores = {key: 3 for key in SUS_SCORE_KEYS}
+            overall_rating = 4
+            recommend_score = 3
+            research_stage = "literature_review"
+            research_experience = "intermediate"
+
+        with pytest.raises(ResearchUserStudyError) as exc_info:
+            _summary([MockResponse()])
+
+        assert exc_info.value.error_type == "response_data_invalid"

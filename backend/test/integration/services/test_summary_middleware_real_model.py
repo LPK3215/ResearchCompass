@@ -68,7 +68,7 @@ def _load_provider_config() -> dict[str, Any]:
     for provider in BUILTIN_PROVIDERS:
         if provider.get("provider_id") == provider_id:
             return provider
-    pytest.skip(f"Builtin provider {provider_id} is not configured.")
+    pytest.fail(f"Builtin provider {provider_id} is not configured.")
 
 
 def _select_enabled_chat_model(provider: dict[str, Any]) -> dict[str, Any]:
@@ -80,8 +80,8 @@ def _select_enabled_chat_model(provider: dict[str, Any]) -> dict[str, Any]:
             continue
         return model
     if preferred_model_id:
-        pytest.skip(f"{provider['provider_id']} does not expose {preferred_model_id} as chat.")
-    pytest.skip(f"{provider['provider_id']} has no enabled chat model.")
+        pytest.fail(f"{provider['provider_id']} does not expose {preferred_model_id} as chat.")
+    pytest.fail(f"{provider['provider_id']} has no enabled chat model.")
 
 
 async def test_l1_compacted_messages_call_real_chat_model(monkeypatch: pytest.MonkeyPatch):
@@ -90,7 +90,7 @@ async def test_l1_compacted_messages_call_real_chat_model(monkeypatch: pytest.Mo
     api_key_env = provider.get("api_key_env")
     api_key = os.getenv(api_key_env or "") if api_key_env else None
     if not api_key:
-        pytest.skip(f"{provider['provider_id']} requires {api_key_env} for connectivity testing.")
+        pytest.fail(f"{provider['provider_id']} requires {api_key_env} for connectivity testing.")
 
     model_spec = f"{provider['provider_id']}:{model_config['id']}"
     info = ModelInfo(

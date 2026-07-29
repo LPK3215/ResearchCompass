@@ -29,11 +29,11 @@ async def _create_thread_for_user(test_client, headers: dict[str, str]) -> str:
     assert agents_resp.status_code == 200, agents_resp.text
     agents = agents_resp.json().get("agents", [])
     if not agents:
-        pytest.skip("No agents available for viewer filesystem integration tests.")
+        pytest.fail("No agents available for viewer filesystem integration tests.")
 
     agent_id = agents[0].get("agent_id") or agents[0].get("slug")
     if not agent_id:
-        pytest.skip("Agent payload missing agent_id field.")
+        pytest.fail("Agent payload missing agent_id field.")
 
     create_resp = await test_client.post(
         "/api/chat/thread",
@@ -265,9 +265,10 @@ async def test_viewer_file_returns_image_preview_metadata(test_client, standard_
 
     ensure_thread_dirs(thread_id, uid)
     actual_path = sandbox_workspace_dir(thread_id, uid) / "demo.png"
-    actual_path.write_bytes(
+    image_content = (
         b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
     )
+    actual_path.write_bytes(image_content)
     file_path = virtual_path_for_thread_file(thread_id, actual_path, uid=uid)
 
     response = await test_client.get(
@@ -277,10 +278,10 @@ async def test_viewer_file_returns_image_preview_metadata(test_client, standard_
     )
 
     assert response.status_code == 200, response.text
-    payload = response.json()
-    assert payload["content"] is None
-    assert payload["preview_type"] == "image"
-    assert payload["supported"] is True
+    assert response.content == image_content
+    assert response.headers["content-type"].startswith("image/png")
+    assert response.headers["x-yuxi-preview-type"] == "image"
+    assert response.headers["x-yuxi-preview-filename"] == "demo.png"
 
 
 async def test_viewer_file_returns_pdf_preview_metadata(test_client, standard_user):
@@ -290,7 +291,8 @@ async def test_viewer_file_returns_pdf_preview_metadata(test_client, standard_us
 
     ensure_thread_dirs(thread_id, uid)
     actual_path = sandbox_workspace_dir(thread_id, uid) / "demo.pdf"
-    actual_path.write_bytes(b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF")
+    pdf_content = b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF"
+    actual_path.write_bytes(pdf_content)
     file_path = virtual_path_for_thread_file(thread_id, actual_path, uid=uid)
 
     response = await test_client.get(
@@ -300,10 +302,10 @@ async def test_viewer_file_returns_pdf_preview_metadata(test_client, standard_us
     )
 
     assert response.status_code == 200, response.text
-    payload = response.json()
-    assert payload["content"] is None
-    assert payload["preview_type"] == "pdf"
-    assert payload["supported"] is True
+    assert response.content == pdf_content
+    assert response.headers["content-type"].startswith("application/pdf")
+    assert response.headers["x-yuxi-preview-type"] == "pdf"
+    assert response.headers["x-yuxi-preview-filename"] == "demo.pdf"
 
 
 async def test_viewer_download_returns_attachment_response(test_client, standard_user):

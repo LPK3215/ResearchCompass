@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from langchain_core.tools import ToolException
 
 from yuxi.agents.backends.sandbox.paths import (
     ensure_thread_dirs,
@@ -13,6 +14,7 @@ from yuxi.agents.backends.sandbox.paths import (
 )
 from yuxi.agents.toolkits.buildin.tools import ocr_parse_file
 from yuxi.knowledge.parser.unified import Parser
+from yuxi.knowledge.parser.base import OCRException
 
 pytestmark = pytest.mark.unit
 
@@ -96,6 +98,29 @@ async def test_ocr_parse_file_uses_default_engine(tmp_path, monkeypatch: pytest.
 
     assert result["ocr_engine"] == "rapid_ocr"
     assert captured["params"] == {"ocr_engine": "rapid_ocr"}
+
+
+@pytest.mark.asyncio
+async def test_ocr_parse_file_converts_parser_failure_to_tool_error(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("yuxi.config.save_dir", str(tmp_path))
+    thread_id = "thread-1"
+    uid = "user-1"
+    ensure_thread_dirs(thread_id, uid)
+    source_path = sandbox_uploads_dir(thread_id) / "broken.pdf"
+    source_path.write_bytes(b"broken pdf")
+    source_virtual_path = virtual_path_for_thread_file(thread_id, source_path, uid=uid)
+
+    async def fail_parse(_source: str, params: dict | None = None) -> str:
+        del params
+        raise OCRException("PDF OCR 处理失败", "rapid_ocr", "pdf_processing_failed")
+
+    monkeypatch.setattr(Parser, "aparse", fail_parse)
+
+    with pytest.raises(ToolException, match=r"OCR 解析失败: \[rapid_ocr\] PDF OCR 处理失败"):
+        await ocr_parse_file.coroutine(
+            file_path=source_virtual_path,
+            runtime=_runtime(thread_id=thread_id, uid=uid),
+        )
 
 
 @pytest.mark.asyncio

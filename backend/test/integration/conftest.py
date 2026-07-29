@@ -34,25 +34,27 @@ HTTP_TIMEOUT = httpx.Timeout(60.0, connect=5.0)
 SANDBOX_CONTAINER_PREFIX = os.getenv("YUXI_SANDBOX_CONTAINER_PREFIX", "yuxi-sandbox")
 
 
-@pytest.fixture(scope="session", autouse=True)
-def ensure_live_api_schema():
+@pytest_asyncio.fixture(scope="session", autouse=True)
+async def ensure_live_api_schema():
     if not ADMIN_LOGIN or not ADMIN_PASSWORD:
+        yield
         return
 
-    async def run_schema_setup() -> None:
-        from yuxi.storage.postgres.manager import pg_manager
+    from yuxi.storage.postgres.manager import pg_manager
 
-        pg_manager.initialize()
-        await pg_manager.create_tables()
-        await pg_manager.ensure_business_schema()
-        await pg_manager.ensure_knowledge_schema()
-
-    anyio.run(run_schema_setup)
+    pg_manager.initialize()
+    await pg_manager.create_tables()
+    await pg_manager.ensure_business_schema()
+    await pg_manager.ensure_knowledge_schema()
+    try:
+        yield
+    finally:
+        await pg_manager.close()
 
 
 def _require_admin_credentials() -> tuple[str, str]:
     if not ADMIN_LOGIN or not ADMIN_PASSWORD:
-        pytest.skip("Integration credentials are not configured via TEST_USERNAME / TEST_PASSWORD.")
+        pytest.fail("Integration credentials are not configured via TEST_USERNAME / TEST_PASSWORD.")
     return ADMIN_LOGIN, ADMIN_PASSWORD
 
 
@@ -317,3 +319,59 @@ async def knowledge_database(
                     print(f"Warning: Failed to cleanup knowledge database {kb_id}: {delete_response.text}")
             except Exception as exc:
                 print(f"Warning: Exception during cleanup of {kb_id}: {exc}")
+
+
+@pytest_asyncio.fixture(scope="function")
+async def knowledge_document(
+    test_client: httpx.AsyncClient,
+    admin_headers: dict[str, str],
+    knowledge_database: dict,
+) -> dict:
+    kb_id = knowledge_database["kb_id"]
+    filename = f"pytest_document_{uuid.uuid4().hex[:8]}.txt"
+    content = b"ResearchCompass integration document."
+    upload_response = await test_client.post(
+        "/api/knowledge/files/upload",
+        params={"kb_id": kb_id},
+        files={"file": (filename, content, "text/plain")},
+        headers=admin_headers,
+    )
+    assert upload_response.status_code == 200, upload_response.text
+    upload = upload_response.json()
+    item = upload["file_path"]
+
+    enqueue_response = await test_client.post(
+        f"/api/knowledge/databases/{kb_id}/documents",
+        json={
+            "items": [item],
+            "params": {
+                "content_type": "file",
+                "content_hashes": {item: upload["content_hash"]},
+                "file_sizes": {item: upload["size"]},
+            },
+        },
+        headers=admin_headers,
+    )
+    assert enqueue_response.status_code == 200, enqueue_response.text
+    task_id = enqueue_response.json()["task_id"]
+
+    task = None
+    for _ in range(60):
+        detail_response = await test_client.get(f"/api/tasks/{task_id}", headers=admin_headers)
+        assert detail_response.status_code == 200, detail_response.text
+        task = detail_response.json()["task"]
+        if task["status"] in {"success", "failed", "cancelled"}:
+            break
+        await anyio.sleep(0.25)
+    else:
+        pytest.fail("Knowledge document ingestion did not reach a terminal state")
+
+    assert task is not None and task["status"] == "success", task
+    result_items = (task.get("result") or {}).get("items") or []
+    assert result_items and result_items[0].get("file_id"), task
+    return {
+        "task_id": task_id,
+        "task": task,
+        "file_id": result_items[0]["file_id"],
+        "filename": filename,
+    }

@@ -26,13 +26,10 @@ async def test_recovery_continues_after_one_enqueue_failure(monkeypatch):
     updates = []
     records = [_record(file_id="file-1"), _record(file_id="file-2")]
 
-    class FakeKnowledgeBaseRepository:
-        async def get_all(self):
-            return [SimpleNamespace(kb_id="kb-1")]
-
     class FakeFileRepository:
-        async def list_by_kb_id(self, kb_id):
-            return records
+        async def iter_external_import_recovery_batches(self, *, statuses):
+            assert "uploaded" in statuses
+            yield records
 
         async def update_fields(self, **kwargs):
             updates.append(kwargs)
@@ -54,7 +51,6 @@ async def test_recovery_continues_after_one_enqueue_failure(monkeypatch):
     async def allow_access(*args, **kwargs):
         return None
 
-    monkeypatch.setattr(academic_paper_import_service, "KnowledgeBaseRepository", FakeKnowledgeBaseRepository)
     monkeypatch.setattr(academic_paper_import_service, "KnowledgeFileRepository", FakeFileRepository)
     monkeypatch.setattr(academic_paper_import_service, "UserRepository", FakeUserRepository)
     monkeypatch.setattr(academic_paper_import_service, "_ensure_access", allow_access)
@@ -74,13 +70,10 @@ async def test_recovery_continues_after_one_enqueue_failure(monkeypatch):
 async def test_recovery_never_substitutes_system_for_missing_owner(monkeypatch):
     updates = []
 
-    class FakeKnowledgeBaseRepository:
-        async def get_all(self):
-            return [SimpleNamespace(kb_id="kb-1")]
-
     class FakeFileRepository:
-        async def list_by_kb_id(self, kb_id):
-            return [_record(file_id="file-1", created_by=None)]
+        async def iter_external_import_recovery_batches(self, *, statuses):
+            assert "uploaded" in statuses
+            yield [_record(file_id="file-1", created_by=None)]
 
         async def update_fields(self, **kwargs):
             updates.append(kwargs)
@@ -89,7 +82,6 @@ async def test_recovery_never_substitutes_system_for_missing_owner(monkeypatch):
         async def get_by_uid(self, uid):
             return None
 
-    monkeypatch.setattr(academic_paper_import_service, "KnowledgeBaseRepository", FakeKnowledgeBaseRepository)
     monkeypatch.setattr(academic_paper_import_service, "KnowledgeFileRepository", FakeFileRepository)
     monkeypatch.setattr(academic_paper_import_service, "UserRepository", FakeUserRepository)
 

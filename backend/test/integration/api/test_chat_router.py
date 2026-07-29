@@ -77,11 +77,11 @@ async def _create_thread_for_user(test_client, headers: dict[str, str]) -> str:
     assert agents_resp.status_code == 200, agents_resp.text
     agents = agents_resp.json().get("agents", [])
     if not agents:
-        pytest.skip("No agents available for chat router integration tests.")
+        pytest.fail("No agents available for chat router integration tests.")
 
     agent_id = agents[0].get("agent_id") or agents[0].get("slug")
     if not agent_id:
-        pytest.skip("Agent payload missing slug field.")
+        pytest.fail("Agent payload missing slug field.")
 
     create_resp = await test_client.post(
         "/api/chat/thread",
@@ -125,11 +125,11 @@ async def test_agent_detail_filters_configurable_items_by_role(
     assert agents_response.status_code == 200, agents_response.text
     agents = agents_response.json().get("agents", [])
     if not agents:
-        pytest.skip("No agents are registered in the system.")
+        pytest.fail("No agents are registered in the system.")
 
     agent_id = agents[0].get("agent_id") or agents[0].get("slug")
     if not agent_id:
-        pytest.skip("Agent payload missing slug field.")
+        pytest.fail("Agent payload missing slug field.")
 
     user_agent_response = await test_client.get(f"/api/agent/{agent_id}", headers=standard_user["headers"])
     assert user_agent_response.status_code == 200, user_agent_response.text
@@ -156,11 +156,11 @@ async def test_setting_default_agent_requires_admin(test_client, admin_headers, 
     agents = agents_response.json().get("agents", [])
 
     if not agents:
-        pytest.skip("No agents are registered in the system.")
+        pytest.fail("No agents are registered in the system.")
 
     candidate_agent_id = agents[0].get("agent_id") or agents[0].get("slug")
     if not candidate_agent_id:
-        pytest.skip("Agent payload missing slug field.")
+        pytest.fail("Agent payload missing slug field.")
 
     forbidden_response = await test_client.post(
         f"/api/agent/{candidate_agent_id}/set_default",

@@ -307,15 +307,21 @@ class MinIOClient:
         def _delete_objects():
             nonlocal deleted_count
             try:
+                if not self.client.bucket_exists(bucket_name):
+                    return
                 objects = self.client.list_objects(bucket_name, prefix=prefix, recursive=True)
                 for obj in objects:
                     try:
                         self.client.remove_object(bucket_name, obj.object_name)
                         deleted_count += 1
                     except S3Error as e:
-                        logger.warning(f"Failed to delete {bucket_name}/{obj.object_name}: {e}")
+                        raise StorageError(
+                            f"删除对象失败: {bucket_name}/{obj.object_name} (error_code={e.code})"
+                        ) from e
             except S3Error as e:
-                logger.warning(f"Failed to list objects in {bucket_name}/{prefix}: {e}")
+                if e.code == "NoSuchBucket":
+                    return
+                raise StorageError(f"列举对象失败: {bucket_name}/{prefix} (error_code={e.code})") from e
 
         await asyncio.to_thread(_delete_objects)
         return deleted_count

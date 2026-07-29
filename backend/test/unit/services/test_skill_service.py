@@ -32,6 +32,21 @@ def test_allowed_skill_access_levels_by_role():
 
 
 @pytest.mark.asyncio
+async def test_init_builtin_skills_acquires_transaction_lock_before_sync(monkeypatch: pytest.MonkeyPatch):
+    statements: list[str] = []
+
+    class FakeSession:
+        async def execute(self, statement):
+            statements.append(str(statement))
+
+    monkeypatch.setattr(svc, "list_builtin_skill_specs", lambda: [])
+
+    assert await svc.init_builtin_skills(FakeSession()) == []
+    assert len(statements) == 1
+    assert "pg_advisory_xact_lock" in statements[0]
+
+
+@pytest.mark.asyncio
 async def test_list_visible_skills_for_management_includes_owned_disabled_and_enabled_shared(
     monkeypatch: pytest.MonkeyPatch,
 ):

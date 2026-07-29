@@ -4,6 +4,7 @@ import importlib
 import json
 import subprocess
 import sys
+import threading
 from contextlib import contextmanager
 
 import pytest
@@ -227,6 +228,44 @@ def test_start_runtime_sync_is_idempotent(tmp_path):
         assert thread.daemon is True
     finally:
         cfg.stop_runtime_sync()
+
+
+def test_runtime_sync_reuses_one_redis_client_until_stopped(tmp_path, monkeypatch: pytest.MonkeyPatch):
+    redis = _FakeRedis(raw=json.dumps({"default_model": "test-provider:synced-chat"}))
+    entered = 0
+    exited = 0
+    refreshed_twice = threading.Event()
+    original_get = redis.get
+
+    def tracked_get(key: str) -> str | None:
+        result = original_get(key)
+        if len(redis.get_keys) >= 2:
+            refreshed_twice.set()
+        return result
+
+    @contextmanager
+    def fake_sync_redis_client(*args, **kwargs):
+        nonlocal entered, exited
+        del args, kwargs
+        entered += 1
+        try:
+            yield redis
+        finally:
+            exited += 1
+
+    redis.get = tracked_get
+    monkeypatch.setattr(config_cache, "sync_redis_client", fake_sync_redis_client)
+    cfg = Config(save_dir=str(tmp_path))
+
+    try:
+        cfg.start_runtime_sync(interval=0.01)
+        assert refreshed_twice.wait(timeout=1.0)
+    finally:
+        cfg.stop_runtime_sync()
+
+    assert cfg.default_model == "test-provider:synced-chat"
+    assert entered == 1
+    assert exited == 1
 
 
 def test_stop_runtime_sync_joins_thread_and_allows_clean_restart(tmp_path):

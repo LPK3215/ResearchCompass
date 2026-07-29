@@ -9,10 +9,7 @@ from yuxi.services import research_search_service
 
 
 def test_search_mode_validation_preserves_strict_default():
-    assert (
-        research_search_service._normalize_search_mode(None)
-        == research_search_service.STRICT_HYBRID_GRAPH_MODE
-    )
+    assert research_search_service._normalize_search_mode(None) == research_search_service.STRICT_HYBRID_GRAPH_MODE
     assert (
         research_search_service._normalize_search_mode(research_search_service.LOCAL_HYBRID_MODE)
         == research_search_service.LOCAL_HYBRID_MODE
@@ -20,6 +17,81 @@ def test_search_mode_validation_preserves_strict_default():
     with pytest.raises(research_search_service.ResearchSearchError) as exc_info:
         research_search_service._normalize_search_mode("automatic_fallback")
     assert exc_info.value.error_type == "invalid_retrieval_config"
+
+
+@pytest.mark.asyncio
+async def test_citation_graph_fusion_keeps_seed_mapping_outside_truncated_ppr_results(monkeypatch):
+    requested_graph_ids = []
+
+    class FakeAcademicGraphRepository:
+        async def resolve_seed_papers(self, *, kb_id, paper_scores):
+            assert kb_id == "kb-1"
+            assert paper_scores == {"paper-low": 0.2, "paper-high": 0.8}
+            return {"graph-low": 0.2, "graph-high": 0.8}
+
+        async def list_library_paper_ids(self, *, kb_id, graph_paper_ids):
+            assert kb_id == "kb-1"
+            requested_graph_ids.extend(graph_paper_ids)
+            return {
+                "graph-low": "paper-low",
+                "graph-high": "paper-high",
+                "graph-expanded": "paper-expanded",
+            }
+
+    class FakeAcademicGraphService:
+        async def expand_papers_by_ppr(self, **kwargs):
+            assert set(kwargs["seed_weights"]) == {"graph-low", "graph-high"}
+            return {
+                "papers": [
+                    {
+                        "graph_paper_id": "graph-high",
+                        "graph_score": 0.7,
+                        "is_seed": True,
+                        "path": {},
+                    },
+                    {
+                        "graph_paper_id": "graph-expanded",
+                        "graph_score": 0.2,
+                        "is_seed": False,
+                        "is_library_paper": True,
+                        "path": {},
+                    },
+                ],
+                "paper_scores": {
+                    "graph-high": 0.7,
+                    "graph-expanded": 0.2,
+                    "graph-low": 0.1,
+                },
+                "node_count": 3,
+                "citation_count": 2,
+            }
+
+    monkeypatch.setattr(research_search_service, "AcademicGraphRepository", FakeAcademicGraphRepository)
+    monkeypatch.setattr(research_search_service, "AcademicGraphService", FakeAcademicGraphService)
+    results = [
+        {
+            "paper_id": "paper-low",
+            "ranking_score": 0.2,
+            "scores": {"text": 0.2},
+        },
+        {
+            "paper_id": "paper-high",
+            "ranking_score": 0.8,
+            "scores": {"text": 0.8},
+        },
+    ]
+
+    fused, expansion = await research_search_service._apply_citation_graph(
+        kb_id="kb-1",
+        results=results,
+        top_k=2,
+        recall_top_k=1,
+    )
+
+    assert requested_graph_ids == ["graph-low", "graph-high", "graph-expanded"]
+    assert {item["paper_id"] for item in fused} == {"paper-low", "paper-high"}
+    assert all("graph" in item["scores"] and "fusion" in item["scores"] for item in fused)
+    assert expansion["items"][0]["paper_id"] == "paper-expanded"
 
 
 @pytest.mark.asyncio

@@ -41,11 +41,7 @@ def _search_rects(page, query: str, *, max_hits: int = 8) -> list[dict[str, floa
     # Search shorter prefixes as well: parsed Markdown can insert line breaks,
     # table syntax, or other layout markers that are absent from the PDF text layer.
     words = query.split()
-    candidates = [
-        " ".join(words[:count])
-        for count in (18, 12, 8)
-        if len(words) >= count
-    ]
+    candidates = [" ".join(words[:count]) for count in (18, 12, 8) if len(words) >= count]
     candidates.extend((query[:120], query[:80], query[:40]))
     candidates = list(dict.fromkeys(candidate for candidate in candidates if len(candidate) >= 8))
     seen: set[tuple[float, float, float, float]] = set()
@@ -103,9 +99,7 @@ def attach_pdf_page_ranges(chunks: list[dict[str, Any]], source_path: str | None
     if not source_path:
         return chunks
     source_suffix = (
-        Path(parse_minio_url(source_path)[1]).suffix
-        if is_minio_url(source_path)
-        else Path(source_path).suffix
+        Path(parse_minio_url(source_path)[1]).suffix if is_minio_url(source_path) else Path(source_path).suffix
     )
     if source_suffix.casefold() != ".pdf":
         return chunks

@@ -265,9 +265,7 @@ async def test_experiment_recovery_adopts_existing_active_task_id(monkeypatch):
     monkeypatch.setattr(evaluation_module.tasker, "enqueue_unique_by_payload", enqueue_unique_by_payload)
 
     assert await service.recover_experiments() == 0
-    assert service.eval_repo.experiment_updates == [
-        ("experiment-1", {"task_id": "active-task"})
-    ]
+    assert service.eval_repo.experiment_updates == [("experiment-1", {"task_id": "active-task"})]
 
 
 @pytest.mark.asyncio

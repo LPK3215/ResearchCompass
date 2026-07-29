@@ -34,9 +34,12 @@ def _runtime_snapshot(config: Any) -> dict[str, Any]:
     return {field_name: getattr(config, field_name) for field_name in _runtime_fields(config)}
 
 
-def _load_snapshot() -> dict[str, Any] | None:
+def _load_snapshot(redis_client: Any | None = None) -> dict[str, Any] | None:
     try:
-        with sync_redis_client(_runtime_config_redis_config()) as redis_client:
+        if redis_client is None:
+            with sync_redis_client(_runtime_config_redis_config()) as owned_client:
+                raw = owned_client.get(RUNTIME_CONFIG_REDIS_KEY)
+        else:
             raw = redis_client.get(RUNTIME_CONFIG_REDIS_KEY)
     except Exception as e:
         logger.warning(f"Failed to load runtime config from Redis: {e}")
@@ -67,8 +70,8 @@ def save_runtime_config(config: Any) -> bool:
         return False
 
 
-def refresh_runtime_config(config: Any) -> None:
-    snapshot = _load_snapshot()
+def refresh_runtime_config(config: Any, redis_client: Any | None = None) -> None:
+    snapshot = _load_snapshot(redis_client)
     if snapshot is None:
         return
 
@@ -90,7 +93,11 @@ def start_runtime_sync(
     def runtime_sync_loop() -> None:
         while not stop_event.wait(interval):
             try:
-                refresh_runtime_config(config)
+                with sync_redis_client(_runtime_config_redis_config()) as redis_client:
+                    while True:
+                        refresh_runtime_config(config, redis_client)
+                        if stop_event.wait(interval):
+                            return
             except Exception as e:
                 logger.warning("Runtime config sync iteration failed: exception_type={}", type(e).__name__)
 

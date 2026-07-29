@@ -127,16 +127,21 @@ class SemanticScholarClient:
             trust_env=False,
         ) as client:
             for attempt in range(max_retries + 1):
-                if attempt == 0:
-                    elapsed = time.monotonic() - self._last_request_time
-                    if elapsed < self._MIN_REQUEST_INTERVAL:
-                        await asyncio.sleep(self._MIN_REQUEST_INTERVAL - elapsed)
-                    self._last_request_time = time.monotonic()
+                elapsed = time.monotonic() - self._last_request_time
+                if elapsed < self._MIN_REQUEST_INTERVAL:
+                    await asyncio.sleep(self._MIN_REQUEST_INTERVAL - elapsed)
+                self._last_request_time = time.monotonic()
                 try:
                     response = await client.get(f"{self.base_url}{path}", params=params)
                 except httpx.TimeoutException as exc:
+                    if attempt < max_retries:
+                        await asyncio.sleep(backoff_seconds[attempt])
+                        continue
                     raise SemanticScholarError("semantic_scholar_timeout", "Semantic Scholar 请求超时") from exc
                 except httpx.HTTPError as exc:
+                    if attempt < max_retries:
+                        await asyncio.sleep(backoff_seconds[attempt])
+                        continue
                     raise SemanticScholarError("semantic_scholar_network", "Semantic Scholar 网络请求失败") from exc
                 if response.status_code == 429 and attempt < max_retries:
                     wait = _retry_wait_seconds(response.headers.get("Retry-After"), backoff_seconds[attempt])
@@ -147,6 +152,9 @@ class SemanticScholarClient:
                         "semantic_scholar_rate_limited",
                         "Semantic Scholar API 触发限流，已重试 3 次仍失败",
                     )
+                if response.status_code >= 500 and attempt < max_retries:
+                    await asyncio.sleep(backoff_seconds[attempt])
+                    continue
                 break
         if response.status_code == 404:
             raise SemanticScholarError("paper_not_found", "Semantic Scholar 未找到论文")
@@ -178,9 +186,7 @@ class SemanticScholarClient:
             if not identifier:
                 continue
             try:
-                paper = await self._get(
-                    f"/paper/{quote(identifier, safe=':')}", {"fields": SEMANTIC_SCHOLAR_FIELDS}
-                )
+                paper = await self._get(f"/paper/{quote(identifier, safe=':')}", {"fields": SEMANTIC_SCHOLAR_FIELDS})
                 self._validate_match(local_paper, paper)
                 return paper
             except SemanticScholarError as exc:

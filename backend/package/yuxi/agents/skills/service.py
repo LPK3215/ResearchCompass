@@ -14,7 +14,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 import yaml
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from yuxi import config as sys_config
@@ -64,6 +64,7 @@ ADMIN_ROLES = {"admin", "superadmin"}
 DEFAULT_SKILL_SHARE_CONFIG = {"access_level": "user", "department_ids": [], "user_uids": []}
 BUILTIN_SKILL_SHARE_CONFIG = {"access_level": "global", "department_ids": [], "user_uids": []}
 SKILL_DRAFT_TTL_SECONDS = 60 * 60
+BUILTIN_SKILLS_SYNC_LOCK_ID = 0x5243534B494C4C53
 _THREAD_SKILLS_LOCK = threading.Lock()
 _THREAD_SKILLS_LOCKS: dict[str, threading.Lock] = {}
 
@@ -1282,6 +1283,9 @@ def list_builtin_skill_specs() -> list[dict[str, Any]]:
 
 
 async def init_builtin_skills(db: AsyncSession, *, created_by: str = "system") -> list[Skill]:
+    if db is not None:
+        await db.execute(text(f"SELECT pg_advisory_xact_lock({BUILTIN_SKILLS_SYNC_LOCK_ID})"))
+
     repo = SkillRepository(db)
     synced_items: list[Skill] = []
 

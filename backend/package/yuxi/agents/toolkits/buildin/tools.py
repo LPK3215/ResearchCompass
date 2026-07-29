@@ -5,6 +5,7 @@ from typing import Annotated
 
 from langchain.tools import InjectedToolCallId
 from langchain_core.messages import ToolMessage
+from langchain_core.tools import ToolException
 from langgraph.prebuilt.tool_node import ToolRuntime
 from langgraph.types import Command, interrupt
 from pydantic import BaseModel, Field
@@ -196,11 +197,15 @@ OCR_PARSE_FILE_DESCRIPTION = f"""
 async def ocr_parse_file(file_path: str, runtime: ToolRuntime, ocr_engine: str | None = None) -> dict:
     """Parse a sandbox file with OCR, persist Markdown output, and return only a short result summary."""
     from yuxi.agents.backends.sandbox.paths import virtual_path_for_thread_file
+    from yuxi.knowledge.parser.base import DocumentProcessorException
     from yuxi.knowledge.parser.unified import Parser
 
     file_thread_id, uid, actual_path = _resolve_ocr_source_path(file_path, runtime)
     engine = _resolve_ocr_engine(ocr_engine)
-    markdown = await Parser.aparse(str(actual_path), params={"ocr_engine": engine})
+    try:
+        markdown = await Parser.aparse(str(actual_path), params={"ocr_engine": engine})
+    except DocumentProcessorException as exc:
+        raise ToolException(f"OCR 解析失败: {exc}") from exc
 
     output_path = _next_ocr_output_path(file_thread_id, actual_path)
     output_path.write_text(markdown, encoding="utf-8")

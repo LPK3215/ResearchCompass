@@ -72,9 +72,7 @@ async def call(query: str = Body(...), meta: dict = Body(None), current_user: Us
         model = select_model(model_spec=meta.get("model_spec") or meta.get("model") or conf.default_model)
         response = await model.call(query)
     except Exception as exc:
-        logger.error(
-            f"Chat call failed for request_id={meta['request_id']} (error_type={type(exc).__name__})"
-        )
+        logger.error(f"Chat call failed for request_id={meta['request_id']} (error_type={type(exc).__name__})")
         raise HTTPException(status_code=500, detail="模型调用失败，请稍后重试") from exc
 
     logger.debug("Chat call completed for request_id={}", meta["request_id"])

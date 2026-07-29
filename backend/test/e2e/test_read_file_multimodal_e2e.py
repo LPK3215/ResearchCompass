@@ -157,6 +157,13 @@ def _write_ocr_test_image(path: Path) -> None:
     image.save(path, format="PNG")
 
 
+def _write_ocr_test_pdf(path: Path) -> None:
+    image = Image.new("RGB", (1200, 400), "white")
+    font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf", 88)
+    ImageDraw.Draw(image).text((80, 130), "DOCUMENT OCR OK", fill="black", font=font)
+    image.save(path, format="PDF", resolution=150)
+
+
 async def test_read_file_image_and_document_real_agent_runs(
     tmp_path: Path,
     e2e_client: httpx.AsyncClient,
@@ -188,7 +195,7 @@ async def test_read_file_image_and_document_real_agent_runs(
         assert image_output.strip().lower() == "blue", image_output
 
         document_path = tmp_path / "sample.pdf"
-        document_path.write_bytes(b"%PDF-1.4\n% read_file boundary test\n")
+        _write_ocr_test_pdf(document_path)
         document_thread = await _create_thread(e2e_client, e2e_headers, slug)
         document_file_id = await _upload(
             e2e_client,
@@ -201,10 +208,13 @@ async def test_read_file_image_and_document_real_agent_runs(
             e2e_headers,
             agent_slug=slug,
             thread_id=document_thread,
-            query="只调用 read_file 读取 sample.pdf，不要调用其他工具。简短复述工具返回的处理建议。",
+            query=(
+                "先调用 read_file 读取 sample.pdf；如果工具建议 OCR，再调用 ocr_parse_file。"
+                "最后只回答 PDF 中的英文文字。"
+            ),
             attachment_file_id=document_file_id,
         )
-        assert "ocr_parse_file" in document_output, document_output
+        assert "DOCUMENT OCR OK" in " ".join(document_output.upper().split()), document_output
     finally:
         await _delete_agent(e2e_client, e2e_headers, slug)
 

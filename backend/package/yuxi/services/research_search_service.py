@@ -169,14 +169,18 @@ def _aggregate_results(kb_id: str, chunks: list[dict[str, Any]], top_k: int) -> 
                 "source_page_end": metadata.get("source_page_end"),
                 "source_rects": metadata.get("source_rects") or [],
                 "locator_type": metadata.get("locator_type") or "parsed_source_character_range",
-                "scores": {key: float(chunk[field]) for key, field in (
-                    ("vector", "vector_score"),
-                    ("bm25", "bm25_score"),
-                    ("hybrid", "hybrid_score"),
-                    ("rerank", "rerank_score"),
-                    ("graph", "graph_score"),
-                    ("fusion", "fusion_score"),
-                ) if chunk.get(field) is not None},
+                "scores": {
+                    key: float(chunk[field])
+                    for key, field in (
+                        ("vector", "vector_score"),
+                        ("bm25", "bm25_score"),
+                        ("hybrid", "hybrid_score"),
+                        ("rerank", "rerank_score"),
+                        ("graph", "graph_score"),
+                        ("fusion", "fusion_score"),
+                    )
+                    if chunk.get(field) is not None
+                },
             }
         )
 
@@ -279,9 +283,13 @@ async def _apply_citation_graph(
         raise ResearchSearchError("citation_graph_failure", "论文引用图谱 PPR 扩展失败") from exc
 
     ranked_graph_papers = expansion["papers"]
+    mapped_graph_paper_ids = list(seed_weights)
+    mapped_graph_paper_ids.extend(
+        item["graph_paper_id"] for item in ranked_graph_papers if item["graph_paper_id"] not in seed_weights
+    )
     local_paper_ids = await graph_repo.list_library_paper_ids(
         kb_id=kb_id,
-        graph_paper_ids=[item["graph_paper_id"] for item in ranked_graph_papers],
+        graph_paper_ids=mapped_graph_paper_ids,
     )
     graph_rank = {
         graph_paper_id: rank
@@ -436,7 +444,9 @@ async def search_papers(
                     "expanded_count": 0,
                     "node_count": 0,
                     "citation_count": 0,
-                } if citation_graph_enabled else None,
+                }
+                if citation_graph_enabled
+                else None,
                 "config": {
                     **retrieval_config,
                     **public_models,

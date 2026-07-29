@@ -373,6 +373,56 @@ async def test_create_dify_database_invalid_api_url_failed(test_client, admin_he
     assert "/v1" in response.json()["detail"]
 
 
+async def test_create_notion_database_missing_data_source_returns_400(test_client, admin_headers):
+    response = await test_client.post(
+        "/api/knowledge/databases",
+        json={
+            "database_name": f"pytest_notion_missing_{uuid.uuid4().hex[:6]}",
+            "description": "Notion KB missing params",
+            "kb_type": "notion",
+            "additional_params": {"notion_token": "test-token"},
+        },
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 400, response.text
+    assert "notion_data_source_id" in response.json()["detail"]
+
+
+async def test_update_dify_database_invalid_api_url_returns_400(test_client, admin_headers):
+    create_response = await test_client.post(
+        "/api/knowledge/databases",
+        json={
+            "database_name": f"pytest_dify_update_{uuid.uuid4().hex[:6]}",
+            "description": "Dify KB update validation",
+            "kb_type": "dify",
+            "additional_params": {
+                "dify_api_url": "https://api.dify.ai/v1",
+                "dify_token": "test-token",
+                "dify_dataset_id": "dataset-123",
+            },
+        },
+        headers=admin_headers,
+    )
+    assert create_response.status_code == 200, create_response.text
+    kb_id = create_response.json()["kb_id"]
+
+    try:
+        update_response = await test_client.put(
+            f"/api/knowledge/databases/{kb_id}",
+            json={
+                "name": "Dify KB update validation",
+                "description": "Dify KB update validation",
+                "additional_params": {"dify_api_url": "https://api.dify.ai"},
+            },
+            headers=admin_headers,
+        )
+        assert update_response.status_code == 400, update_response.text
+        assert "/v1" in update_response.json()["detail"]
+    finally:
+        await test_client.delete(f"/api/knowledge/databases/{kb_id}", headers=admin_headers)
+
+
 async def test_dify_query_params_and_documents_readonly(test_client, admin_headers):
     payload = {
         "database_name": f"pytest_dify_ro_{uuid.uuid4().hex[:6]}",
@@ -481,26 +531,33 @@ async def test_get_database_mindmap_not_exists(test_client, admin_headers, knowl
     assert payload["mindmap"] is None  # 尚未生成思维导图
 
 
-async def test_generate_and_get_mindmap(test_client, admin_headers, knowledge_database):
-    """测试生成并获取思维导图
-
-    注意：此测试需要知识库中有文件才能完整测试核心功能。
-    由于没有前置的文件上传 fixture，测试会先验证空文件场景（预期400），
-    然后使用 xfail 标记等待后续完善。
-    """
+async def test_generate_and_get_mindmap(
+    test_client,
+    admin_headers,
+    knowledge_database,
+    knowledge_document,
+):
+    """使用真实文件记录生成并读取思维导图。"""
     kb_id = knowledge_database["kb_id"]
-
-    # 空文件场景 - 预期返回400错误
     generate_response = await test_client.post(
         f"/api/knowledge/databases/{kb_id}/mindmap/generate",
-        json={"file_ids": [], "user_prompt": ""},
+        json={"file_ids": [knowledge_document["file_id"]], "user_prompt": ""},
         headers=admin_headers,
     )
-    assert generate_response.status_code == 400
-    assert "中没有文件" in generate_response.json()["detail"]
+    assert generate_response.status_code == 200, generate_response.text
+    generated = generate_response.json()
+    assert generated["message"] == "success"
+    assert generated["file_count"] == 1
+    assert isinstance(generated["mindmap"], dict)
 
-    # 标记此测试需要文件上传支持才能完整执行
-    pytest.skip("需要先上传文件才能完整测试思维导图生成功能")
+    get_response = await test_client.get(
+        f"/api/knowledge/databases/{kb_id}/mindmap",
+        headers=admin_headers,
+    )
+    assert get_response.status_code == 200, get_response.text
+    stored = get_response.json()
+    assert stored["mindmap"] == generated["mindmap"]
+    assert stored["mindmap_file_ids"] == {knowledge_document["file_id"]: knowledge_document["filename"]}
 
 
 # =============================================================================

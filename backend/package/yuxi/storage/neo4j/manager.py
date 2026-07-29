@@ -52,7 +52,11 @@ class Neo4jConnectionManager:
         password = os.environ.get("NEO4J_PASSWORD", "0123456789")
 
         try:
-            self.driver = GD.driver(uri, auth=(username, password))
+            self.driver = GD.driver(
+                uri,
+                auth=(username, password),
+                notifications_min_severity="ERROR",
+            )
             with self.driver.session() as session:
                 session.run("RETURN 1")
             self.status = "open"

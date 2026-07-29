@@ -154,6 +154,71 @@ async def test_translates_siliconflow_non_vlm_error_without_retrying() -> None:
     assert response.result[0].tool_calls[0]["name"] == "ocr_parse_file"
 
 
+@pytest.mark.asyncio
+async def test_translates_text_only_provider_deserialization_error() -> None:
+    middleware = ImageInputCompatibilityMiddleware()
+    request = _request(SimpleNamespace(), [_read_file_image_message()])
+
+    async def handler(_request):
+        error = RuntimeError("messages[4]: unknown variant `image_url`, expected `text` at line 1 column 20130")
+        error.status_code = 400
+        raise error
+
+    response = await middleware.awrap_model_call(request, handler)
+
+    assert response.result[0].tool_calls[0]["name"] == "ocr_parse_file"
+
+
+@pytest.mark.asyncio
+async def test_retries_empty_image_response_once_with_explicit_text_instruction() -> None:
+    middleware = ImageInputCompatibilityMiddleware()
+    request = _request(SimpleNamespace(), [_read_file_image_message()])
+    seen_requests: list[ModelRequest] = []
+
+    async def handler(current_request):
+        seen_requests.append(current_request)
+        if len(seen_requests) == 1:
+            return ModelResponse(result=[AIMessage(content="")])
+        return ModelResponse(result=[AIMessage(content="blue")])
+
+    response = await middleware.awrap_model_call(request, handler)
+
+    assert response.result[0].content == "blue"
+    assert len(seen_requests) == 2
+    assert isinstance(seen_requests[1].messages[-1], HumanMessage)
+    assert "non-empty textual answer" in seen_requests[1].messages[-1].content
+
+
+@pytest.mark.asyncio
+async def test_does_not_retry_empty_content_when_model_requests_a_tool() -> None:
+    middleware = ImageInputCompatibilityMiddleware()
+    request = _request(SimpleNamespace(), [_read_file_image_message()])
+    calls = 0
+
+    async def handler(_request):
+        nonlocal calls
+        calls += 1
+        return ModelResponse(
+            result=[
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "read_file",
+                            "args": {"file_path": "/home/gem/user-data/uploads/image.png"},
+                            "id": "call_read_file",
+                        }
+                    ],
+                )
+            ]
+        )
+
+    response = await middleware.awrap_model_call(request, handler)
+
+    assert response.result[0].tool_calls[0]["name"] == "read_file"
+    assert calls == 1
+
+
 def test_omits_historical_tool_image_after_ocr_fallback() -> None:
     middleware = ImageInputCompatibilityMiddleware()
     path = "/home/gem/user-data/uploads/image.png"

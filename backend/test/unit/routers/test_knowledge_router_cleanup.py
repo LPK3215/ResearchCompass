@@ -43,9 +43,7 @@ class CapturingLogger:
 
 async def test_all_kb_path_routes_include_object_access_dependency():
     kb_routes = [
-        route
-        for route in knowledge_router.knowledge.routes
-        if isinstance(route, APIRoute) and "{kb_id}" in route.path
+        route for route in knowledge_router.knowledge.routes if isinstance(route, APIRoute) and "{kb_id}" in route.path
     ]
 
     assert kb_routes

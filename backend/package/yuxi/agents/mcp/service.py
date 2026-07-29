@@ -40,6 +40,7 @@ _UNSET = object()
 class MCPToolsLoadError(RuntimeError):
     pass
 
+
 # Default MCP Server configurations (Imported to DB on first run)
 _DEFAULT_MCP_SERVERS = {
     "mcp-server-chart": {

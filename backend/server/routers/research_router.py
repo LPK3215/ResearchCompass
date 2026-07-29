@@ -12,7 +12,7 @@ from datetime import UTC, date, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -432,8 +432,8 @@ class ResearchSynthesisRequest(BaseModel):
 
 class AcademicGraphSyncRequest(BaseModel):
     paper_ids: list[str] = Field(default_factory=list, max_length=500)
-    citation_limit: int = Field(default=100, ge=0, le=5000)
-    reference_limit: int = Field(default=100, ge=0, le=5000)
+    citation_limit: int = Field(default=100, ge=0, le=5000, description="每篇论文的引用上限；0 表示仅同步节点")
+    reference_limit: int = Field(default=100, ge=0, le=5000, description="每篇论文的参考文献上限；0 表示仅同步节点")
 
     @field_validator("paper_ids")
     @classmethod
@@ -636,6 +636,7 @@ _USER_STUDY_STATUS_MAP = {
     "consent_required": 422,
     "invalid_participant_count": 422,
     "invalid_response": 422,
+    "response_data_invalid": 500,
     "rate_limited": 429,
     "rate_limit_unavailable": 503,
 }
@@ -1533,8 +1534,14 @@ async def export_papers(
 ):
     ids = [pid.strip() for pid in paper_ids.split(",") if pid.strip()] if paper_ids else None
     content = await export_papers_bibtex(kb_id=kb_id, current_user=current_user, paper_ids=ids)
-    return Response(
-        content=content.encode("utf-8-sig"),
+
+    async def with_utf8_bom():
+        yield "\ufeff"
+        async for chunk in content:
+            yield chunk
+
+    return StreamingResponse(
+        with_utf8_bom(),
         media_type="text/plain; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="papers_{kb_id}.bib"'},
     )

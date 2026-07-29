@@ -25,6 +25,7 @@ class FakeRedis:
             self.expirations[key] = seconds
         return self.counts[key]
 
+
 @pytest.mark.asyncio
 async def test_public_rate_limit_rejects_requests_over_limit(monkeypatch):
     redis = FakeRedis()
@@ -163,7 +164,7 @@ async def test_study_csv_export_neutralizes_spreadsheet_formulas(monkeypatch):
         sus_scores={key: 3 for key in research_user_study_service.SUS_SCORE_KEYS},
         overall_rating=4,
         recommend_score=8,
-        feedback="=HYPERLINK(\"https://example.test\",\"open\")",
+        feedback='=HYPERLINK("https://example.test","open")',
         submitted_at=None,
     )
 
@@ -191,4 +192,4 @@ async def test_study_csv_export_neutralizes_spreadsheet_formulas(monkeypatch):
     )
 
     rows = list(csv.reader(io.StringIO(content)))
-    assert rows[1][-2] == "'=HYPERLINK(\"https://example.test\",\"open\")"
+    assert rows[1][-2] == '\'=HYPERLINK("https://example.test","open")'

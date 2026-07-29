@@ -40,33 +40,34 @@ class FakeHit:
         }
 
 
-class FakeCollection:
+class FakeMilvusClient:
     def __init__(self, distance: float = 0.8):
         self.search_calls = []
         self.hybrid_calls = []
         self.insert_calls = []
         self.distance = distance
 
-    def search(self, **kwargs):
+    def search(self, collection_name, **kwargs):
         self.search_calls.append(kwargs)
         return [[FakeHit("BM25 result", self.distance)]]
 
-    def hybrid_search(self, **kwargs):
+    def hybrid_search(self, collection_name, **kwargs):
         self.hybrid_calls.append(kwargs)
         return [[FakeHit("Hybrid result", self.distance)]]
 
-    def insert(self, entities):
-        self.insert_calls.append(entities)
+    def insert(self, collection_name, data):
+        self.insert_calls.append(data)
 
 
-def make_kb(collection: FakeCollection) -> MilvusKB:
+def make_kb(client: FakeMilvusClient) -> MilvusKB:
     kb = MilvusKB.__new__(MilvusKB)
+    kb.client = client
     kb.databases_meta = {"db": {"embedding_model_spec": "test-provider:test-embedding"}}
     kb._get_query_params = lambda kb_id: {}
     kb._get_embedding_function = lambda embedding_model_spec, **kwargs: lambda texts: [[0.1, 0.2] for _ in texts]
 
     async def get_collection(kb_id: str):
-        return collection
+        return "db"
 
     async def hydrate_chunk_sources(kb_id: str, chunks: list[dict]) -> None:
         for chunk in chunks:
@@ -77,95 +78,100 @@ def make_kb(collection: FakeCollection) -> MilvusKB:
     return kb
 
 
-def test_init_connection_uses_instance_alias_for_database_operations(monkeypatch):
+def test_init_connection_creates_client_and_switches_to_target_database(monkeypatch):
+    init_calls = []
+    client_calls = []
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            init_calls.append(kwargs)
+
+        def list_databases(self):
+            client_calls.append(("list",))
+            return ["default"]
+
+        def create_database(self, db_name):
+            client_calls.append(("create", db_name))
+
+        def use_database(self, db_name):
+            client_calls.append(("using", db_name))
+
+    monkeypatch.setattr(
+        "yuxi.knowledge.implementations.milvus.MilvusClient",
+        lambda **kwargs: FakeClient(**kwargs),
+    )
+
     kb = MilvusKB.__new__(MilvusKB)
-    kb.connection_alias = "research-alias"
     kb.milvus_uri = "http://milvus:19530"
     kb.milvus_token = ""
     kb.milvus_db = "research"
-    calls = []
-
-    monkeypatch.setattr(
-        "yuxi.knowledge.implementations.milvus.connections.connect",
-        lambda **kwargs: calls.append(("connect", kwargs)),
-    )
-    monkeypatch.setattr(
-        "yuxi.knowledge.implementations.milvus.db.list_database",
-        lambda **kwargs: calls.append(("list", kwargs)) or ["default"],
-    )
-    monkeypatch.setattr(
-        "yuxi.knowledge.implementations.milvus.db.create_database",
-        lambda database, **kwargs: calls.append(("create", database, kwargs)),
-    )
-    monkeypatch.setattr(
-        "yuxi.knowledge.implementations.milvus.db.using_database",
-        lambda database, **kwargs: calls.append(("using", database, kwargs)),
-    )
 
     kb._init_connection()
 
-    assert calls == [
-        ("connect", {"alias": "research-alias", "uri": "http://milvus:19530", "token": ""}),
-        ("list", {"using": "research-alias"}),
-        ("create", "research", {"using": "research-alias"}),
-        ("using", "research", {"using": "research-alias"}),
-    ]
+    assert init_calls == [{"uri": "http://milvus:19530", "token": ""}]
+    assert client_calls == [("list",), ("create", "research"), ("using", "research")]
 
 
 def test_init_connection_fails_instead_of_using_the_default_database(monkeypatch):
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        def list_databases(self):
+            raise ConnectionError("unavailable")
+
+        def create_database(self, db_name):
+            pass
+
+        def use_database(self, db_name):
+            pass
+
+    monkeypatch.setattr(
+        "yuxi.knowledge.implementations.milvus.MilvusClient",
+        lambda **kwargs: FakeClient(),
+    )
+
     kb = MilvusKB.__new__(MilvusKB)
-    kb.connection_alias = "research-alias"
     kb.milvus_uri = "http://milvus:19530"
     kb.milvus_token = ""
     kb.milvus_db = "research"
-
-    monkeypatch.setattr("yuxi.knowledge.implementations.milvus.connections.connect", lambda **kwargs: None)
-    monkeypatch.setattr(
-        "yuxi.knowledge.implementations.milvus.db.list_database",
-        lambda **kwargs: (_ for _ in ()).throw(ConnectionError("unavailable")),
-    )
 
     with pytest.raises(RuntimeError, match="Milvus database initialization failed: research"):
         kb._init_connection()
 
 
-def test_graph_vector_store_uses_its_instance_alias_for_database_operations(monkeypatch):
+def test_graph_vector_store_init_connection_creates_client_and_switches_database(monkeypatch):
+    init_calls = []
+    client_calls = []
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            init_calls.append(kwargs)
+
+        def list_databases(self):
+            client_calls.append(("list",))
+            return ["default"]
+
+        def create_database(self, db_name):
+            client_calls.append(("create", db_name))
+
+        def use_database(self, db_name):
+            client_calls.append(("using", db_name))
+
+    monkeypatch.setattr(
+        "yuxi.knowledge.graphs.milvus_graph_vector_store.MilvusClient",
+        lambda **kwargs: FakeClient(**kwargs),
+    )
+
     store = MilvusGraphVectorStore.__new__(MilvusGraphVectorStore)
-    store.connection_alias = "graph-alias"
     store.milvus_uri = "http://milvus:19530"
     store.milvus_token = ""
     store.milvus_db = "research"
-    calls = []
-
-    monkeypatch.setattr(
-        "yuxi.knowledge.graphs.milvus_graph_vector_store.connections.has_connection",
-        lambda alias: False,
-    )
-    monkeypatch.setattr(
-        "yuxi.knowledge.graphs.milvus_graph_vector_store.connections.connect",
-        lambda **kwargs: calls.append(("connect", kwargs)),
-    )
-    monkeypatch.setattr(
-        "yuxi.knowledge.graphs.milvus_graph_vector_store.db.list_database",
-        lambda **kwargs: calls.append(("list", kwargs)) or ["default"],
-    )
-    monkeypatch.setattr(
-        "yuxi.knowledge.graphs.milvus_graph_vector_store.db.create_database",
-        lambda database, **kwargs: calls.append(("create", database, kwargs)),
-    )
-    monkeypatch.setattr(
-        "yuxi.knowledge.graphs.milvus_graph_vector_store.db.using_database",
-        lambda database, **kwargs: calls.append(("using", database, kwargs)),
-    )
 
     store._init_connection()
 
-    assert calls == [
-        ("connect", {"alias": "graph-alias", "uri": "http://milvus:19530", "token": ""}),
-        ("list", {"using": "graph-alias"}),
-        ("create", "research", {"using": "graph-alias"}),
-        ("using", "research", {"using": "graph-alias"}),
-    ]
+    assert init_calls == [{"uri": "http://milvus:19530", "token": ""}]
+    assert client_calls == [("list",), ("create", "research"), ("using", "research")]
 
 
 def make_file_record(**overrides):
@@ -262,7 +268,6 @@ def make_chunk(index: int, content: str = "content") -> dict:
 
 async def test_delete_database_offloads_milvus_cleanup(monkeypatch):
     kb = MilvusKB.__new__(MilvusKB)
-    kb.connection_alias = "test-alias"
     event_loop_thread = threading.get_ident()
     cleanup_threads = []
     calls = []
@@ -271,14 +276,15 @@ async def test_delete_database_offloads_milvus_cleanup(monkeypatch):
         cleanup_threads.append(threading.get_ident())
         calls.append(name)
 
-    monkeypatch.setattr(
-        "yuxi.knowledge.implementations.milvus.utility.has_collection",
-        lambda kb_id, using: record_cleanup("has_collection") or True,
-    )
-    monkeypatch.setattr(
-        "yuxi.knowledge.implementations.milvus.utility.drop_collection",
-        lambda kb_id, using: record_cleanup("drop_collection"),
-    )
+    class FakeClient:
+        def has_collection(self, kb_id):
+            record_cleanup("has_collection")
+            return True
+
+        def drop_collection(self, kb_id):
+            record_cleanup("drop_collection")
+
+    kb.client = FakeClient()
 
     class FakeGraphVectorStore:
         def __init__(self):
@@ -351,7 +357,7 @@ async def test_embed_and_store_chunks_batches_embedding_and_insert():
     await kb._embed_and_store_chunks(
         "db",
         "file-1",
-        FakeCollection(),
+        "db",
         chunks,
         embedding_function,
         chunk_batch_size=200,
@@ -382,14 +388,14 @@ async def test_index_file_persists_chunk_stats(monkeypatch):
     kb.databases_meta = {"db": {"embedding_model_spec": "test-provider:test-embedding", "metadata": {}}}
     file_repo = FakeKnowledgeFileRepository({"file-1": make_file_record()})
     patch_file_repository(monkeypatch, file_repo)
-    collection = FakeCollection()
+    collection_name = "db"
     deleted_files = []
     store_calls = []
     refreshed_kbs = []
     chunks = [make_chunk(0, content="alpha beta"), make_chunk(1, content="中文")]
 
     async def get_collection(kb_id):
-        return collection
+        return collection_name
 
     async def read_markdown(path):
         return "# demo"
@@ -488,7 +494,7 @@ async def test_index_file_cancellation_marks_file_retryable(monkeypatch):
     patch_file_repository(monkeypatch, file_repo)
 
     async def get_collection(kb_id):
-        return FakeCollection()
+        return "db"
 
     reading = asyncio.Event()
 
@@ -520,7 +526,7 @@ async def test_index_file_failure_persists_sanitized_error(monkeypatch):
     patch_file_repository(monkeypatch, file_repo)
 
     async def get_collection(kb_id):
-        return FakeCollection()
+        return "db"
 
     async def failing_read(path):
         raise RuntimeError(secret)
@@ -600,15 +606,17 @@ async def test_insert_chunks_to_stores_inserts_current_batch(monkeypatch):
 
     monkeypatch.setattr("yuxi.knowledge.implementations.milvus.KnowledgeChunkRepository", FakeChunkRepo)
     kb = MilvusKB.__new__(MilvusKB)
-    collection = FakeCollection()
+    client = FakeMilvusClient()
+    kb.client = client
     chunks = [make_chunk(index) for index in range(3)]
     embeddings = [[0.1, 0.2] for _ in chunks]
 
-    await kb._insert_chunks_to_stores("db", "file-1", collection, chunks, embeddings)
+    await kb._insert_chunks_to_stores("db", "file-1", "db", chunks, embeddings)
 
-    assert len(collection.insert_calls) == 1
-    assert collection.insert_calls[0][0] == ["id-0", "id-1", "id-2"]
-    assert collection.insert_calls[0][5] == embeddings
+    assert len(client.insert_calls) == 1
+    inserted = client.insert_calls[0]
+    assert [row["id"] for row in inserted] == ["id-0", "id-1", "id-2"]
+    assert [row["embedding"] for row in inserted] == embeddings
     assert len(repos[0].upsert_calls) == 1
     assert [record["chunk_id"] for record in repos[0].upsert_calls[0]] == ["chunk-0", "chunk-1", "chunk-2"]
 
@@ -630,14 +638,15 @@ async def test_insert_chunks_to_stores_rolls_back_file_when_milvus_insert_fails(
             self.delete_calls.append(file_id)
             return 0
 
-    class FailingCollection(FakeCollection):
-        def insert(self, entities):
-            super().insert(entities)
+    class FailingMilvusClient(FakeMilvusClient):
+        def insert(self, collection_name, data):
+            self.insert_calls.append(data)
             raise RuntimeError("milvus boom")
 
     monkeypatch.setattr("yuxi.knowledge.implementations.milvus.KnowledgeChunkRepository", FakeChunkRepo)
     kb = MilvusKB.__new__(MilvusKB)
-    collection = FailingCollection()
+    client = FailingMilvusClient()
+    kb.client = client
     milvus_delete_calls = []
 
     async def delete_file_chunks_from_milvus(collection_arg, file_id):
@@ -648,10 +657,10 @@ async def test_insert_chunks_to_stores_rolls_back_file_when_milvus_insert_fails(
     embeddings = [[0.1, 0.2] for _ in chunks]
 
     with pytest.raises(RuntimeError, match="milvus boom"):
-        await kb._insert_chunks_to_stores("db", "file-1", collection, chunks, embeddings)
+        await kb._insert_chunks_to_stores("db", "file-1", "db", chunks, embeddings)
 
     assert repos[0].delete_calls == ["file-1"]
-    assert milvus_delete_calls == [(collection, "file-1")]
+    assert milvus_delete_calls == [("db", "file-1")]
 
 
 async def test_update_content_uses_streaming_chunk_store(monkeypatch):
@@ -659,13 +668,13 @@ async def test_update_content_uses_streaming_chunk_store(monkeypatch):
     kb.databases_meta = {"db": {"embedding_model_spec": "test-provider:test-embedding", "metadata": {}}}
     file_repo = FakeKnowledgeFileRepository({"file-1": make_file_record(markdown_file=None, status=FileStatus.INDEXED)})
     patch_file_repository(monkeypatch, file_repo)
-    collection = FakeCollection()
+    collection_name = "db"
     refreshed_kbs = []
     deleted_files = []
     store_calls = []
 
     async def get_collection(kb_id):
-        return collection
+        return collection_name
 
     async def forbidden_embedding(texts):
         raise AssertionError("update_content should not embed the whole file directly")
@@ -695,7 +704,7 @@ async def test_update_content_uses_streaming_chunk_store(monkeypatch):
 
     assert deleted_files == [("db", "file-1")]
     assert len(store_calls) == 1
-    assert store_calls[0][2] is collection
+    assert store_calls[0][2] is collection_name
     assert [chunk["chunk_id"] for chunk in store_calls[0][3]] == ["chunk-0", "chunk-1"]
     assert store_calls[0][4] is forbidden_embedding
     assert result[0]["status"] == FileStatus.INDEXED
@@ -714,7 +723,7 @@ async def test_update_content_returns_sanitized_failure(monkeypatch):
     patch_file_repository(monkeypatch, file_repo)
 
     async def get_collection(kb_id):
-        return FakeCollection()
+        return "db"
 
     async def failing_parse(source, params):
         raise RuntimeError(secret)
@@ -733,8 +742,8 @@ async def test_update_content_returns_sanitized_failure(monkeypatch):
 
 
 async def test_keyword_mode_uses_milvus_bm25_search():
-    collection = FakeCollection()
-    kb = make_kb(collection)
+    client = FakeMilvusClient()
+    kb = make_kb(client)
 
     chunks = await kb.aquery(
         "alpha beta",
@@ -746,10 +755,10 @@ async def test_keyword_mode_uses_milvus_bm25_search():
 
     assert chunks[0]["content"] == "BM25 result"
     assert chunks[0]["bm25_score"] == 0.8
-    search_call = collection.search_calls[0]
+    search_call = client.search_calls[0]
     assert search_call["data"] == ["alpha beta"]
     assert search_call["anns_field"] == CONTENT_SPARSE_FIELD
-    assert search_call["param"] == {
+    assert search_call["search_params"] == {
         "metric_type": "BM25",
         "params": {"drop_ratio_search": 0.2},
     }
@@ -757,20 +766,20 @@ async def test_keyword_mode_uses_milvus_bm25_search():
 
 
 async def test_vector_mode_ignores_metric_type_override():
-    collection = FakeCollection()
-    kb = make_kb(collection)
+    client = FakeMilvusClient()
+    kb = make_kb(client)
 
     chunks = await kb.aquery("vector query", "db", search_mode="vector", metric_type="L2")
 
     assert chunks[0]["content"] == "BM25 result"
-    search_call = collection.search_calls[0]
+    search_call = client.search_calls[0]
     assert search_call["anns_field"] == "embedding"
-    assert search_call["param"]["metric_type"] == VECTOR_METRIC_TYPE
+    assert search_call["search_params"]["metric_type"] == VECTOR_METRIC_TYPE
 
 
 async def test_hybrid_mode_uses_milvus_native_hybrid_search():
-    collection = FakeCollection()
-    kb = make_kb(collection)
+    client = FakeMilvusClient()
+    kb = make_kb(client)
 
     chunks = await kb.aquery(
         "hybrid query",
@@ -784,9 +793,9 @@ async def test_hybrid_mode_uses_milvus_native_hybrid_search():
 
     assert chunks[0]["content"] == "Hybrid result"
     assert chunks[0]["hybrid_score"] == 0.8
-    hybrid_call = collection.hybrid_calls[0]
+    hybrid_call = client.hybrid_calls[0]
     assert hybrid_call["limit"] == 3
-    assert hybrid_call["rerank"]._weights == [0.6, 0.4]
+    assert hybrid_call["ranker"]._weights == [0.6, 0.4]
 
     vector_request, bm25_request = hybrid_call["reqs"]
     assert vector_request.anns_field == "embedding"
@@ -799,8 +808,8 @@ async def test_hybrid_mode_uses_milvus_native_hybrid_search():
 
 
 async def test_hybrid_mode_filters_scores_below_similarity_threshold():
-    collection = FakeCollection(distance=0.1)
-    kb = make_kb(collection)
+    client = FakeMilvusClient(distance=0.1)
+    kb = make_kb(client)
 
     chunks = await kb.aquery(
         "hybrid query",
@@ -834,7 +843,7 @@ def test_query_params_config_uses_bm25_parameters():
     assert "BM25" in descriptions["hybrid"]
 
 
-def test_collection_supports_bm25_requires_analyzed_content_sparse_field_and_function():
+def test_collection_supports_bm25_requires_analyzed_content_sparse_field_and_function(monkeypatch):
     kb = MilvusKB.__new__(MilvusKB)
     schema = CollectionSchema(
         fields=[
@@ -858,6 +867,11 @@ def test_collection_supports_bm25_requires_analyzed_content_sparse_field_and_fun
         ],
     )
 
-    collection = type("Collection", (), {"schema": schema})()
+    class FakeClient:
+        def describe_collection(self, collection_name):
+            return {"dummy": True}
 
-    assert kb._collection_supports_bm25(collection)
+    kb.client = FakeClient()
+    monkeypatch.setattr(CollectionSchema, "construct_from_dict", staticmethod(lambda data: schema))
+
+    assert kb._collection_supports_bm25("some_collection")

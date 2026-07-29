@@ -134,6 +134,21 @@ class AcademicPaperRepository:
             )
             return result.scalar_one_or_none()
 
+    async def list_by_paper_ids(self, *, kb_id: str, paper_ids: list[str]) -> list[AcademicPaper]:
+        normalized_ids = [paper_id for paper_id in paper_ids if paper_id]
+        if not normalized_ids:
+            return []
+
+        async with pg_manager.get_async_session_context() as session:
+            result = await session.execute(
+                select(AcademicPaper).where(
+                    AcademicPaper.kb_id == kb_id,
+                    AcademicPaper.paper_id.in_(dict.fromkeys(normalized_ids)),
+                )
+            )
+            papers_by_id = {paper.paper_id: paper for paper in result.scalars().all()}
+        return [papers_by_id[paper_id] for paper_id in normalized_ids if paper_id in papers_by_id]
+
     async def find_duplicate_for_import(
         self,
         *,
@@ -378,6 +393,23 @@ class AcademicPaperRepository:
             )
             return list(result.scalars().all()), int(total_result.scalar_one() or 0)
 
+    async def iter_export_batches(self, *, kb_id: str, batch_size: int = 200) -> AsyncIterator[list[AcademicPaper]]:
+        normalized_batch_size = min(max(int(batch_size), 1), 1_000)
+        after_id = 0
+        while True:
+            async with pg_manager.get_async_session_context() as session:
+                result = await session.execute(
+                    select(AcademicPaper)
+                    .where(AcademicPaper.kb_id == kb_id, AcademicPaper.id > after_id)
+                    .order_by(AcademicPaper.id.asc())
+                    .limit(normalized_batch_size)
+                )
+                papers = list(result.scalars().all())
+            if not papers:
+                return
+            after_id = int(papers[-1].id)
+            yield papers
+
     async def list_trend_records(
         self,
         *,
@@ -507,9 +539,7 @@ class AcademicPaperRepository:
         if not normalized or len(normalized) > 64:
             raise ValueError("标签不能为空且长度不能超过 64 个字符")
         async with pg_manager.get_async_session_context() as session:
-            stmt = insert(AcademicPaperTag).values(
-                kb_id=kb_id, paper_id=paper_id, uid=uid, tag=normalized
-            )
+            stmt = insert(AcademicPaperTag).values(kb_id=kb_id, paper_id=paper_id, uid=uid, tag=normalized)
             await session.execute(stmt.on_conflict_do_nothing(constraint="uq_academic_paper_tags_identity"))
 
     async def remove_tag(self, *, kb_id: str, paper_id: str, uid: str, tag: str) -> None:

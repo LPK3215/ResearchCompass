@@ -20,12 +20,8 @@ class FakeTaskRepository:
         ]
 
     async def list_for_startup(self, *, terminal_limit, terminal_statuses):
-        active = [
-            (task_id, data) for task_id, data in self.records.items() if data["status"] not in terminal_statuses
-        ]
-        terminal = [
-            (task_id, data) for task_id, data in self.records.items() if data["status"] in terminal_statuses
-        ]
+        active = [(task_id, data) for task_id, data in self.records.items() if data["status"] not in terminal_statuses]
+        terminal = [(task_id, data) for task_id, data in self.records.items() if data["status"] in terminal_statuses]
         terminal.sort(key=lambda item: str(item[1].get("created_at") or ""), reverse=True)
         return [
             SimpleNamespace(to_dict=lambda data=data, task_id=task_id: {"id": task_id, **data})

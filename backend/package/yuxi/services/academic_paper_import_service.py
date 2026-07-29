@@ -17,7 +17,6 @@ from fastapi import HTTPException
 
 from yuxi.knowledge.runtime import knowledge_base
 from yuxi.repositories.academic_paper_repository import AcademicPaperRepository
-from yuxi.repositories.knowledge_base_repository import KnowledgeBaseRepository
 from yuxi.repositories.knowledge_file_repository import KnowledgeFileRepository
 from yuxi.repositories.user_repository import UserRepository
 from yuxi.services.research_paper_service import _ensure_access
@@ -71,9 +70,7 @@ def _paper_metadata(paper: dict[str, Any]) -> dict[str, Any]:
 
     citation_count = paper.get("citationCount")
     if citation_count is not None:
-        if isinstance(citation_count, bool) or (
-            isinstance(citation_count, float) and not citation_count.is_integer()
-        ):
+        if isinstance(citation_count, bool) or (isinstance(citation_count, float) and not citation_count.is_integer()):
             raise AcademicPaperImportError("paper_metadata_invalid", "Semantic Scholar 引用数无效")
         try:
             citation_count = int(citation_count)
@@ -350,9 +347,7 @@ async def import_external_paper(*, identifier: str, kb_id: str, current_user: Us
         raise
     except Exception as exc:
         logger.error("获取外部论文失败: exception_type=%s", type(exc).__name__)
-        raise AcademicPaperImportError(
-            "paper_import_fetch_failed", "获取外部论文元数据或公开 PDF 失败"
-        ) from exc
+        raise AcademicPaperImportError("paper_import_fetch_failed", "获取外部论文元数据或公开 PDF 失败") from exc
 
     try:
         content_hash = await calculate_content_hash(pdf_bytes)
@@ -485,12 +480,19 @@ async def recover_external_paper_imports() -> int:
     """重新入队那些文件记录在 API 重启后仍然存在的外部论文导入任务。"""
     recovered = 0
     file_repo = KnowledgeFileRepository()
-    for kb in await KnowledgeBaseRepository().get_all():
-        for record in await file_repo.list_by_kb_id(str(kb.kb_id)):
+    recoverable_statuses = {
+        "uploaded",
+        "parsing",
+        "error_parsing",
+        "parsed",
+        "error_indexing",
+        "indexing",
+        "failed",
+    }
+    async for records in file_repo.iter_external_import_recovery_batches(statuses=recoverable_statuses):
+        for record in records:
             params = record.processing_params if isinstance(record.processing_params, dict) else {}
             if not isinstance(params.get("external_import"), dict):
-                continue
-            if record.status == "indexed":
                 continue
             paper_config = params.get("chunk_parser_config")
             paper_metadata = paper_config.get("paper_metadata") if isinstance(paper_config, dict) else None
@@ -500,16 +502,6 @@ async def recover_external_paper_imports() -> int:
                     kb_id=record.kb_id,
                     data={"status": "failed", "error_message": "外部论文恢复缺少论文元数据"},
                 )
-                continue
-            if record.status not in {
-                "uploaded",
-                "parsing",
-                "error_parsing",
-                "parsed",
-                "error_indexing",
-                "indexing",
-                "failed",
-            }:
                 continue
             if record.status == "parsing":
                 await file_repo.update_fields(

@@ -1053,8 +1053,7 @@ class EvaluationService:
             candidate_corpus = await self._get_indexed_corpus_snapshot(variant_kb_id)
             if candidate_corpus["content_hashes"] != source_corpus["content_hashes"]:
                 raise ValueError(
-                    f"变体 {index + 1} 的知识库语料与源知识库不一致；"
-                    "跨知识库对比要求已索引文档内容哈希集合完全相同"
+                    f"变体 {index + 1} 的知识库语料与源知识库不一致；跨知识库对比要求已索引文档内容哈希集合完全相同"
                 )
             if candidate_corpus["embedding_model_spec"] != source_corpus["embedding_model_spec"]:
                 raise ValueError(f"变体 {index + 1} 的嵌入模型与源知识库不一致，不能建立受控对比")
@@ -1074,8 +1073,7 @@ class EvaluationService:
                 }
             )
         use_document_identity = any(
-            row["execution_type"] != "research_compass" or str(row["kb_id"]) != str(kb_id)
-            for row in variant_rows
+            row["execution_type"] != "research_compass" or str(row["kb_id"]) != str(kb_id) for row in variant_rows
         )
 
         await self.eval_repo.create_experiment_with_variants(
@@ -1370,9 +1368,9 @@ class EvaluationService:
         items = await self.eval_repo.list_all_dataset_items(variant.dataset_id)
         if not items:
             raise ValueError("Dataset has no items")
-        existing_items_by_index = {
-            int(item.item_index): item for item in await self.eval_repo.list_all_run_items(run_id)
-        } if run_id else {}
+        existing_items_by_index = (
+            {int(item.item_index): item for item in await self.eval_repo.list_all_run_items(run_id)} if run_id else {}
+        )
         has_pending_items = any(
             (
                 (existing_item := existing_items_by_index.get(index)) is None
@@ -1437,11 +1435,7 @@ class EvaluationService:
                 existing_metrics = existing_item.metrics or {}
                 if dataset.has_gold_chunks:
                     retrieval_metrics_list.append(
-                        {
-                            key: value
-                            for key, value in existing_metrics.items()
-                            if key.startswith(("recall@", "f1@"))
-                        }
+                        {key: value for key, value in existing_metrics.items() if key.startswith(("recall@", "f1@"))}
                     )
                 if dataset.has_gold_answers and "score" in existing_metrics:
                     answer_metrics_list.append(
@@ -1452,8 +1446,7 @@ class EvaluationService:
             result = result_by_item_id[str(dataset_item.item_id)]
             document_hashes = result.get("retrieved_document_hashes") or []
             retrieved_chunks = [
-                {"content_hash": value, "metadata": {"content_hash": value}}
-                for value in document_hashes
+                {"content_hash": value, "metadata": {"content_hash": value}} for value in document_hashes
             ]
             gold_hashes = document_gold_by_item_id.get(str(dataset_item.item_id), [])
             retrieval_scores = {}

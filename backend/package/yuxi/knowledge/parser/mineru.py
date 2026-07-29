@@ -156,7 +156,6 @@ class MinerUParser(BaseDocumentProcessor):
         start_time = time.time()
         tmp_zip_path: str | None = None
         try:
-
             logger.info(
                 f"MinerU 开始处理: {os.path.basename(file_path)} (backend={data['backend']}, lang={data['lang_list']})"
             )
@@ -174,8 +173,7 @@ class MinerUParser(BaseDocumentProcessor):
                     stream=True,
                 ) as response:
                     logger.debug(
-                        f"MinerU 响应状态: {response.status_code}, "
-                        f"Content-Type: {response.headers.get('content-type')}"
+                        f"MinerU 响应状态: {response.status_code}, Content-Type: {response.headers.get('content-type')}"
                     )
 
                     if response.status_code != 200:
@@ -241,9 +239,7 @@ class MinerUParser(BaseDocumentProcessor):
                 )
 
             processing_time = time.time() - start_time
-            logger.info(
-                f"MinerU 处理成功: {os.path.basename(file_path)} - {len(text)} 字符 ({processing_time:.2f}s)"
-            )
+            logger.info(f"MinerU 处理成功: {os.path.basename(file_path)} - {len(text)} 字符 ({processing_time:.2f}s)")
 
             return text
 

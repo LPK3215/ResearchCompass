@@ -53,3 +53,14 @@ async def test_builtin_agent_startup_respects_lite_mode(
 
     assert calls[:4] == ["default", "general", "web_search", "deep_research"]
     assert ("research_copilot" in calls) is expects_copilot
+
+
+@pytest.mark.asyncio
+async def test_research_task_recovery_is_skipped_in_lite_mode(monkeypatch):
+    messages: list[str] = []
+    monkeypatch.setenv("LITE_MODE", "1")
+    monkeypatch.setattr(lifespan_module.logger, "info", messages.append)
+
+    await lifespan_module._recover_research_tasks()
+
+    assert messages == ["LITE_MODE enabled, skipping research task recovery"]

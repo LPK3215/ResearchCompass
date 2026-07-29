@@ -2512,6 +2512,7 @@ onBeforeUnmount(() => {
   height: calc(100% - 57px);
   padding: 20px var(--page-padding) 32px;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .research-tabs {

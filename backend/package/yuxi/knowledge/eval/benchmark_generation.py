@@ -17,6 +17,8 @@ DEFAULT_GRAPH_EXPAND_TOP_K = 1
 
 class BenchmarkGenerationError(PublicTaskError):
     error_type = "benchmark_generation_model_failed"
+
+
 MAX_GRAPH_EXPAND_TOP_K = 3
 GRAPH_SEED_DECAY = 0.9
 GRAPH_PPR_DAMPING = 0.85

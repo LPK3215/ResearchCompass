@@ -159,9 +159,7 @@ class MinerUOfficialParser(BaseDocumentProcessor):
                     logger.warning(f"MinerU Official 临时文件清理失败 (error_type={type(error).__name__})")
 
             if not isinstance(text, str) or not text:
-                raise DocumentParserException(
-                    "MinerU Official 未返回文本内容", self.get_service_name(), "no_content"
-                )
+                raise DocumentParserException("MinerU Official 未返回文本内容", self.get_service_name(), "no_content")
 
             processing_time = time.time() - start_time
             logger.info(
@@ -174,9 +172,7 @@ class MinerUOfficialParser(BaseDocumentProcessor):
             if isinstance(e, DocumentParserException):
                 raise
             processing_time = time.time() - start_time
-            logger.error(
-                f"MinerU Official 处理失败 (error_type={type(e).__name__}, elapsed={processing_time:.2f}s)"
-            )
+            logger.error(f"MinerU Official 处理失败 (error_type={type(e).__name__}, elapsed={processing_time:.2f}s)")
             raise DocumentParserException(
                 "MinerU Official 处理失败", self.get_service_name(), "processing_failed"
             ) from e
@@ -225,9 +221,7 @@ class MinerUOfficialParser(BaseDocumentProcessor):
                 ) from error
 
         if not isinstance(result, dict):
-            raise DocumentParserException(
-                "申请上传链接响应格式无效", self.get_service_name(), "response_parse_error"
-            )
+            raise DocumentParserException("申请上传链接响应格式无效", self.get_service_name(), "response_parse_error")
         if result.get("code") != 0:
             raise DocumentParserException(
                 "申请上传链接失败",
@@ -237,9 +231,7 @@ class MinerUOfficialParser(BaseDocumentProcessor):
 
         result_data = result.get("data")
         if not isinstance(result_data, dict):
-            raise DocumentParserException(
-                "申请上传链接响应格式无效", self.get_service_name(), "response_parse_error"
-            )
+            raise DocumentParserException("申请上传链接响应格式无效", self.get_service_name(), "response_parse_error")
         batch_id = result_data.get("batch_id")
         upload_urls = result_data.get("file_urls")
 
@@ -373,9 +365,7 @@ class MinerUOfficialParser(BaseDocumentProcessor):
         try:
             parsed = urlparse(url)
         except ValueError as error:
-            raise DocumentParserException(
-                "供应商返回的 URL 无效", "mineru_official", "invalid_url"
-            ) from error
+            raise DocumentParserException("供应商返回的 URL 无效", "mineru_official", "invalid_url") from error
         if (
             parsed.scheme != "https"
             or not parsed.hostname
@@ -386,9 +376,7 @@ class MinerUOfficialParser(BaseDocumentProcessor):
         try:
             addresses = socket.getaddrinfo(parsed.hostname, parsed.port or 443)
         except OSError as error:
-            raise DocumentParserException(
-                "供应商返回的 URL 无法解析", "mineru_official", "invalid_url"
-            ) from error
+            raise DocumentParserException("供应商返回的 URL 无法解析", "mineru_official", "invalid_url") from error
         has_non_public_address = any(
             not ipaddress.ip_address(address[4][0].split("%", 1)[0]).is_global for address in addresses
         )

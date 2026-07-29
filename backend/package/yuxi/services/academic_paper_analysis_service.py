@@ -67,9 +67,7 @@ def _validate_stage(stage: str, payload: dict[str, Any]) -> dict[str, Any]:
     missing = sorted(key for key in required if key not in payload)
     if missing:
         raise AcademicPaperAnalysisError("analysis_invalid_schema", f"{stage} 阶段缺少字段: {', '.join(missing)}")
-    if stage == "innovations" and (
-        not isinstance(payload["items"], list) or not 1 <= len(payload["items"]) <= 10
-    ):
+    if stage == "innovations" and (not isinstance(payload["items"], list) or not 1 <= len(payload["items"]) <= 10):
         raise AcademicPaperAnalysisError("analysis_invalid_schema", "innovations.items 必须是 1 到 10 项数组")
     if stage == "gaps" and not isinstance(payload["gaps"], list):
         raise AcademicPaperAnalysisError("analysis_invalid_schema", "gaps.gaps 必须是数组")
@@ -111,10 +109,7 @@ STAGE_INSTRUCTIONS = {
 
 
 def _stage_system_prompt(stage: str) -> str:
-    return (
-        "只返回合法 JSON 对象，不要 Markdown 代码块，不要额外解释。"
-        f"当前阶段是 {stage}。{STAGE_INSTRUCTIONS[stage]}"
-    )
+    return f"只返回合法 JSON 对象，不要 Markdown 代码块，不要额外解释。当前阶段是 {stage}。{STAGE_INSTRUCTIONS[stage]}"
 
 
 SINGLE_AGENT_SYSTEM_PROMPT = (
@@ -316,9 +311,8 @@ async def _citation_graph_context(kb_id: str, paper) -> str:
         "two_hop_relations": relation_summaries,
         "neighbor_citation_count": len(neighbors["citations"]),
     }
-    return (
-        "学术引用图谱邻域（用于研究空白与相关工作定位，禁止编造图谱中不存在的关系）:\n"
-        + json.dumps(payload, ensure_ascii=False)
+    return "学术引用图谱邻域（用于研究空白与相关工作定位，禁止编造图谱中不存在的关系）:\n" + json.dumps(
+        payload, ensure_ascii=False
     )
 
 

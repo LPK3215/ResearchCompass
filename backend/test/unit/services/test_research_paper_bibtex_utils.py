@@ -2,10 +2,14 @@
 
 不依赖外部服务，只验证 BibTeX 转义、键生成、作者格式和完整条目输出。
 """
+
 from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
+from yuxi.services import research_paper_service
 from yuxi.services.research_paper_service import (
     _bibtex_key,
     _escape_bibtex,
@@ -17,6 +21,7 @@ from yuxi.services.research_paper_service import (
 # ---------------------------------------------------------------------------
 # _escape_bibtex
 # ---------------------------------------------------------------------------
+
 
 class TestEscapeBibtex:
     def test_plain_text_unchanged(self):
@@ -52,6 +57,7 @@ class TestEscapeBibtex:
 # ---------------------------------------------------------------------------
 # _bibtex_key
 # ---------------------------------------------------------------------------
+
 
 def _make_paper(**kwargs):
     defaults = {
@@ -100,6 +106,7 @@ class TestBibtexKey:
 # _format_bibtex_authors
 # ---------------------------------------------------------------------------
 
+
 class TestFormatBibtexAuthors:
     def test_empty_list_returns_empty(self):
         assert _format_bibtex_authors([]) == ""
@@ -119,6 +126,7 @@ class TestFormatBibtexAuthors:
 # ---------------------------------------------------------------------------
 # _paper_to_bibtex
 # ---------------------------------------------------------------------------
+
 
 class TestPaperToBibtex:
     def test_minimal_paper_with_title_only(self):
@@ -181,3 +189,69 @@ class TestPaperToBibtex:
         )
         result = _paper_to_bibtex(paper, 1)
         assert r"doi = {10.1234/test\_paper}" in result
+
+
+def _export_paper(title: str):
+    return SimpleNamespace(
+        title=title,
+        authors=[],
+        publication_year=None,
+        venue=None,
+        doi=None,
+        abstract=None,
+        keywords=[],
+    )
+
+
+@pytest.mark.asyncio
+async def test_selected_bibtex_export_loads_all_requested_papers_in_one_repository_call(monkeypatch):
+    calls = []
+
+    class FakeRepository:
+        async def list_by_paper_ids(self, *, kb_id, paper_ids):
+            calls.append((kb_id, paper_ids))
+            return [_export_paper("First"), _export_paper("Second")]
+
+    async def allow_access(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(research_paper_service, "AcademicPaperRepository", FakeRepository)
+    monkeypatch.setattr(research_paper_service, "_ensure_access", allow_access)
+
+    chunks = await research_paper_service.export_papers_bibtex(
+        kb_id="kb-1",
+        current_user=SimpleNamespace(uid="user-1"),
+        paper_ids=["paper-1", "paper-2"],
+    )
+    content = "".join([chunk async for chunk in chunks])
+
+    assert calls == [("kb-1", ["paper-1", "paper-2"])]
+    assert "title = {First}" in content
+    assert "title = {Second}" in content
+
+
+@pytest.mark.asyncio
+async def test_full_bibtex_export_streams_repository_batches(monkeypatch):
+    requested = []
+
+    class FakeRepository:
+        async def iter_export_batches(self, *, kb_id):
+            requested.append(kb_id)
+            yield [_export_paper("First")]
+            yield [_export_paper("Second")]
+
+    async def allow_access(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(research_paper_service, "AcademicPaperRepository", FakeRepository)
+    monkeypatch.setattr(research_paper_service, "_ensure_access", allow_access)
+
+    chunks = await research_paper_service.export_papers_bibtex(
+        kb_id="kb-1",
+        current_user=SimpleNamespace(uid="user-1"),
+    )
+    content = "".join([chunk async for chunk in chunks])
+
+    assert requested == ["kb-1"]
+    assert content.count("@article{") == 2
+    assert "\n\n@article{" in content

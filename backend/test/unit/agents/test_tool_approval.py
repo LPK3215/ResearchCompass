@@ -13,10 +13,7 @@ def test_default_mode_builds_sensitive_tool_approval_middleware():
 
     assert middleware.interrupt_on == TOOL_APPROVAL_INTERRUPT_ON
     assert set(middleware.interrupt_on) == SENSITIVE_BACKEND_TOOLS
-    assert all(
-        config["allowed_decisions"] == ["approve", "reject"]
-        for config in middleware.interrupt_on.values()
-    )
+    assert all(config["allowed_decisions"] == ["approve", "reject"] for config in middleware.interrupt_on.values())
 
 
 def test_always_trust_mode_does_not_build_approval_middleware():

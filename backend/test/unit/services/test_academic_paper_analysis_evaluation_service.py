@@ -60,12 +60,11 @@ async def test_create_evaluation_queues_resumable_owner_checked_handler(monkeypa
     )
 
     assert result["task_id"] == "task-1"
-    assert queued["coroutine"] is (
-        academic_paper_analysis_evaluation_service._resume_paper_analysis_evaluation_task
+    assert queued["coroutine"] is (academic_paper_analysis_evaluation_service._resume_paper_analysis_evaluation_task)
+    assert (
+        academic_paper_analysis_evaluation_service.tasker._resumable_handlers["academic_paper_analysis_evaluation"]
+        is academic_paper_analysis_evaluation_service._resume_paper_analysis_evaluation_task
     )
-    assert academic_paper_analysis_evaluation_service.tasker._resumable_handlers[
-        "academic_paper_analysis_evaluation"
-    ] is academic_paper_analysis_evaluation_service._resume_paper_analysis_evaluation_task
 
 
 async def test_recovery_fails_closed_when_owner_lost_write_access(monkeypatch):

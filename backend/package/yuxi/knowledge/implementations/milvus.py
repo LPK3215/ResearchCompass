@@ -8,17 +8,15 @@ from typing import Any
 
 from pymilvus import (
     AnnSearchRequest,
-    Collection,
     CollectionSchema,
     DataType,
     FieldSchema,
     Function,
     FunctionType,
+    MilvusClient,
     WeightedRanker,
-    connections,
-    db,
-    utility,
 )
+from pymilvus.exceptions import MilvusException
 
 from yuxi.knowledge.base import FileStatus, KnowledgeBase
 from yuxi.knowledge.chunking.ragflow_like.dispatcher import chunk_markdown
@@ -29,7 +27,7 @@ from yuxi.models.providers.cache import model_cache
 from yuxi.repositories.academic_paper_repository import AcademicPaperRepository
 from yuxi.repositories.knowledge_chunk_repository import KnowledgeChunkRepository
 from yuxi.repositories.knowledge_file_repository import KnowledgeFileRepository
-from yuxi.utils import hashstr, logger
+from yuxi.utils import logger
 
 MILVUS_AVAILABLE = True
 CONTENT_SPARSE_FIELD = "content_sparse"
@@ -307,11 +305,11 @@ class MilvusKB(KnowledgeBase):
         self.milvus_uri = kwargs.get("milvus_uri", os.getenv("MILVUS_URI") or "http://localhost:19530")
         self.milvus_db = kwargs.get("milvus_db") or "yuxi"
 
-        # 连接名称
-        self.connection_alias = f"milvus_{hashstr(work_dir, 6)}"
+        # MilvusClient 实例（在 _init_connection 中创建）
+        self.client: MilvusClient | None = None
 
-        # 存储集合映射 {kb_id: Collection}
-        self.collections: dict[str, Any] = {}
+        # 存储集合映射 {kb_id: collection_name}
+        self.collections: dict[str, str] = {}
 
         # 初始化连接
         self._init_connection()
@@ -321,13 +319,13 @@ class MilvusKB(KnowledgeBase):
     def _init_connection(self):
         """初始化 Milvus 连接"""
         try:
-            # 连接到 Milvus
-            connections.connect(alias=self.connection_alias, uri=self.milvus_uri, token=self.milvus_token)
+            # 连接到 Milvus（先不指定 db_name，确保数据库存在后再切换）
+            self.client = MilvusClient(uri=self.milvus_uri, token=self.milvus_token)
 
             try:
-                if self.milvus_db not in db.list_database(using=self.connection_alias):
-                    db.create_database(self.milvus_db, using=self.connection_alias)
-                db.using_database(self.milvus_db, using=self.connection_alias)
+                if self.milvus_db not in self.client.list_databases():
+                    self.client.create_database(self.milvus_db)
+                self.client.use_database(self.milvus_db)
             except Exception as exc:
                 raise RuntimeError(f"Milvus database initialization failed: {self.milvus_db}") from exc
 
@@ -337,8 +335,8 @@ class MilvusKB(KnowledgeBase):
             logger.error(f"Failed to connect to Milvus (error_type={type(e).__name__})")
             raise
 
-    async def _create_kb_instance(self, kb_id: str, kb_config: dict) -> Any:
-        """创建 Milvus 集合"""
+    async def _create_kb_instance(self, kb_id: str, kb_config: dict) -> str:
+        """创建 Milvus 集合，返回集合名称"""
         logger.info(f"Creating Milvus collection for {kb_id}")
 
         if not (metadata := self.databases_meta.get(kb_id)):
@@ -356,30 +354,27 @@ class MilvusKB(KnowledgeBase):
 
         try:
             # 检查集合是否存在
-            if utility.has_collection(collection_name, using=self.connection_alias):
-                collection = Collection(name=collection_name, using=self.connection_alias)
-
-                # 检查嵌入模型是否匹配
-                description = collection.description
+            if self.client.has_collection(collection_name):
+                description = self.client.describe_collection(collection_name).get("description", "")
                 expected_model = embedding_info.model_id
 
                 if expected_model not in description:
                     logger.warning(f"Collection {collection_name} model mismatch, recreating")
-                    utility.drop_collection(collection_name, using=self.connection_alias)
+                    self.client.drop_collection(collection_name)
                     return self._create_new_collection(collection_name, embedding_info, kb_id)
 
-                if not self._collection_supports_bm25(collection):
+                if not self._collection_supports_bm25(collection_name):
                     logger.warning(f"Collection {collection_name} schema does not support BM25, recreating")
-                    utility.drop_collection(collection_name, using=self.connection_alias)
+                    self.client.drop_collection(collection_name)
                     return self._create_new_collection(collection_name, embedding_info, kb_id)
 
                 logger.info(f"Retrieved existing collection: {collection_name}")
-                return collection
+                return collection_name
             else:
                 logger.info(f"Collection {collection_name} not found, creating new one")
                 return self._create_new_collection(collection_name, embedding_info, kb_id)
 
-        except (connections.MilvusException, RuntimeError) as e:
+        except (MilvusException, RuntimeError) as e:
             logger.error(f"Error checking collection {collection_name} (error_type={type(e).__name__})")
             raise
         except Exception as e:
@@ -388,8 +383,8 @@ class MilvusKB(KnowledgeBase):
             )
             raise
 
-    def _create_new_collection(self, collection_name: str, embedding_info: Any, kb_id: str) -> Collection:
-        """创建新的 Milvus 集合"""
+    def _create_new_collection(self, collection_name: str, embedding_info: Any, kb_id: str) -> str:
+        """创建新的 Milvus 集合，返回集合名称"""
         embedding_dim = embedding_info.dimension or 1024
         model_name = embedding_info.model_id
 
@@ -422,26 +417,32 @@ class MilvusKB(KnowledgeBase):
             functions=[bm25_function],
         )
 
-        # 创建集合
-        collection = Collection(name=collection_name, schema=schema, using=self.connection_alias)
+        # 准备索引参数
+        index_params = self.client.prepare_index_params()
+        index_params.add_index(
+            field_name="embedding",
+            index_type="IVF_FLAT",
+            metric_type=VECTOR_METRIC_TYPE,
+            params={"nlist": 1024},
+        )
+        index_params.add_index(
+            field_name=CONTENT_SPARSE_FIELD,
+            index_type="SPARSE_INVERTED_INDEX",
+            metric_type="BM25",
+            params={"inverted_index_algo": "DAAT_MAXSCORE"},
+        )
 
-        # 创建索引
-        index_params = {"metric_type": VECTOR_METRIC_TYPE, "index_type": "IVF_FLAT", "params": {"nlist": 1024}}
-        collection.create_index("embedding", index_params)
-        sparse_index_params = {
-            "metric_type": "BM25",
-            "index_type": "SPARSE_INVERTED_INDEX",
-            "params": {"inverted_index_algo": "DAAT_MAXSCORE"},
-        }
-        collection.create_index(CONTENT_SPARSE_FIELD, sparse_index_params)
+        # 创建集合并附带索引
+        self.client.create_collection(collection_name=collection_name, schema=schema, index_params=index_params)
 
         logger.info(f"Created new Milvus collection: {collection_name} '{model_name=}', {embedding_dim=}")
 
-        return collection
+        return collection_name
 
-    def _collection_supports_bm25(self, collection: Collection) -> bool:
+    def _collection_supports_bm25(self, collection_name: str) -> bool:
         """检查集合是否具备 Milvus 内置 BM25 所需的 schema。"""
-        fields = {field.name: field for field in collection.schema.fields}
+        schema = CollectionSchema.construct_from_dict(self.client.describe_collection(collection_name))
+        fields = {field.name: field for field in schema.fields}
         content_field = fields.get("content")
         sparse_field = fields.get(CONTENT_SPARSE_FIELD)
         if not content_field or content_field.dtype != DataType.VARCHAR:
@@ -451,7 +452,7 @@ class MilvusKB(KnowledgeBase):
         if not sparse_field or sparse_field.dtype != DataType.SPARSE_FLOAT_VECTOR:
             return False
 
-        for function in collection.schema.functions:
+        for function in schema.functions:
             if (
                 function.type == FunctionType.BM25
                 and function.input_field_names == ["content"]
@@ -460,10 +461,10 @@ class MilvusKB(KnowledgeBase):
                 return True
         return False
 
-    async def _initialize_kb_instance(self, instance: Any) -> None:
+    async def _initialize_kb_instance(self, instance: str) -> None:
         """初始化 Milvus 集合（加载到内存）"""
         try:
-            instance.load()
+            self.client.load_collection(instance)
             logger.info("Milvus collection loaded into memory")
         except Exception as e:
             logger.warning(f"Failed to load collection into memory (error_type={type(e).__name__})")
@@ -477,8 +478,8 @@ class MilvusKB(KnowledgeBase):
         method = model.batch_encode if sync else model.abatch_encode
         return partial(method, batch_size=batch_size)
 
-    async def _get_milvus_collection(self, kb_id: str):
-        """获取或创建 Milvus 集合"""
+    async def _get_milvus_collection(self, kb_id: str) -> str | None:
+        """获取或创建 Milvus 集合，返回集合名称"""
         if kb_id in self.collections:
             return self.collections[kb_id]
 
@@ -487,11 +488,11 @@ class MilvusKB(KnowledgeBase):
 
         try:
             # 创建集合
-            collection = await self._create_kb_instance(kb_id, {})
-            await self._initialize_kb_instance(collection)
+            collection_name = await self._create_kb_instance(kb_id, {})
+            await self._initialize_kb_instance(collection_name)
 
-            self.collections[kb_id] = collection
-            return collection
+            self.collections[kb_id] = collection_name
+            return collection_name
 
         except Exception as e:
             logger.error(f"Failed to create Milvus collection for {kb_id} (error_type={type(e).__name__})")
@@ -532,7 +533,7 @@ class MilvusKB(KnowledgeBase):
         self,
         kb_id: str,
         file_id: str,
-        collection: Collection,
+        collection_name: str,
         chunks: list[dict],
         embeddings: list,
     ) -> None:
@@ -540,17 +541,20 @@ class MilvusKB(KnowledgeBase):
             return
 
         entities = [
-            [chunk["id"] for chunk in chunks],
-            [chunk["content"] for chunk in chunks],
-            [chunk["chunk_id"] for chunk in chunks],
-            [chunk["file_id"] for chunk in chunks],
-            [chunk["chunk_index"] for chunk in chunks],
-            embeddings,
+            {
+                "id": chunk["id"],
+                "content": chunk["content"],
+                "chunk_id": chunk["chunk_id"],
+                "file_id": chunk["file_id"],
+                "chunk_index": chunk["chunk_index"],
+                "embedding": embedding,
+            }
+            for chunk, embedding in zip(chunks, embeddings, strict=True)
         ]
         chunk_repo = KnowledgeChunkRepository()
 
         def _insert_milvus_records():
-            collection.insert(entities)
+            self.client.insert(collection_name, entities)
 
         pg_task = chunk_repo.batch_upsert(self._build_chunk_pg_records(kb_id, chunks))
         milvus_task = asyncio.to_thread(_insert_milvus_records)
@@ -567,7 +571,7 @@ class MilvusKB(KnowledgeBase):
                 f"Failed to rollback PostgreSQL chunks for {file_id} (error_type={type(cleanup_error).__name__})"
             )
         try:
-            await self._delete_file_chunks_from_milvus(collection, file_id)
+            await self._delete_file_chunks_from_milvus(collection_name, file_id)
         except Exception as cleanup_error:
             logger.error(f"Failed to rollback Milvus chunks for {file_id} (error_type={type(cleanup_error).__name__})")
         raise errors[0]
@@ -576,7 +580,7 @@ class MilvusKB(KnowledgeBase):
         self,
         kb_id: str,
         file_id: str,
-        collection: Collection,
+        collection_name: str,
         chunks: list[dict],
         embedding_function,
         *,
@@ -594,21 +598,21 @@ class MilvusKB(KnowledgeBase):
             await self._insert_chunks_to_stores(
                 kb_id,
                 file_id,
-                collection,
+                collection_name,
                 batch_chunks,
                 embeddings,
             )
 
-    async def _delete_file_chunks_from_milvus(self, collection: Collection, file_id: str) -> None:
+    async def _delete_file_chunks_from_milvus(self, collection_name: str, file_id: str) -> None:
         expr = f'file_id == "{file_id}"'
-        results = collection.query(expr=expr, output_fields=["id"], limit=1)
+        results = self.client.query(collection_name, filter=expr, output_fields=["id"], limit=1)
 
         if not results:
             logger.info(f"File {file_id} not found in Milvus, skipping delete operation")
             return
 
         def _delete_from_milvus():
-            collection.delete(expr)
+            self.client.delete(collection_name, filter=expr)
             logger.info(f"Deleted chunks for file {file_id} from Milvus")
 
         await asyncio.to_thread(_delete_from_milvus)
@@ -620,11 +624,7 @@ class MilvusKB(KnowledgeBase):
         if not file_ids:
             return
 
-        chunk_ids = [
-            str(chunk_id)
-            for chunk in chunks
-            if (chunk_id := (chunk.get("metadata") or {}).get("chunk_id"))
-        ]
+        chunk_ids = [str(chunk_id) for chunk in chunks if (chunk_id := (chunk.get("metadata") or {}).get("chunk_id"))]
         filenames, chunk_records = await asyncio.gather(
             KnowledgeFileRepository().get_filenames_by_file_ids(kb_id=kb_id, file_ids=file_ids),
             KnowledgeChunkRepository().list_by_chunk_ids(chunk_ids),
@@ -938,8 +938,8 @@ class MilvusKB(KnowledgeBase):
 
     async def aquery(self, query_text: str, kb_id: str, agent_call: bool = False, **kwargs) -> list[dict]:
         """异步查询知识库"""
-        collection = await self._get_milvus_collection(kb_id)
-        if not collection:
+        collection_name = await self._get_milvus_collection(kb_id)
+        if not collection_name:
             raise ValueError(f"Database {kb_id} not found")
 
         query_params = self._get_query_params(kb_id)
@@ -989,12 +989,13 @@ class MilvusKB(KnowledgeBase):
                 search_params = {"metric_type": metric_type, "params": {"nprobe": 10}}
 
                 results = await _run_milvus_query_io(
-                    collection.search,
+                    self.client.search,
+                    collection_name,
                     data=query_embedding,
                     anns_field="embedding",
-                    param=search_params,
+                    search_params=search_params,
                     limit=recall_top_k,
-                    expr=file_expr,
+                    filter=file_expr,
                     output_fields=output_fields,
                 )
 
@@ -1020,12 +1021,13 @@ class MilvusKB(KnowledgeBase):
                 }
 
                 results = await _run_milvus_query_io(
-                    collection.search,
+                    self.client.search,
+                    collection_name,
                     data=[query_text],
                     anns_field=CONTENT_SPARSE_FIELD,
-                    param=bm25_search_params,
+                    search_params=bm25_search_params,
                     limit=bm25_top_k,
-                    expr=file_expr,
+                    filter=file_expr,
                     output_fields=output_fields,
                 )
 
@@ -1049,24 +1051,26 @@ class MilvusKB(KnowledgeBase):
                 if strict_research:
                     vector_results, bm25_results = await asyncio.gather(
                         _run_milvus_query_io(
-                            collection.search,
+                            self.client.search,
+                            collection_name,
                             data=query_embedding,
                             anns_field="embedding",
-                            param={"metric_type": metric_type, "params": {"nprobe": 10}},
+                            search_params={"metric_type": metric_type, "params": {"nprobe": 10}},
                             limit=recall_top_k,
-                            expr=file_expr,
+                            filter=file_expr,
                             output_fields=output_fields,
                         ),
                         _run_milvus_query_io(
-                            collection.search,
+                            self.client.search,
+                            collection_name,
                             data=[query_text],
                             anns_field=CONTENT_SPARSE_FIELD,
-                            param={
+                            search_params={
                                 "metric_type": "BM25",
                                 "params": {"drop_ratio_search": bm25_drop_ratio_search},
                             },
                             limit=bm25_top_k,
-                            expr=file_expr,
+                            filter=file_expr,
                             output_fields=output_fields,
                         ),
                     )
@@ -1113,9 +1117,10 @@ class MilvusKB(KnowledgeBase):
                         expr=file_expr,
                     )
                     results = await _run_milvus_query_io(
-                        collection.hybrid_search,
+                        self.client.hybrid_search,
+                        collection_name,
                         reqs=[vector_request, bm25_request],
-                        rerank=WeightedRanker(vector_weight, bm25_weight),
+                        ranker=WeightedRanker(vector_weight, bm25_weight),
                         limit=recall_top_k,
                         output_fields=output_fields,
                     )
@@ -1266,12 +1271,12 @@ class MilvusKB(KnowledgeBase):
 
     @staticmethod
     def _build_file_ids_expr(file_ids: list[str]) -> str:
-        escaped_ids = [file_id.replace('\\', '\\\\').replace('"', '\\"') for file_id in file_ids]
+        escaped_ids = [file_id.replace("\\", "\\\\").replace('"', '\\"') for file_id in file_ids]
         if not escaped_ids:
             return 'file_id == "__no_matching_file__"'
         if len(escaped_ids) == 1:
             return f'file_id == "{escaped_ids[0]}"'
-        joined_ids = '\", \"'.join(escaped_ids)
+        joined_ids = '", "'.join(escaped_ids)
         return f'file_id in ["{joined_ids}"]'
 
     async def _build_graph_seed_weights(
@@ -1480,8 +1485,8 @@ class MilvusKB(KnowledgeBase):
         """删除数据库，同时清除Milvus中的集合"""
 
         def delete_milvus_collections() -> None:
-            if utility.has_collection(kb_id, using=self.connection_alias):
-                utility.drop_collection(kb_id, using=self.connection_alias)
+            if self.client.has_collection(kb_id):
+                self.client.drop_collection(kb_id)
                 logger.info(f"Dropped Milvus collection for {kb_id}")
             else:
                 logger.info(f"Milvus collection {kb_id} does not exist, skipping")
@@ -1500,9 +1505,10 @@ class MilvusKB(KnowledgeBase):
         return {"type": "milvus", "options": _retrieval_config_options()}
 
     def __del__(self):
-        """清理连接"""
-        try:
-            if hasattr(self, "connection_alias"):
-                connections.disconnect(self.connection_alias)
-        except Exception:  # noqa: S110
-            pass
+        """清理连接
+
+        MilvusClient 使用 ConnectionManager 共享底层连接，多个 MilvusKB 实例
+        可能复用同一连接。此处不调用 client.close() 以避免影响其他实例。
+        """
+        # 不执行任何清理操作，连接由 ConnectionManager 统一管理
+        pass

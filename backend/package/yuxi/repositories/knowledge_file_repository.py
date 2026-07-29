@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from types import SimpleNamespace
 from typing import Any
 
@@ -77,6 +77,32 @@ class KnowledgeFileRepository:
         async with pg_manager.get_async_session_context() as session:
             result = await session.execute(select(KnowledgeFile).where(KnowledgeFile.kb_id == kb_id))
             return list(result.scalars().all())
+
+    async def iter_external_import_recovery_batches(
+        self,
+        *,
+        statuses: set[str],
+        batch_size: int = 500,
+    ) -> AsyncIterator[list[KnowledgeFile]]:
+        normalized_batch_size = min(max(int(batch_size), 1), 1_000)
+        after_id = 0
+        while True:
+            async with pg_manager.get_async_session_context() as session:
+                result = await session.execute(
+                    select(KnowledgeFile)
+                    .where(
+                        KnowledgeFile.id > after_id,
+                        KnowledgeFile.status.in_(statuses),
+                        KnowledgeFile.processing_params["external_import"].is_not(None),
+                    )
+                    .order_by(KnowledgeFile.id.asc())
+                    .limit(normalized_batch_size)
+                )
+                records = list(result.scalars().all())
+            if not records:
+                return
+            after_id = int(records[-1].id)
+            yield records
 
     async def list_by_kb_id_after(
         self,

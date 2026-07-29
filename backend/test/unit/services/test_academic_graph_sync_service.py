@@ -87,6 +87,8 @@ async def test_graph_sync_recovery_skips_owner_without_write_access(monkeypatch)
 async def test_graph_sync_reuses_persisted_paper_checkpoint(monkeypatch):
     resolved_papers = []
     updates = []
+    citation_batches = []
+    projected_citations = []
 
     class FakeGraphRepository:
         async def get_sync_run(self, run_id):
@@ -105,6 +107,9 @@ async def test_graph_sync_reuses_persisted_paper_checkpoint(monkeypatch):
         async def counts(self, kb_id):
             return {"papers": 3, "citations": 2, "authors": 5, "topics": 6}
 
+        async def upsert_citations(self, records):
+            citation_batches.append(records)
+
     class FakePaperRepository:
         async def list_for_graph_sync(self, *, kb_id, paper_ids):
             return [
@@ -121,7 +126,10 @@ async def test_graph_sync_reuses_persisted_paper_checkpoint(monkeypatch):
             return {"paperId": "external-2", "externalIds": {}, "citationCount": 1}
 
         async def list_citations(self, paper_id, limit):
-            return []
+            return [
+                {"citingPaper": {"paperId": "related-1", "title": "Related one"}},
+                {"citingPaper": {"paperId": "related-2", "title": "Related two"}},
+            ]
 
         async def list_references(self, paper_id, limit):
             return []
@@ -138,8 +146,12 @@ async def test_graph_sync_reuses_persisted_paper_checkpoint(monkeypatch):
         async def set_result(self, result):
             return None
 
+    class FakeGraphService:
+        async def project_citation(self, *, kb_id, citation):
+            projected_citations.append((kb_id, citation))
+
     async def persist_paper(**kwargs):
-        return "graph-paper-2", 1, 1
+        return f"graph-{kwargs['paper']['paperId']}", 1, 1
 
     async def allow_owner(*args, **kwargs):
         return None
@@ -147,6 +159,7 @@ async def test_graph_sync_reuses_persisted_paper_checkpoint(monkeypatch):
     monkeypatch.setattr(academic_graph_sync_service, "AcademicGraphRepository", FakeGraphRepository)
     monkeypatch.setattr(academic_graph_sync_service, "AcademicPaperRepository", FakePaperRepository)
     monkeypatch.setattr(academic_graph_sync_service, "SemanticScholarClient", FakeClient)
+    monkeypatch.setattr(academic_graph_sync_service, "AcademicGraphService", FakeGraphService)
     monkeypatch.setattr(academic_graph_sync_service, "_persist_paper", persist_paper)
     monkeypatch.setattr(academic_graph_sync_service, "_ensure_graph_sync_owner_can_write", allow_owner)
 
@@ -162,6 +175,9 @@ async def test_graph_sync_reuses_persisted_paper_checkpoint(monkeypatch):
     assert resolved_papers == ["paper-2"]
     assert result["processed_papers"] == 2
     assert updates[-1]["processed_paper_ids"] == ["paper-1", "paper-2"]
+    assert len(citation_batches) == 1
+    assert len(citation_batches[0]) == 2
+    assert len(projected_citations) == 2
 
 
 @pytest.mark.asyncio

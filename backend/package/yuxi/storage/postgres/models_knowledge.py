@@ -286,8 +286,7 @@ class ResearchProjectPlanAssetLink(Base):
         ),
         UniqueConstraint("asset_id", "task_id", name="uq_research_project_plan_asset_links_asset_task"),
         CheckConstraint(
-            "(milestone_id IS NOT NULL AND task_id IS NULL) OR "
-            "(milestone_id IS NULL AND task_id IS NOT NULL)",
+            "(milestone_id IS NOT NULL AND task_id IS NULL) OR (milestone_id IS NULL AND task_id IS NOT NULL)",
             name="ck_research_project_plan_asset_links_target",
         ),
         Index("ix_research_project_plan_asset_links_project", "project_id", "id"),

@@ -48,9 +48,7 @@ class KnowledgeChunkRepository:
             )
             return list(result.scalars().all())
 
-    async def list_academic_chunk_metadata_by_file_id(
-        self, file_id: str
-    ) -> list[tuple[int, dict[str, Any] | None]]:
+    async def list_academic_chunk_metadata_by_file_id(self, file_id: str) -> list[tuple[int, dict[str, Any] | None]]:
         async with pg_manager.get_async_session_context() as session:
             result = await session.execute(
                 select(KnowledgeChunk.chunk_index, KnowledgeChunk.chunk_metadata)

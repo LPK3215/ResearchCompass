@@ -14,9 +14,12 @@ class _FakeRedis:
     def __init__(self):
         self.data: dict[str, str] = {}
         self.get_calls = 0
+        self.get_error: Exception | None = None
 
     def get(self, key: str) -> str | None:
         self.get_calls += 1
+        if self.get_error is not None:
+            raise self.get_error
         return self.data.get(key)
 
     def set(self, key: str, value: str) -> bool:
@@ -91,6 +94,40 @@ def test_model_cache_loads_from_redis_and_uses_local_ttl(monkeypatch: pytest.Mon
     assert cached_info is info
     assert info.base_url == "https://example.com/v1"
     assert redis.get_calls == 1
+
+
+def test_model_cache_keeps_stale_snapshot_and_throttles_retry_when_redis_fails(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    redis = _FakeRedis()
+    _patch_redis(monkeypatch, redis)
+    redis.data[REDIS_CACHE_KEY] = json.dumps(
+        {
+            "provider:chat": {
+                "provider_id": "provider",
+                "model_id": "chat",
+                "model_type": "chat",
+                "display_name": "Chat",
+                "api_key": "sk-test",
+                "base_url": "https://example.com/v1",
+                "provider_type": "openai",
+            }
+        }
+    )
+    now = 100.0
+    monkeypatch.setattr(cache_module.time, "monotonic", lambda: now)
+    cache = ModelCache()
+    loaded = cache.get_model_info("provider:chat")
+
+    now = 110.0
+    redis.get_error = RuntimeError("redis unavailable")
+    stale = cache.get_model_info("provider:chat")
+    retried_immediately = cache.get_model_info("provider:chat")
+
+    assert loaded is not None
+    assert stale is loaded
+    assert retried_immediately is loaded
+    assert redis.get_calls == 2
 
 
 def test_model_cache_save_writes_redis_json(monkeypatch: pytest.MonkeyPatch):

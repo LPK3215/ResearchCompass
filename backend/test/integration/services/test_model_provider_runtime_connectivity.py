@@ -34,12 +34,21 @@ def _model_spec(provider: ModelProvider, model: dict[str, Any]) -> dict[str, Any
     api_key = resolve_api_key(provider)
     if api_key is None:
         api_key = "no_api_key"
+    model_type = model["type"]
+    if model.get("base_url_override"):
+        base_url = model["base_url_override"]
+    elif model_type == "embedding":
+        base_url = provider.embedding_base_url or provider.base_url
+    elif model_type == "rerank":
+        base_url = provider.rerank_base_url or provider.base_url
+    else:
+        base_url = provider.base_url
     return {
         "provider_id": provider.provider_id,
         "model_id": model["id"],
-        "model_type": model["type"],
+        "model_type": model_type,
         "api_key": api_key,
-        "base_url": model.get("base_url_override") or provider.base_url,
+        "base_url": base_url,
         "dimension": model.get("dimension"),
         "batch_size": int(model.get("batch_size") or 40),
         "parameters": model.get("extra", {}).get("parameters", {}),
@@ -57,8 +66,8 @@ def _select_enabled_model(provider: ModelProvider, model_type: str, env_name: st
             continue
         return model
     if preferred_model_id:
-        pytest.skip(f"{provider.provider_id} does not expose {preferred_model_id} as {model_type}.")
-    pytest.skip(f"{provider.provider_id} has no enabled {model_type} model.")
+        pytest.fail(f"{provider.provider_id} does not expose {preferred_model_id} as {model_type}.")
+    pytest.fail(f"{provider.provider_id} has no enabled {model_type} model.")
 
 
 def _select_provider_model(provider: ModelProvider, model_type: str, env_name: str) -> dict[str, Any]:
@@ -66,7 +75,7 @@ def _select_provider_model(provider: ModelProvider, model_type: str, env_name: s
     model = _select_enabled_model(provider, model_type, env_name)
     spec = _model_spec(provider, model)
     if not spec["api_key"]:
-        pytest.skip(f"{provider.provider_id} requires {provider.api_key_env} for connectivity testing.")
+        pytest.fail(f"{provider.provider_id} requires {provider.api_key_env} for connectivity testing.")
     return spec
 
 
@@ -80,7 +89,7 @@ async def _load_provider() -> ModelProvider:
         await ensure_builtin_model_providers_in_db(db)
         provider = await get_model_provider_by_id(db, provider_id)
         if provider is None:
-            pytest.skip(f"Provider {provider_id} is not configured.")
+            pytest.fail(f"Provider {provider_id} is not configured.")
         return provider
 
 

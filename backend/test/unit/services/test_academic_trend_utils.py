@@ -1,6 +1,5 @@
 """Unit tests for academic_trend_service pure utility functions."""
 
-
 from yuxi.services.academic_trend_service import _emerging_keywords, _trend_keywords
 
 

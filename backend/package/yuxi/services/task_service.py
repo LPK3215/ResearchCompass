@@ -277,8 +277,7 @@ class Tasker:
 
     async def list_tasks(self, status: str | None = None, limit: int = 100) -> dict[str, Any]:
         limited_tasks = [
-            Task.from_dict(record.to_dict())
-            for record in await self._repo.list(status=status, limit=max(limit, 0))
+            Task.from_dict(record.to_dict()) for record in await self._repo.list(status=status, limit=max(limit, 0))
         ]
         summary = await self._repo.get_list_summary(status=status)
 

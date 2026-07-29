@@ -6,15 +6,12 @@ from functools import partial
 from typing import Any
 
 from pymilvus import (
-    Collection,
     CollectionSchema,
     DataType,
     FieldSchema,
     Function,
     FunctionType,
-    connections,
-    db,
-    utility,
+    MilvusClient,
 )
 
 from yuxi.knowledge.graphs.graph_utils import graph_entity_collection_name, graph_triple_collection_name
@@ -26,7 +23,7 @@ from yuxi.knowledge.implementations.milvus import (
 )
 from yuxi.models.embed import select_embedding_model
 from yuxi.models.providers.cache import model_cache
-from yuxi.utils import hashstr, logger
+from yuxi.utils import logger
 
 
 class MilvusGraphVectorStore:
@@ -34,16 +31,15 @@ class MilvusGraphVectorStore:
         self.milvus_token = os.getenv("MILVUS_TOKEN") or ""
         self.milvus_uri = os.getenv("MILVUS_URI") or "http://localhost:19530"
         self.milvus_db = os.getenv("MILVUS_DB") or "yuxi"
-        self.connection_alias = f"milvus_graph_{hashstr(self.milvus_uri, 6)}"
+        self.client: MilvusClient | None = None
         self._init_connection()
 
     def _init_connection(self) -> None:
-        if not connections.has_connection(self.connection_alias):
-            connections.connect(alias=self.connection_alias, uri=self.milvus_uri, token=self.milvus_token)
+        self.client = MilvusClient(uri=self.milvus_uri, token=self.milvus_token)
         try:
-            if self.milvus_db not in db.list_database(using=self.connection_alias):
-                db.create_database(self.milvus_db, using=self.connection_alias)
-            db.using_database(self.milvus_db, using=self.connection_alias)
+            if self.milvus_db not in self.client.list_databases():
+                self.client.create_database(self.milvus_db)
+            self.client.use_database(self.milvus_db)
         except Exception as exc:
             raise RuntimeError(f"Milvus graph database initialization failed: {self.milvus_db}") from exc
 
@@ -62,14 +58,14 @@ class MilvusGraphVectorStore:
         if not embedding_info or embedding_info.model_type != "embedding":
             raise ValueError(f"Unsupported embedding model: {embedding_model_spec}")
 
-        entity_collection = self._get_or_create_entity_collection(kb_id, embedding_info)
-        triple_collection = self._get_or_create_triple_collection(kb_id, embedding_info)
+        entity_collection_name = self._get_or_create_entity_collection(kb_id, embedding_info)
+        triple_collection_name = self._get_or_create_triple_collection(kb_id, embedding_info)
 
         entity_ids = [entity["entity_id"] for entity in entities]
         triple_ids = [triple["triple_id"] for triple in triples]
         existing_entity_ids, existing_triple_ids = await asyncio.gather(
-            asyncio.to_thread(self._query_existing_ids, entity_collection, entity_ids),
-            asyncio.to_thread(self._query_existing_ids, triple_collection, triple_ids),
+            asyncio.to_thread(self._query_existing_ids, entity_collection_name, entity_ids),
+            asyncio.to_thread(self._query_existing_ids, triple_collection_name, triple_ids),
         )
 
         missing_entities = [entity for entity in entities if entity["entity_id"] not in existing_entity_ids]
@@ -84,9 +80,9 @@ class MilvusGraphVectorStore:
         )
 
         if missing_entities:
-            await asyncio.to_thread(self._insert_entities, entity_collection, missing_entities, entity_embeddings)
+            await asyncio.to_thread(self._insert_entities, entity_collection_name, missing_entities, entity_embeddings)
         if missing_triples:
-            await asyncio.to_thread(self._insert_triples, triple_collection, missing_triples, triple_embeddings)
+            await asyncio.to_thread(self._insert_triples, triple_collection_name, missing_triples, triple_embeddings)
 
     async def delete_graph_records(self, kb_id: str, *, entity_ids: list[str], triple_ids: list[str]) -> None:
         tasks = []
@@ -106,9 +102,7 @@ class MilvusGraphVectorStore:
         top_k: int,
     ) -> list[dict[str, Any]]:
         collection_name = graph_entity_collection_name(kb_id)
-        has_collection = await _run_milvus_query_io(
-            utility.has_collection, collection_name, using=self.connection_alias
-        )
+        has_collection = await _run_milvus_query_io(self.client.has_collection, collection_name)
         if not has_collection:
             return []
         return await self._search_graph_collection(
@@ -128,9 +122,7 @@ class MilvusGraphVectorStore:
         top_k: int,
     ) -> list[dict[str, Any]]:
         collection_name = graph_triple_collection_name(kb_id)
-        has_collection = await _run_milvus_query_io(
-            utility.has_collection, collection_name, using=self.connection_alias
-        )
+        has_collection = await _run_milvus_query_io(self.client.has_collection, collection_name)
         if not has_collection:
             return []
         return await self._search_graph_collection(
@@ -143,8 +135,8 @@ class MilvusGraphVectorStore:
 
     def drop_graph_collections(self, kb_id: str) -> None:
         for collection_name in [graph_entity_collection_name(kb_id), graph_triple_collection_name(kb_id)]:
-            if utility.has_collection(collection_name, using=self.connection_alias):
-                utility.drop_collection(collection_name, using=self.connection_alias)
+            if self.client.has_collection(collection_name):
+                self.client.drop_collection(collection_name)
                 logger.info(f"Dropped Milvus graph collection {collection_name}")
 
     async def _empty_embeddings(self) -> list:
@@ -183,21 +175,12 @@ class MilvusGraphVectorStore:
         top_k: int,
         output_fields: list[str],
     ) -> list[dict[str, Any]]:
-        collection = Collection(name=collection_name, using=self.connection_alias)
-        collection.load()
-        return self._search_loaded_collection(collection, query_embedding, top_k, output_fields)
-
-    def _search_loaded_collection(
-        self,
-        collection: Collection,
-        query_embedding: list,
-        top_k: int,
-        output_fields: list[str],
-    ) -> list[dict[str, Any]]:
-        results = collection.search(
+        self.client.load_collection(collection_name)
+        results = self.client.search(
+            collection_name,
             data=query_embedding,
             anns_field="embedding",
-            param={"metric_type": VECTOR_METRIC_TYPE, "params": {"nprobe": 10}},
+            search_params={"metric_type": VECTOR_METRIC_TYPE, "params": {"nprobe": 10}},
             limit=top_k,
             output_fields=output_fields,
         )
@@ -212,7 +195,7 @@ class MilvusGraphVectorStore:
             records.append(record)
         return records
 
-    def _get_or_create_entity_collection(self, kb_id: str, embedding_info: Any) -> Collection:
+    def _get_or_create_entity_collection(self, kb_id: str, embedding_info: Any) -> str:
         collection_name = graph_entity_collection_name(kb_id)
         fields = [
             FieldSchema(name="id", dtype=DataType.VARCHAR, max_length=100, is_primary=True),
@@ -228,7 +211,7 @@ class MilvusGraphVectorStore:
         ]
         return self._get_or_create_collection(collection_name, fields, embedding_info)
 
-    def _get_or_create_triple_collection(self, kb_id: str, embedding_info: Any) -> Collection:
+    def _get_or_create_triple_collection(self, kb_id: str, embedding_info: Any) -> str:
         collection_name = graph_triple_collection_name(kb_id)
         fields = [
             FieldSchema(name="id", dtype=DataType.VARCHAR, max_length=100, is_primary=True),
@@ -246,11 +229,9 @@ class MilvusGraphVectorStore:
         ]
         return self._get_or_create_collection(collection_name, fields, embedding_info)
 
-    def _get_or_create_collection(
-        self, collection_name: str, fields: list[FieldSchema], embedding_info: Any
-    ) -> Collection:
-        if utility.has_collection(collection_name, using=self.connection_alias):
-            return Collection(name=collection_name, using=self.connection_alias)
+    def _get_or_create_collection(self, collection_name: str, fields: list[FieldSchema], embedding_info: Any) -> str:
+        if self.client.has_collection(collection_name):
+            return collection_name
 
         bm25_function = Function(
             name="content_bm25",
@@ -263,57 +244,58 @@ class MilvusGraphVectorStore:
             description=f"Knowledge graph collection {collection_name} using {embedding_info.model_id}",
             functions=[bm25_function],
         )
-        collection = Collection(name=collection_name, schema=schema, using=self.connection_alias)
-        collection.create_index(
-            "embedding", {"metric_type": VECTOR_METRIC_TYPE, "index_type": "IVF_FLAT", "params": {"nlist": 1024}}
+        index_params = self.client.prepare_index_params()
+        index_params.add_index(
+            field_name="embedding",
+            index_type="IVF_FLAT",
+            metric_type=VECTOR_METRIC_TYPE,
+            params={"nlist": 1024},
         )
-        collection.create_index(
-            CONTENT_SPARSE_FIELD,
-            {
-                "metric_type": "BM25",
-                "index_type": "SPARSE_INVERTED_INDEX",
-                "params": {"inverted_index_algo": "DAAT_MAXSCORE"},
-            },
+        index_params.add_index(
+            field_name=CONTENT_SPARSE_FIELD,
+            index_type="SPARSE_INVERTED_INDEX",
+            metric_type="BM25",
+            params={"inverted_index_algo": "DAAT_MAXSCORE"},
         )
-        return collection
+        self.client.create_collection(collection_name=collection_name, schema=schema, index_params=index_params)
+        return collection_name
 
-    def _query_existing_ids(self, collection: Collection, ids: list[str]) -> set[str]:
+    def _query_existing_ids(self, collection_name: str, ids: list[str]) -> set[str]:
         if not ids:
             return set()
-        collection.load()
+        self.client.load_collection(collection_name)
         existing_ids: set[str] = set()
         for start in range(0, len(ids), 1000):
             batch = ids[start : start + 1000]
             quoted_ids = ", ".join(f'"{item}"' for item in batch)
-            rows = collection.query(expr=f"id in [{quoted_ids}]", output_fields=["id"])
+            rows = self.client.query(collection_name, filter=f"id in [{quoted_ids}]", output_fields=["id"])
             existing_ids.update(row["id"] for row in rows)
         return existing_ids
 
-    def _insert_entities(self, collection: Collection, entities: list[dict[str, Any]], embeddings: list) -> None:
-        collection.insert(
-            [
-                [entity["entity_id"] for entity in entities],
-                [entity["content"] for entity in entities],
-                embeddings,
-            ]
-        )
+    def _insert_entities(self, collection_name: str, entities: list[dict[str, Any]], embeddings: list) -> None:
+        data = [
+            {"id": entity["entity_id"], "content": entity["content"], "embedding": embedding}
+            for entity, embedding in zip(entities, embeddings, strict=True)
+        ]
+        self.client.insert(collection_name, data)
 
-    def _insert_triples(self, collection: Collection, triples: list[dict[str, Any]], embeddings: list) -> None:
-        collection.insert(
-            [
-                [triple["triple_id"] for triple in triples],
-                [triple["content"] for triple in triples],
-                [triple["source_entity_id"] for triple in triples],
-                [triple["target_entity_id"] for triple in triples],
-                embeddings,
-            ]
-        )
+    def _insert_triples(self, collection_name: str, triples: list[dict[str, Any]], embeddings: list) -> None:
+        data = [
+            {
+                "id": triple["triple_id"],
+                "content": triple["content"],
+                "source_id": triple["source_entity_id"],
+                "target_id": triple["target_entity_id"],
+                "embedding": embedding,
+            }
+            for triple, embedding in zip(triples, embeddings, strict=True)
+        ]
+        self.client.insert(collection_name, data)
 
     def _delete_ids(self, collection_name: str, ids: list[str]) -> None:
-        if not utility.has_collection(collection_name, using=self.connection_alias):
+        if not self.client.has_collection(collection_name):
             return
-        collection = Collection(name=collection_name, using=self.connection_alias)
         for start in range(0, len(ids), 1000):
             batch = ids[start : start + 1000]
             quoted_ids = ", ".join(f'"{item}"' for item in batch)
-            collection.delete(expr=f"id in [{quoted_ids}]")
+            self.client.delete(collection_name, filter=f"id in [{quoted_ids}]")

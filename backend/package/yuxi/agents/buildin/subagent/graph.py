@@ -65,9 +65,7 @@ class _SubAgentToolFilterMiddleware(AgentMiddleware[Any, Any, Any]):
         return handler(request.override(tools=_filter_disabled_tools(request.tools or [], self.disabled_tools)))
 
     async def awrap_model_call(self, request, handler):
-        return await handler(
-            request.override(tools=_filter_disabled_tools(request.tools or [], self.disabled_tools))
-        )
+        return await handler(request.override(tools=_filter_disabled_tools(request.tools or [], self.disabled_tools)))
 
     def wrap_tool_call(self, request, handler):
         self._reject_disabled_tool_call(request)

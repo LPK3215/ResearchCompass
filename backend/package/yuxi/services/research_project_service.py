@@ -370,10 +370,7 @@ async def list_project_assets(
     )
     available = await get_available_project_asset_ids(project, current_user, records, repository=repository)
     return {
-        "items": [
-            serialize_project_asset(record, available=record.asset_id in available)
-            for record in records
-        ],
+        "items": [serialize_project_asset(record, available=record.asset_id in available) for record in records],
         "total": total,
         "offset": offset,
         "limit": limit,

@@ -95,9 +95,7 @@ class PaddleOCRAPIParser(BaseDocumentProcessor):
             raise
         except Exception as exc:
             processing_time = time.time() - start_time
-            logger.error(
-                f"PaddleOCR API 处理失败 (error_type={type(exc).__name__}, elapsed={processing_time:.2f}s)"
-            )
+            logger.error(f"PaddleOCR API 处理失败 (error_type={type(exc).__name__}, elapsed={processing_time:.2f}s)")
             raise DocumentParserException(
                 "PaddleOCR API 处理失败", self.get_service_name(), "processing_failed"
             ) from exc
@@ -234,9 +232,7 @@ class PaddleOCRAPIParser(BaseDocumentProcessor):
                 raise DocumentParserException("PaddleOCR 任务失败", self.get_service_name(), "job_failed")
 
             if state not in {"pending", "running"}:
-                raise DocumentParserException(
-                    "PaddleOCR 任务状态异常", self.get_service_name(), "unknown_job_state"
-                )
+                raise DocumentParserException("PaddleOCR 任务状态异常", self.get_service_name(), "unknown_job_state")
 
             time.sleep(poll_interval_seconds)
 
@@ -339,9 +335,7 @@ class PaddleOCRAPIParser(BaseDocumentProcessor):
         try:
             declared_size = int(content_length)
         except ValueError as error:
-            raise DocumentParserException(
-                f"{label}大小无效", self.get_service_name(), "download_failed"
-            ) from error
+            raise DocumentParserException(f"{label}大小无效", self.get_service_name(), "download_failed") from error
         if declared_size < 0 or declared_size > max_size:
             raise DocumentParserException(f"{label}超过大小限制", self.get_service_name(), "download_too_large")
 

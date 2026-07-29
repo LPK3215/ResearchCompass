@@ -8,7 +8,7 @@ import uuid
 
 import pytest
 
-pytestmark = [pytest.mark.asyncio(loop_scope="function"), pytest.mark.integration]
+pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
 
 async def _upload_test_dataset(test_client, admin_headers: dict[str, str], kb_id: str) -> tuple[str, str]:

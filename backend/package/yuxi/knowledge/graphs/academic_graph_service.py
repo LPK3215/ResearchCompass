@@ -214,11 +214,7 @@ class AcademicGraphService:
         except ImportError as exc:
             raise RuntimeError("论文引用图谱 PPR 需要 python-igraph") from exc
 
-        paper_by_id = {
-            str(paper.get("graph_paper_id")): paper
-            for paper in papers
-            if paper.get("graph_paper_id")
-        }
+        paper_by_id = {str(paper.get("graph_paper_id")): paper for paper in papers if paper.get("graph_paper_id")}
         missing_seed_ids = sorted(set(seed_weights) - set(paper_by_id))
         if missing_seed_ids:
             raise ValueError("论文引用图谱缺少部分检索种子")
@@ -360,10 +356,7 @@ class AcademicGraphService:
 
     async def delete_kb_projection(self, kb_id: str) -> None:
         label = safe_neo4j_label(kb_id)
-        cypher = (
-            f"MATCH (n:AcademicGraph:`{label}` {{kb_id: $kb_id}}) "
-            "DETACH DELETE n RETURN count(n) AS deleted"
-        )
+        cypher = f"MATCH (n:AcademicGraph:`{label}` {{kb_id: $kb_id}}) DETACH DELETE n RETURN count(n) AS deleted"
 
         def write(tx):
             tx.run(cypher, kb_id=kb_id)

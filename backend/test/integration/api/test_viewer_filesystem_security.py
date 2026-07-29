@@ -14,7 +14,7 @@ async def _create_thread_for_user(test_client, headers: dict[str, str]) -> str:
     agent = agent_resp.json().get("agent") or {}
     agent_id = agent.get("slug") or agent.get("id")
     if not agent_id:
-        pytest.skip("Default agent payload missing id field.")
+        pytest.fail("Default agent payload missing slug/id field.")
 
     create_resp = await test_client.post(
         "/api/chat/thread",

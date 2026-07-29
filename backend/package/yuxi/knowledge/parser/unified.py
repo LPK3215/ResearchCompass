@@ -16,8 +16,8 @@ from typing import Any
 import aiofiles
 from docling.datamodel.base_models import InputFormat
 from docling.document_converter import DocumentConverter
-from langchain_community.document_loaders import PyPDFLoader
 from markdownify import markdownify as md_convert
+from pypdf import PdfReader
 
 from yuxi.knowledge.parser.zip_utils import process_zip_file as _process_zip_file
 from yuxi.storage.minio import get_minio_client
@@ -221,10 +221,8 @@ def pdfreader(file_path, params=None):
     assert file_path.exists(), "File not found"
     assert file_path.suffix.lower() == ".pdf", "File format not supported"
 
-    loader = PyPDFLoader(str(file_path))
-    docs = loader.load()
-    text = "\n\n".join([d.page_content for d in docs])
-    return text
+    reader = PdfReader(str(file_path))
+    return "\n\n".join(page.extract_text() or "" for page in reader.pages)
 
 
 def parse_pdf(file, params=None):

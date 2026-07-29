@@ -41,10 +41,7 @@ def build_project_plan_summary(
         bool(milestone.target_date and milestone.target_date < reference_date) for milestone in open_milestones
     )
     due_soon_milestones = sum(
-        bool(
-            milestone.target_date
-            and reference_date <= milestone.target_date <= due_soon_limit
-        )
+        bool(milestone.target_date and reference_date <= milestone.target_date <= due_soon_limit)
         for milestone in open_milestones
     )
     due_dates = [

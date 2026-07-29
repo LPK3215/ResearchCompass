@@ -12,6 +12,7 @@ from yuxi.repositories.agent_repository import (
     GENERAL_PURPOSE_AGENT_DESCRIPTION,
     GENERAL_PURPOSE_AGENT_NAME,
     GENERAL_PURPOSE_AGENT_SLUG,
+    LEGACY_GENERAL_PURPOSE_AGENT_DESCRIPTION,
     SUB_AGENT_BACKEND_ID,
     user_can_access_agent,
     user_can_manage_agent,
@@ -117,6 +118,32 @@ async def test_ensure_general_purpose_subagent_is_idempotent(monkeypatch):
     assert db.added is None
     db.commit.assert_not_awaited()
     db.refresh.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_ensure_general_purpose_subagent_updates_only_legacy_description(monkeypatch):
+    db = FakeDb()
+    repo = AgentRepository(db)
+    existing = SimpleNamespace(
+        slug=GENERAL_PURPOSE_AGENT_SLUG,
+        config_json={"context": {}},
+        description=LEGACY_GENERAL_PURPOSE_AGENT_DESCRIPTION,
+        updated_by=None,
+        updated_at=None,
+    )
+
+    async def get_by_slug(_slug):
+        return existing
+
+    monkeypatch.setattr(repo, "get_by_slug", get_by_slug)
+
+    agent = await repo.ensure_general_purpose_subagent(created_by="system")
+
+    assert agent is existing
+    assert agent.description == GENERAL_PURPOSE_AGENT_DESCRIPTION
+    assert agent.updated_by == "system"
+    db.commit.assert_awaited_once()
+    db.refresh.assert_awaited_once_with(existing)
 
 
 @pytest.mark.asyncio

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 
 import pytest
+from fastapi.exceptions import RequestValidationError
 
 from yuxi.storage.postgres import manager as postgres_manager
 from yuxi.storage.postgres.manager import PostgresManager, _redact_database_url
@@ -34,6 +36,9 @@ class _RecordingEngine:
     def begin(self):
         return _RecordingBegin(self.connection)
 
+    def connect(self):
+        return _RecordingBegin(self.connection)
+
 
 class _HTTPStyleError(Exception):
     def __init__(self, status_code: int):
@@ -49,6 +54,22 @@ class _RecordingLangGraphPool:
     async def open(self, *, wait: bool):
         self.open_calls.append(wait)
         self.closed = False
+
+
+class _RecordingSession:
+    def __init__(self):
+        self.calls: list[str] = []
+
+    async def commit(self):
+        self.calls.append("commit")
+
+    async def rollback(self):
+        await asyncio.sleep(0)
+        self.calls.append("rollback")
+
+    async def close(self):
+        await asyncio.sleep(0)
+        self.calls.append("close")
 
 
 @pytest.mark.parametrize(
@@ -98,6 +119,68 @@ def test_log_async_session_rollback_demotes_expected_4xx_http_errors(monkeypatch
     assert "expected HTTP 409" in calls[0][1]
 
 
+def test_log_async_session_rollback_redacts_request_validation_input(monkeypatch):
+    secret = "validation-secret-must-not-be-logged"
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        postgres_manager,
+        "logger",
+        SimpleNamespace(
+            debug=lambda message: calls.append(("debug", message)),
+            error=lambda message: calls.append(("error", message)),
+        ),
+    )
+    error = RequestValidationError(
+        [
+            {
+                "type": "string_too_short",
+                "loc": ("body", "password"),
+                "msg": "String should have at least 8 characters",
+                "input": secret,
+            }
+        ]
+    )
+
+    postgres_manager._log_async_session_rollback(error)
+
+    assert calls == [
+        (
+            "debug",
+            "PostgreSQL async operation rolled back for request validation "
+            "(error_type=RequestValidationError, error_count=1)",
+        )
+    ]
+    assert secret not in str(calls)
+
+
+@pytest.mark.asyncio
+async def test_async_session_context_rolls_back_and_closes_when_cancelled():
+    manager = PostgresManager()
+    original_initialized = manager._initialized
+    original_session_factory = manager.AsyncSession
+    session = _RecordingSession()
+    entered = asyncio.Event()
+    manager._initialized = True
+    manager.AsyncSession = lambda: session
+
+    async def use_session():
+        async with manager.get_async_session_context():
+            entered.set()
+            await asyncio.Future()
+
+    task = asyncio.create_task(use_session())
+    try:
+        await entered.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    finally:
+        manager._initialized = original_initialized
+        manager.AsyncSession = original_session_factory
+
+    assert session.calls == ["rollback", "close"]
+
+
 @pytest.mark.asyncio
 async def test_open_langgraph_pool_opens_only_a_closed_pool():
     manager = PostgresManager()
@@ -114,6 +197,26 @@ async def test_open_langgraph_pool_opens_only_a_closed_pool():
         manager.langgraph_pool = original_pool
 
     assert pool.open_calls == [True]
+
+
+@pytest.mark.asyncio
+async def test_schema_initialization_lock_acquires_and_releases_postgres_advisory_lock():
+    manager = PostgresManager()
+    original_initialized = manager._initialized
+    original_engine = manager.async_engine
+    connection = _RecordingConnection()
+    manager._initialized = True
+    manager.async_engine = _RecordingEngine(connection)
+    try:
+        async with manager.schema_initialization_lock():
+            connection.statements.append("schema migration")
+    finally:
+        manager._initialized = original_initialized
+        manager.async_engine = original_engine
+
+    assert "pg_advisory_lock" in connection.statements[0]
+    assert connection.statements[1] == "schema migration"
+    assert "pg_advisory_unlock" in connection.statements[2]
 
 
 @pytest.mark.parametrize("error", [_HTTPStyleError(500), RuntimeError("database is unavailable")])

@@ -105,6 +105,9 @@ class ModelCache:
             cache = {spec: ModelInfo.from_dict(data) for spec, data in items.items()}
         except Exception as e:
             logger.warning(f"Failed to load model cache from Redis: {e}")
+            if self._local_cache is not None:
+                self._local_cache_at = now
+                return self._local_cache
             return {}
 
         self._local_cache = cache
@@ -166,7 +169,8 @@ class ModelCache:
                 new_cache[info.spec] = info
 
         self._save_cache(new_cache)
-        self._invalidate_local()
+        self._local_cache = new_cache
+        self._local_cache_at = time.monotonic()
         logger.info(f"Model cache rebuilt: {len(new_cache)} models → Redis")
 
     def _save_cache(self, cache: dict[str, ModelInfo]) -> None:

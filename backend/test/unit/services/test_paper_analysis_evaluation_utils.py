@@ -2,6 +2,7 @@
 
 不依赖外部服务，只验证盲审评分校验、运行结果序列化和持续时间计算逻辑。
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -22,6 +23,7 @@ from yuxi.services.academic_paper_analysis_evaluation_service import (
 # ---------------------------------------------------------------------------
 # _validate_blind_scores
 # ---------------------------------------------------------------------------
+
 
 def _valid_blind_scores():
     return {
@@ -108,6 +110,7 @@ class TestValidateBlindScores:
 # _serialize_run_result
 # ---------------------------------------------------------------------------
 
+
 class TestSerializeRunResult:
     def test_strips_strategy_model_paper_id(self):
         run = SimpleNamespace(
@@ -139,6 +142,7 @@ class TestSerializeRunResult:
 # _duration_ms
 # ---------------------------------------------------------------------------
 
+
 class TestDurationMs:
     def test_valid_duration(self):
         run = SimpleNamespace(
@@ -164,6 +168,7 @@ class TestDurationMs:
 # ---------------------------------------------------------------------------
 # _mean
 # ---------------------------------------------------------------------------
+
 
 class TestMean:
     def test_basic_mean(self):

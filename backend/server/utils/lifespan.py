@@ -36,6 +36,69 @@ async def _ensure_builtin_agents() -> None:
             await repository.ensure_research_copilot_agent()
 
 
+async def _recover_research_tasks() -> None:
+    if _lite_mode_enabled():
+        logger.info("LITE_MODE enabled, skipping research task recovery")
+        return
+
+    try:
+        from yuxi.services.research_paper_service import recover_pending_paper_reindexes
+
+        recovered = await recover_pending_paper_reindexes()
+        if recovered:
+            logger.info(f"Recovered {recovered} pending research paper reindex tasks")
+    except Exception as e:
+        logger.error(f"Failed to recover research paper reindex tasks (error_type={type(e).__name__})")
+    try:
+        from yuxi.services.academic_graph_sync_service import recover_academic_graph_sync_runs
+
+        recovered = await recover_academic_graph_sync_runs()
+        if recovered:
+            logger.info(f"Recovered {recovered} academic graph sync runs")
+    except Exception as e:
+        logger.error(f"Failed to recover academic graph sync runs (error_type={type(e).__name__})")
+    try:
+        from yuxi.services.academic_paper_analysis_service import recover_paper_analysis_runs
+
+        recovered = await recover_paper_analysis_runs()
+        if recovered:
+            logger.info(f"Recovered {recovered} academic paper analysis runs")
+    except Exception as e:
+        logger.error(f"Failed to recover academic paper analysis runs (error_type={type(e).__name__})")
+    try:
+        from yuxi.services.research_synthesis_service import recover_research_synthesis_runs
+
+        recovered = await recover_research_synthesis_runs()
+        if recovered:
+            logger.info(f"Recovered {recovered} research synthesis runs")
+    except Exception as e:
+        logger.error(f"Failed to recover research synthesis runs (error_type={type(e).__name__})")
+    try:
+        from yuxi.services.academic_paper_analysis_evaluation_service import AcademicPaperAnalysisEvaluationService
+
+        recovered = await AcademicPaperAnalysisEvaluationService().recover_evaluations()
+        if recovered:
+            logger.info(f"Recovered {recovered} paper analysis evaluation runs")
+    except Exception as e:
+        logger.error(f"Failed to recover paper analysis evaluation runs (error_type={type(e).__name__})")
+    try:
+        from yuxi.services.academic_paper_import_service import recover_external_paper_imports
+
+        recovered = await recover_external_paper_imports()
+        if recovered:
+            logger.info(f"Recovered {recovered} external academic paper import tasks")
+    except Exception as e:
+        logger.error(f"Failed to recover external academic paper import tasks (error_type={type(e).__name__})")
+    try:
+        from yuxi.knowledge.eval.service import EvaluationService
+
+        recovered = await EvaluationService().recover_experiments()
+        if recovered:
+            logger.info(f"Recovered {recovered} evaluation experiments")
+    except Exception as e:
+        logger.error(f"Failed to recover evaluation experiments (error_type={type(e).__name__})")
+
+
 async def _shutdown_resources() -> None:
     try:
         await tasker.shutdown()
@@ -87,11 +150,13 @@ async def lifespan(app: FastAPI):
     # 初始化数据库连接
     try:
         pg_manager.initialize()
-        await pg_manager.create_tables()
-        await pg_manager.ensure_business_schema()
-        await pg_manager.ensure_knowledge_schema()
+        async with pg_manager.schema_initialization_lock():
+            await pg_manager.create_tables()
+            await pg_manager.ensure_business_schema()
+            await pg_manager.ensure_knowledge_schema()
     except Exception as e:
         logger.error(f"Failed to initialize database during startup (error_type={type(e).__name__})")
+        raise
 
     # 确保内置 MCP 服务器定义存在于数据库
     try:
@@ -163,62 +228,7 @@ async def lifespan(app: FastAPI):
     logger.info("LangGraph checkpoint tables verified/created")
 
     await tasker.start()
-    try:
-        from yuxi.services.research_paper_service import recover_pending_paper_reindexes
-
-        recovered = await recover_pending_paper_reindexes()
-        if recovered:
-            logger.info(f"Recovered {recovered} pending research paper reindex tasks")
-    except Exception as e:
-        logger.error(f"Failed to recover research paper reindex tasks (error_type={type(e).__name__})")
-    try:
-        from yuxi.services.academic_graph_sync_service import recover_academic_graph_sync_runs
-
-        recovered = await recover_academic_graph_sync_runs()
-        if recovered:
-            logger.info(f"Recovered {recovered} academic graph sync runs")
-    except Exception as e:
-        logger.error(f"Failed to recover academic graph sync runs (error_type={type(e).__name__})")
-    try:
-        from yuxi.services.academic_paper_analysis_service import recover_paper_analysis_runs
-
-        recovered = await recover_paper_analysis_runs()
-        if recovered:
-            logger.info(f"Recovered {recovered} academic paper analysis runs")
-    except Exception as e:
-        logger.error(f"Failed to recover academic paper analysis runs (error_type={type(e).__name__})")
-    try:
-        from yuxi.services.research_synthesis_service import recover_research_synthesis_runs
-
-        recovered = await recover_research_synthesis_runs()
-        if recovered:
-            logger.info(f"Recovered {recovered} research synthesis runs")
-    except Exception as e:
-        logger.error(f"Failed to recover research synthesis runs (error_type={type(e).__name__})")
-    try:
-        from yuxi.services.academic_paper_analysis_evaluation_service import AcademicPaperAnalysisEvaluationService
-
-        recovered = await AcademicPaperAnalysisEvaluationService().recover_evaluations()
-        if recovered:
-            logger.info(f"Recovered {recovered} paper analysis evaluation runs")
-    except Exception as e:
-        logger.error(f"Failed to recover paper analysis evaluation runs (error_type={type(e).__name__})")
-    try:
-        from yuxi.services.academic_paper_import_service import recover_external_paper_imports
-
-        recovered = await recover_external_paper_imports()
-        if recovered:
-            logger.info(f"Recovered {recovered} external academic paper import tasks")
-    except Exception as e:
-        logger.error(f"Failed to recover external academic paper import tasks (error_type={type(e).__name__})")
-    try:
-        from yuxi.knowledge.eval.service import EvaluationService
-
-        recovered = await EvaluationService().recover_experiments()
-        if recovered:
-            logger.info(f"Recovered {recovered} evaluation experiments")
-    except Exception as e:
-        logger.error(f"Failed to recover evaluation experiments (error_type={type(e).__name__})")
+    await _recover_research_tasks()
     logger.info(f"""
 
 ░██     ░██                       ░██

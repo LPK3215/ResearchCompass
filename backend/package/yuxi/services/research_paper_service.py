@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 import re
 from typing import Any
@@ -192,9 +193,7 @@ async def list_paper_chunks_view(
     }
 
 
-async def get_paper_evidence_view(
-    *, kb_id: str, paper_id: str, chunk_id: str, current_user: User
-) -> dict[str, Any]:
+async def get_paper_evidence_view(*, kb_id: str, paper_id: str, chunk_id: str, current_user: User) -> dict[str, Any]:
     await _ensure_access(current_user, kb_id)
     paper = await AcademicPaperRepository().get_by_paper_id(kb_id=kb_id, paper_id=paper_id)
     if paper is None:
@@ -364,9 +363,7 @@ async def _run_paper_reindex(
                 )
                 raise
             except Exception as exc:
-                failure = ResearchPaperReindexError(
-                    "paper_reindex_failed", "论文元数据与检索索引同步失败"
-                )
+                failure = ResearchPaperReindexError("paper_reindex_failed", "论文元数据与检索索引同步失败")
                 await paper_repo.fail_reindex(
                     kb_id=kb_id,
                     paper_id=paper_id,
@@ -415,9 +412,7 @@ async def _ensure_reindex_owner_can_write(operator_id: str | None, kb_id: str) -
     try:
         await _ensure_access(user, kb_id, write=True)
     except HTTPException as exc:
-        raise ResearchPaperReindexError(
-            "forbidden", "论文元数据同步任务所有者已失去知识库写入权限"
-        ) from exc
+        raise ResearchPaperReindexError("forbidden", "论文元数据同步任务所有者已失去知识库写入权限") from exc
     return user
 
 
@@ -560,25 +555,28 @@ def _paper_to_bibtex(paper: Any, index: int) -> str:
 
 async def export_papers_bibtex(
     *, kb_id: str, current_user: User, paper_ids: list[str] | None = None
-) -> str:
+) -> AsyncIterator[str]:
     await _ensure_access(current_user, kb_id)
     repo = AcademicPaperRepository()
-    if paper_ids:
-        papers = []
-        for pid in paper_ids:
-            paper = await repo.get_by_paper_id(kb_id=kb_id, paper_id=pid)
-            if paper is not None:
-                papers.append(paper)
-    else:
-        papers = []
-        offset = 0
-        while True:
-            batch, total = await repo.list_by_kb_id(kb_id=kb_id, offset=offset, limit=200)
-            papers.extend(batch)
-            if len(papers) >= total or not batch:
-                break
-            offset += len(batch)
-    return "\n\n".join(_paper_to_bibtex(paper, i) for i, paper in enumerate(papers, start=1))
+
+    async def stream() -> AsyncIterator[str]:
+        if paper_ids:
+            papers = await repo.list_by_paper_ids(kb_id=kb_id, paper_ids=paper_ids)
+            for index, paper in enumerate(papers, start=1):
+                if index > 1:
+                    yield "\n\n"
+                yield _paper_to_bibtex(paper, index)
+            return
+
+        index = 0
+        async for papers in repo.iter_export_batches(kb_id=kb_id):
+            for paper in papers:
+                index += 1
+                if index > 1:
+                    yield "\n\n"
+                yield _paper_to_bibtex(paper, index)
+
+    return stream()
 
 
 async def list_user_tags_view(*, kb_id: str, current_user: User) -> dict[str, Any]:
@@ -589,15 +587,11 @@ async def list_user_tags_view(*, kb_id: str, current_user: User) -> dict[str, An
 
 async def list_paper_tags_view(*, kb_id: str, paper_id: str, current_user: User) -> dict[str, Any]:
     await _ensure_access(current_user, kb_id)
-    tags = await AcademicPaperRepository().list_paper_tags(
-        kb_id=kb_id, paper_id=paper_id, uid=str(current_user.uid)
-    )
+    tags = await AcademicPaperRepository().list_paper_tags(kb_id=kb_id, paper_id=paper_id, uid=str(current_user.uid))
     return {"paper_id": paper_id, "tags": tags}
 
 
-async def add_paper_tag_view(
-    *, kb_id: str, paper_id: str, tag: str, current_user: User
-) -> dict[str, Any]:
+async def add_paper_tag_view(*, kb_id: str, paper_id: str, tag: str, current_user: User) -> dict[str, Any]:
     await _ensure_access(current_user, kb_id)
     normalized = tag.strip()
     if not normalized:
@@ -607,15 +601,11 @@ async def add_paper_tag_view(
     paper = await AcademicPaperRepository().get_by_paper_id(kb_id=kb_id, paper_id=paper_id)
     if paper is None:
         raise HTTPException(status_code=404, detail="论文不存在")
-    await AcademicPaperRepository().add_tag(
-        kb_id=kb_id, paper_id=paper_id, uid=str(current_user.uid), tag=normalized
-    )
+    await AcademicPaperRepository().add_tag(kb_id=kb_id, paper_id=paper_id, uid=str(current_user.uid), tag=normalized)
     return {"paper_id": paper_id, "tag": normalized}
 
 
-async def remove_paper_tag_view(
-    *, kb_id: str, paper_id: str, tag: str, current_user: User
-) -> dict[str, Any]:
+async def remove_paper_tag_view(*, kb_id: str, paper_id: str, tag: str, current_user: User) -> dict[str, Any]:
     await _ensure_access(current_user, kb_id)
     normalized = tag.strip()
     if not normalized:

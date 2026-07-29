@@ -91,24 +91,26 @@ class ResearchSearchRunRepository:
             total = await session.scalar(select(func.count()).select_from(ResearchSearchRun).where(*filters))
             result = await session.execute(
                 select(ResearchSearchRun)
-                .options(load_only(
-                    ResearchSearchRun.run_id,
-                    ResearchSearchRun.kb_id,
-                    ResearchSearchRun.raw_query,
-                    ResearchSearchRun.rewritten_query,
-                    ResearchSearchRun.rewrite_keywords,
-                    ResearchSearchRun.model_config_json,
-                    ResearchSearchRun.retrieval_config,
-                    ResearchSearchRun.status,
-                    ResearchSearchRun.stage_timings,
-                    ResearchSearchRun.result_count,
-                    ResearchSearchRun.is_pinned,
-                    ResearchSearchRun.error_type,
-                    ResearchSearchRun.error_message,
-                    ResearchSearchRun.created_at,
-                    ResearchSearchRun.started_at,
-                    ResearchSearchRun.completed_at,
-                ))
+                .options(
+                    load_only(
+                        ResearchSearchRun.run_id,
+                        ResearchSearchRun.kb_id,
+                        ResearchSearchRun.raw_query,
+                        ResearchSearchRun.rewritten_query,
+                        ResearchSearchRun.rewrite_keywords,
+                        ResearchSearchRun.model_config_json,
+                        ResearchSearchRun.retrieval_config,
+                        ResearchSearchRun.status,
+                        ResearchSearchRun.stage_timings,
+                        ResearchSearchRun.result_count,
+                        ResearchSearchRun.is_pinned,
+                        ResearchSearchRun.error_type,
+                        ResearchSearchRun.error_message,
+                        ResearchSearchRun.created_at,
+                        ResearchSearchRun.started_at,
+                        ResearchSearchRun.completed_at,
+                    )
+                )
                 .where(*filters)
                 .order_by(
                     ResearchSearchRun.is_pinned.desc(),
