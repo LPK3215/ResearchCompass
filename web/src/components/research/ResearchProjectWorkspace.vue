@@ -419,6 +419,14 @@
         <a-form-item label="项目说明">
           <a-textarea v-model:value="projectForm.description" :rows="3" :maxlength="12000" show-count />
         </a-form-item>
+        <a-form-item v-if="!editingProject" label="项目模板">
+          <a-select v-model:value="projectForm.templateId" allow-clear placeholder="空白项目（手动规划）">
+            <a-select-option v-for="template in projectTemplates" :key="template.template_id" :value="template.template_id">
+              {{ template.name }}（{{ template.milestone_count }} 个阶段 / {{ template.task_count }} 个任务）
+            </a-select-option>
+          </a-select>
+          <small v-if="selectedTemplateDescription" class="form-help">{{ selectedTemplateDescription }}</small>
+        </a-form-item>
         <div class="form-grid">
           <a-form-item label="目标日期">
             <a-input
@@ -626,6 +634,7 @@ const workspaceError = ref('')
 const projectModalOpen = ref(false)
 const editingProject = ref(false)
 const projectSaving = ref(false)
+const projectTemplates = ref([])
 const projectDeleting = ref(false)
 const statusUpdating = ref('')
 const reportDownloading = ref(false)
@@ -671,8 +680,13 @@ const projectForm = reactive({
   targetDate: '',
   tags: [],
   nextAction: '',
-  progress: 0
+  progress: 0,
+  templateId: undefined
 })
+
+const selectedTemplateDescription = computed(() => projectTemplates.value.find(
+  (template) => template.template_id === projectForm.templateId
+)?.description || '')
 
 const currentAssetType = computed(() => assetTypeOptions.find((item) => item.value === assetType.value) || assetTypeOptions[0])
 const canAddCurrentAssetType = computed(() => (
@@ -895,8 +909,16 @@ const showEvidenceImpacts = async (asset) => {
 
 const resetProjectForm = () => {
   Object.assign(projectForm, {
-    title: '', researchQuestion: '', description: '', targetDate: '', tags: [], nextAction: '', progress: 0
+    title: '', researchQuestion: '', description: '', targetDate: '', tags: [], nextAction: '', progress: 0, templateId: undefined
   })
+}
+
+const loadProjectTemplates = async () => {
+  try {
+    projectTemplates.value = (await researchApi.listProjectTemplates()).items || []
+  } catch {
+    projectTemplates.value = []
+  }
 }
 
 const openCreateProject = () => {
@@ -946,6 +968,7 @@ const saveProject = async () => {
       target_date: projectForm.targetDate || null,
       next_action: projectForm.nextAction.trim()
     }
+    if (!editingProject.value && projectForm.templateId) payload.template_id = projectForm.templateId
     let saved
     if (editingProject.value) {
       if (projectDetail.value?.status === 'completed') {
@@ -1189,6 +1212,7 @@ const refreshWorkspace = async () => {
 }
 
 watch(() => props.kbId, resetWorkspace, { immediate: true })
+void loadProjectTemplates()
 defineExpose({ refresh: refreshWorkspace })
 onBeforeUnmount(() => { requestGeneration += 1 })
 </script>

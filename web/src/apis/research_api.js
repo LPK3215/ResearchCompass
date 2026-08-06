@@ -16,6 +16,8 @@ const buildQuery = (params = {}) => {
 }
 
 export const researchApi = {
+  listProjectTemplates: () => apiGet('/api/research/project-templates'),
+
   listEvidence: (kbId, params = {}) => {
     const query = buildQuery(params)
     return apiGet(

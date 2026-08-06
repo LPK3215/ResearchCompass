@@ -178,6 +178,66 @@ async def test_research_copilot_thread_reuses_scope_and_isolates_projects(test_c
                 assert response.status_code in {200, 404}, response.text
 
 
+async def test_research_project_template_creates_complete_plan_and_rejects_unknown_template(test_client):
+    knowledge_databases: list[str] = []
+    project_ids: list[str] = []
+
+    async with _temporary_superadmin(test_client) as admin:
+        headers = admin["headers"]
+        try:
+            kb = await _create_knowledge_database(test_client, headers)
+            knowledge_databases.append(kb["kb_id"])
+
+            templates_response = await test_client.get("/api/research/project-templates", headers=headers)
+            assert templates_response.status_code == 200, templates_response.text
+            catalog = {item["template_id"]: item for item in templates_response.json()["items"]}
+            assert catalog["systematic-review"]["milestone_count"] == 3
+            assert catalog["systematic-review"]["task_count"] == 6
+            assert all("milestones" not in item for item in catalog.values())
+
+            create_response = await test_client.post(
+                f"/api/research/databases/{kb['kb_id']}/projects",
+                json={
+                    "title": "Template integration project",
+                    "research_question": "Does template creation preserve a complete plan?",
+                    "template_id": "systematic-review",
+                },
+                headers=headers,
+            )
+            assert create_response.status_code == 201, create_response.text
+            project_id = create_response.json()["project_id"]
+            project_ids.append(project_id)
+            plan_response = await test_client.get(f"/api/research/projects/{project_id}/plan", headers=headers)
+            assert plan_response.status_code == 200, plan_response.text
+            plan = plan_response.json()
+            assert len(plan["milestones"]) == 3
+            assert sum(len(milestone["tasks"]) for milestone in plan["milestones"]) == 6
+
+            invalid_response = await test_client.post(
+                f"/api/research/databases/{kb['kb_id']}/projects",
+                json={
+                    "title": "Invalid template project",
+                    "research_question": "This must not create a project.",
+                    "template_id": "missing-template",
+                },
+                headers=headers,
+            )
+            assert invalid_response.status_code == 422, invalid_response.text
+            assert invalid_response.json()["detail"]["error"] == "template_not_found"
+            projects_response = await test_client.get(
+                f"/api/research/databases/{kb['kb_id']}/projects", headers=headers
+            )
+            assert projects_response.status_code == 200, projects_response.text
+            assert projects_response.json()["total"] == 1
+        finally:
+            for project_id in project_ids:
+                response = await test_client.delete(f"/api/research/projects/{project_id}", headers=headers)
+                assert response.status_code in {204, 404}, response.text
+            for kb_id in reversed(knowledge_databases):
+                response = await test_client.delete(f"/api/knowledge/databases/{kb_id}", headers=headers)
+                assert response.status_code in {200, 404}, response.text
+
+
 async def _seed_academic_paper(kb_id: str) -> dict[str, str]:
     suffix = uuid.uuid4().hex[:12]
     file_id = f"file_{suffix}"

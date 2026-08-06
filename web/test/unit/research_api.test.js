@@ -47,6 +47,14 @@ test('ensureCopilotThread posts the current research context as JSON', async () 
   ])
 })
 
+test('listProjectTemplates requests the authenticated template catalog', async () => {
+  await researchApi.listProjectTemplates()
+
+  assert.deepEqual(calls, [
+    { method: 'apiGet', args: ['/api/research/project-templates'] }
+  ])
+})
+
 test('listPapers encodes the knowledge base and omits empty filters', async () => {
   await researchApi.listPapers('kb/team one', {
     page: 2,

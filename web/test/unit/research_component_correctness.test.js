@@ -77,6 +77,7 @@ before(async () => {
     server: { middlewareMode: true }
   })
   ;({ researchApi } = await viteServer.ssrLoadModule('/src/apis/research_api.js'))
+  researchApi.listProjectTemplates = async () => ({ items: [] })
   ;({ default: CopilotPanel } = await viteServer.ssrLoadModule(
     '/src/components/research/ResearchCopilotPanel.vue'
   ))

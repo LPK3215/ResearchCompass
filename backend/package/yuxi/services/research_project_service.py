@@ -19,6 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from yuxi.repositories.research_project_repository import ASSET_TYPES, ResearchProjectRepository
 from yuxi.repositories.research_project_plan_repository import ResearchProjectPlanRepository
 from yuxi.services.research_project_plan_utils import build_project_plan_summary
+from yuxi.services.research_project_template_service import get_project_template
 from yuxi.services.research_paper_service import _ensure_access
 from yuxi.storage.postgres.models_business import User
 from yuxi.storage.postgres.models_knowledge import ResearchProject, ResearchProjectActivity, ResearchProjectAsset
@@ -127,8 +128,12 @@ async def create_research_project(
     tags: list[str],
     target_date: date | None,
     next_action: str,
+    template_id: str | None = None,
 ) -> dict[str, Any]:
     await _ensure_access(current_user, kb_id)
+    template = get_project_template(template_id) if template_id else None
+    if template_id and template is None:
+        raise ResearchProjectError("template_not_found", "研究项目模板不存在")
     project = await ResearchProjectRepository().create(
         {
             "project_id": uuid.uuid4().hex,
@@ -150,6 +155,40 @@ async def create_research_project(
         milestones=[],
         tasks=[],
     )
+    if template:
+        from yuxi.repositories.research_project_plan_repository import ResearchProjectPlanRepository
+
+        plan_repository = ResearchProjectPlanRepository()
+        try:
+            for milestone_template in template["milestones"]:
+                milestone = await plan_repository.create_milestone(
+                    project.project_id,
+                    {
+                        "title": milestone_template["title"],
+                        "description": milestone_template["description"],
+                        "status": "planned",
+                        "target_date": None,
+                    },
+                    operator_uid=str(current_user.uid),
+                )
+                for task_title in milestone_template["tasks"]:
+                    await plan_repository.create_task(
+                        project.project_id,
+                        {
+                            "milestone_id": milestone.milestone_id,
+                            "title": task_title,
+                            "description": None,
+                            "status": "todo",
+                            "priority": "medium",
+                            "due_date": None,
+                        },
+                        operator_uid=str(current_user.uid),
+                    )
+        except Exception as exc:
+            # 项目创建已成功但模板实例化失败时删除项目，避免向用户暴露半成品。
+            await delete_research_project(project_id=project.project_id, current_user=current_user)
+            raise ResearchProjectError("template_apply_failed", "项目模板应用失败,请重试") from exc
+        return await get_research_project(project_id=project.project_id, current_user=current_user)
     return serialize_project(project, {**{item: 0 for item in ASSET_TYPES}, "total": 0}, summary)
 
 

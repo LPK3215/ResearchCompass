@@ -36,6 +36,9 @@ from yuxi.services.research_project_service import (
     update_project_asset_notes,
     update_research_project,
 )
+from yuxi.services.research_project_template_service import (
+    list_project_templates,
+)
 from yuxi.services.research_project_plan_service import (
     create_project_milestone,
     create_project_plan_asset_link,
@@ -188,6 +191,7 @@ class CreateResearchProjectRequest(BaseModel):
     tags: list[str] = Field(default_factory=list, max_length=20)
     target_date: date | None = None
     next_action: str = Field(default="", max_length=4000)
+    template_id: str | None = Field(default=None, max_length=64)
 
     @field_validator("title", "research_question")
     @classmethod
@@ -209,6 +213,11 @@ class CreateResearchProjectRequest(BaseModel):
         if any(not item or len(item) > 64 for item in normalized):
             raise ValueError("项目标签不能为空且不能超过 64 个字符")
         return list(dict.fromkeys(normalized))
+
+    @field_validator("template_id")
+    @classmethod
+    def normalize_template_id(cls, value: str | None) -> str | None:
+        return value.strip() if isinstance(value, str) else value
 
 
 class UpdateResearchProjectRequest(BaseModel):
@@ -739,6 +748,8 @@ _PROJECT_STATUS_MAP = {
     "invalid_milestone_order": 422,
     "invalid_task_order": 422,
     "invalid_plan_asset_target": 422,
+    "template_not_found": 422,
+    "template_apply_failed": 500,
     "invalid_report_format": 422,
 }
 
@@ -789,6 +800,11 @@ async def create_project(
         )
     except ResearchProjectError as exc:
         raise _to_http_error(exc, _PROJECT_STATUS_MAP) from exc
+
+
+@research.get("/project-templates")
+async def project_templates(current_user: User = Depends(get_required_user)):
+    return list_project_templates()
 
 
 @research.get("/databases/{kb_id}/projects")
