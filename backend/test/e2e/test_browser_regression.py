@@ -98,6 +98,14 @@ def test_critical_research_workflow_in_real_browser():
             page.locator(".ant-modal-footer .ant-btn-primary").last.click()
             page.get_by_text("浏览器回归风险", exact=True).wait_for(state="visible", timeout=15_000)
 
+            # Report export must create a real browser download, not merely
+            # expose an API button.
+            page.get_by_role("button", name="导出报告").click()
+            with page.expect_download(timeout=15_000) as download_info:
+                page.get_by_text("CSV 数据", exact=True).click()
+            download = download_info.value
+            assert download.suggested_filename.endswith(".csv")
+
             page.get_by_role("tab", name="智能检索").click()
             page.get_by_test_id("research-query").wait_for(state="visible")
             search_submit = page.get_by_test_id("research-search-submit")
