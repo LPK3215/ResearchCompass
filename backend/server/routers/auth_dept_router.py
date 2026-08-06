@@ -219,7 +219,12 @@ async def delete_department(
     if not department:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="部门不存在")
 
-    if department.id == 1:  # 默认部门的ID为1
+    default_result = await db.execute(select(Department).filter(Department.name == "默认部门"))
+    default_department = default_result.scalar_one_or_none()
+    if default_department is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="默认部门不存在")
+
+    if department.id == default_department.id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="默认部门不允许删除")
 
     department_name = department.name
@@ -228,7 +233,7 @@ async def delete_department(
 
     if department_users:
         for user in department_users:
-            user.department_id = 1  # 将被删除部门的用户移至默认部门
+            user.department_id = default_department.id
 
     await db.execute(sqlalchemy_delete(APIKey).where(APIKey.department_id == department_id))
     await db.delete(department)

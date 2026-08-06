@@ -1130,6 +1130,20 @@ async def _exercise_research_project_api(
     assert docx_report.status_code == 200, docx_report.text
     assert docx_report.content.startswith(b"PK")
 
+    csv_report = await test_client.get(
+        f"/api/research/projects/{project_id}/report",
+        params={"format": "csv"},
+        headers=admin_headers,
+    )
+    assert csv_report.status_code == 200, csv_report.text
+    assert csv_report.headers["content-type"].startswith("text/csv")
+    assert ".csv" in csv_report.headers["content-disposition"]
+    csv_text = csv_report.content.decode("utf-8-sig")
+    assert "record_type,record_id,parent_id,title,status" in csv_text
+    assert "milestone," in csv_text
+    assert "task," in csv_text
+    assert "Evidence-grounded Research Opportunity Discovery" in csv_text
+
     read_only_response = await test_client.delete(
         f"/api/research/projects/{project_id}/assets/{paper_asset['asset_id']}",
         headers=admin_headers,

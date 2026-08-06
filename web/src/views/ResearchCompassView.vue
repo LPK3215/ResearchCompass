@@ -2396,6 +2396,11 @@ const continueProjectAsset = async (asset) => {
     openPaper({ paper_id: asset.reference_id })
     return
   }
+  if (asset.asset_type === 'evidence') {
+    activeMode.value = 'library'
+    message.info('证据已归集;请在论文证据面板中查看其来源片段')
+    return
+  }
   if (asset.asset_type === 'search_run') {
     projectSearchRunId.value = asset.reference_id
     activeMode.value = 'search'

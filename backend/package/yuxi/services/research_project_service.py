@@ -109,6 +109,10 @@ def serialize_project_activity(activity: ResearchProjectActivity) -> dict[str, A
         "asset_type": activity.asset_type,
         "reference_id": activity.reference_id,
         "payload": activity.payload or {},
+        "operator_uid": activity.operator_uid,
+        "from_status": activity.from_status,
+        "to_status": activity.to_status,
+        "precondition": activity.precondition or {},
         "created_at": activity.created_at.isoformat() if activity.created_at else None,
     }
 
@@ -219,7 +223,7 @@ async def update_research_project(
     if project.status == "archived" and values.get("status") != "active":
         raise ResearchProjectError("project_archived", "归档项目需先恢复为进行中才能编辑")
     if project.status == "completed" and values.get("status", "completed") == "completed":
-        disallowed = set(values) - {"description", "progress"}
+        disallowed = set(values) - {"description", "progress", "status"}
         if disallowed:
             raise ResearchProjectError("project_read_only", "已完成项目只能修订项目说明、归档或恢复为进行中")
         values.pop("progress", None)
@@ -229,13 +233,6 @@ async def update_research_project(
         raise ResearchProjectError("invalid_project_status", "不支持的研究项目状态")
     activity_type = "project_status_changed" if status != project.status else "project_updated"
     plan_repository = ResearchProjectPlanRepository()
-    if status == "completed":
-        open_tasks = await plan_repository.count_open_tasks(project_id)
-        if open_tasks:
-            raise ResearchProjectError(
-                "project_has_open_tasks",
-                f"项目仍有 {open_tasks} 个未完成任务，完成全部任务后才能标记项目完成",
-            )
     milestones, tasks, _ = await plan_repository.get_plan_records(project_id)
     if tasks:
         values.pop("progress", None)
@@ -251,12 +248,18 @@ async def update_research_project(
         else:
             values["completed_at"] = None
             values["archived_at"] = None
-    updated = await ResearchProjectRepository().update(
+    updated, open_tasks = await ResearchProjectRepository().update(
         project_id,
         uid=str(current_user.uid),
         values=values,
         activity_type=activity_type,
+        require_no_open_tasks=status == "completed",
     )
+    if open_tasks:
+        raise ResearchProjectError(
+            "project_has_open_tasks",
+            f"项目仍有 {open_tasks} 个未完成任务，完成全部任务后才能标记项目完成",
+        )
     if updated is None:
         raise ResearchProjectError("project_not_found", "研究项目不存在")
     summary = build_project_plan_summary(
@@ -339,7 +342,7 @@ async def add_project_assets(
             }
         )
     try:
-        records = await repository.add_assets(project_id, snapshots)
+        records = await repository.add_assets(project_id, snapshots, operator_uid=str(current_user.uid))
     except IntegrityError as exc:
         raise ResearchProjectError("asset_already_linked", "所选成果已存在于当前研究项目") from exc
     return {
@@ -392,6 +395,7 @@ async def update_project_asset_notes(
         project_id,
         asset_id,
         notes=notes or None,
+        operator_uid=str(current_user.uid),
     )
     if record is None:
         raise ResearchProjectError("asset_not_found", "项目成果不存在")
@@ -413,7 +417,7 @@ async def remove_project_asset(
     project = await get_owned_project(project_id, current_user)
     ensure_project_writable(project)
     repository = ResearchProjectRepository()
-    record = await repository.remove_asset(project_id, asset_id)
+    record = await repository.remove_asset(project_id, asset_id, operator_uid=str(current_user.uid))
     if record is None:
         raise ResearchProjectError("asset_not_found", "项目成果不存在")
     return {"removed": True, "asset_counts": await repository.get_asset_counts(project_id)}

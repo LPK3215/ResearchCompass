@@ -365,5 +365,11 @@ async def test_ensure_knowledge_schema_adds_research_runtime_columns_and_indexes
     assert "academic_graph_sync_runs ADD COLUMN IF NOT EXISTS processed_paper_ids" in statements
     assert "research_search_runs ADD COLUMN IF NOT EXISTS result_snapshot JSONB" in statements
     assert "research_search_runs ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN NOT NULL DEFAULT FALSE" in statements
+    assert "tasks ADD COLUMN IF NOT EXISTS retryable BOOLEAN NOT NULL DEFAULT FALSE" in statements
+    assert "tasks ADD COLUMN IF NOT EXISTS dependency VARCHAR(64)" in statements
+    assert "tasks ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0" in statements
     assert "CREATE INDEX IF NOT EXISTS ix_research_search_runs_history" in statements
     assert "ON research_search_runs (kb_id, uid, is_pinned, created_at)" in statements
+    assert "ck_research_evidence_status" in statements
+    assert "ix_research_evidence_kb_status" in statements
+    assert "ix_research_evidence_activities_evidence_created" in statements

@@ -20,6 +20,10 @@ def test_search_run_serialization_separates_summary_from_result_snapshot():
         is_pinned=True,
         error_type=None,
         error_message=None,
+        retryable=True,
+        dependency="vector_store",
+        retry_count=2,
+        parent_run_id="parent-1",
         created_at=datetime(2026, 7, 26, 10, 0, 0),
         started_at=datetime(2026, 7, 26, 10, 0, 1),
         completed_at=datetime(2026, 7, 26, 10, 0, 2),
@@ -31,4 +35,8 @@ def test_search_run_serialization_separates_summary_from_result_snapshot():
     assert "result" not in summary
     assert summary["is_pinned"] is True
     assert summary["config"]["retrieval"]["mode"] == "local_hybrid"
+    assert summary["retryable"] is True
+    assert summary["dependency"] == "vector_store"
+    assert summary["retry_count"] == 2
+    assert summary["parent_run_id"] == "parent-1"
     assert detail["result"] == record.result_snapshot

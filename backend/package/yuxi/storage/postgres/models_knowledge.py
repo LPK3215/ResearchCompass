@@ -340,7 +340,71 @@ class ResearchProjectActivity(Base):
     asset_type = Column(String(32))
     reference_id = Column(String(64))
     payload = Column(JSON_VALUE, nullable=False, default=dict)
+    # 审计元数据:旧记录允许为空,新写入由业务层提供操作者与状态前置条件。
+    operator_uid = Column(String(64), index=True)
+    from_status = Column(String(32))
+    to_status = Column(String(32))
+    precondition = Column(JSON_VALUE, nullable=False, default=dict)
     created_at = Column(DateTime(timezone=True), default=utc_now_naive)
+
+
+class ResearchEvidence(Base):
+    """可独立验证、失效和归档的研究证据快照。"""
+
+    __tablename__ = "research_evidence"
+    __table_args__ = (
+        UniqueConstraint("evidence_id", name="uq_research_evidence_id"),
+        UniqueConstraint("kb_id", "source_chunk_id", name="uq_research_evidence_source"),
+        CheckConstraint("status IN ('unverified', 'verified', 'invalid', 'archived')", name="ck_research_evidence_status"),
+        Index("ix_research_evidence_kb_status", "kb_id", "status"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    evidence_id = Column(String(64), nullable=False, unique=True, index=True)
+    kb_id = Column(String(80), ForeignKey("knowledge_bases.kb_id", ondelete="CASCADE"), nullable=False, index=True)
+    source_chunk_id = Column(String(128), nullable=False, index=True)
+    content_snapshot = Column(Text, nullable=False)
+    status = Column(String(32), nullable=False, default="unverified", index=True)
+    invalid_reason = Column(Text)
+    created_by = Column(String(64), nullable=False)
+    verified_by = Column(String(64))
+    verified_at = Column(DateTime(timezone=True))
+    archived_by = Column(String(64))
+    archived_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
+    updated_at = Column(DateTime(timezone=True), default=utc_now_naive, onupdate=utc_now_naive)
+
+
+class ResearchEvidenceActivity(Base):
+    """证据生命周期变更审计,独立于证据当前快照保存。"""
+
+    __tablename__ = "research_evidence_activities"
+    __table_args__ = (Index("ix_research_evidence_activities_evidence_created", "evidence_id", "created_at"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    activity_id = Column(String(64), nullable=False, unique=True, index=True)
+    evidence_id = Column(
+        String(64), ForeignKey("research_evidence.evidence_id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    operator_uid = Column(String(64), nullable=False, index=True)
+    from_status = Column(String(32), nullable=False)
+    to_status = Column(String(32), nullable=False)
+    reason = Column(Text)
+    created_at = Column(DateTime(timezone=True), default=utc_now_naive, nullable=False)
+
+
+class ResearchEvidenceCitation(Base):
+    """综述对证据的不可悬空引用记录。"""
+
+    __tablename__ = "research_evidence_citations"
+    __table_args__ = (UniqueConstraint("evidence_id", "synthesis_run_id", name="uq_research_evidence_citation"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    citation_id = Column(String(64), nullable=False, unique=True, index=True)
+    evidence_id = Column(String(64), ForeignKey("research_evidence.evidence_id", ondelete="RESTRICT"), nullable=False)
+    synthesis_run_id = Column(String(64), ForeignKey("research_synthesis_runs.run_id", ondelete="CASCADE"), nullable=False)
+    cited_by = Column(String(64), nullable=False)
+    cited_at = Column(DateTime(timezone=True), default=utc_now_naive)
 
 
 class ResearchSearchRun(Base):
@@ -355,6 +419,7 @@ class ResearchSearchRun(Base):
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    parent_run_id = Column(String(64), ForeignKey("research_search_runs.run_id", ondelete="SET NULL"), nullable=True, index=True)
     run_id = Column(String(64), nullable=False, unique=True, index=True)
     kb_id = Column(String(80), ForeignKey("knowledge_bases.kb_id", ondelete="CASCADE"), nullable=False, index=True)
     uid = Column(String(64), nullable=False, index=True)
@@ -370,6 +435,9 @@ class ResearchSearchRun(Base):
     is_pinned = Column(Boolean, nullable=False, default=False)
     error_type = Column(String(128))
     error_message = Column(Text)
+    retryable = Column(Boolean, nullable=False, default=False)
+    retry_count = Column(Integer, nullable=False, default=0)
+    dependency = Column(String(32))
     created_at = Column(DateTime(timezone=True), default=utc_now_naive)
     started_at = Column(DateTime(timezone=True), default=utc_now_naive)
     completed_at = Column(DateTime(timezone=True))
@@ -408,6 +476,9 @@ class ResearchSynthesisRun(Base):
     stage_timings = Column(JSON_VALUE, nullable=False, default=dict)
     error_type = Column(String(128))
     error_message = Column(Text)
+    retryable = Column(Boolean, nullable=False, default=False)
+    retry_count = Column(Integer, nullable=False, default=0)
+    dependency = Column(String(32))
     created_at = Column(DateTime(timezone=True), default=utc_now_naive)
     started_at = Column(DateTime(timezone=True))
     completed_at = Column(DateTime(timezone=True))

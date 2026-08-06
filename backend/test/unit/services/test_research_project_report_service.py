@@ -1,11 +1,12 @@
-from io import BytesIO
+import csv
+from io import BytesIO, StringIO
 from types import SimpleNamespace
 
 from docx import Document
 import pytest
 
 from yuxi.services import research_project_report_service
-from yuxi.services.research_project_report_service import render_project_docx, render_project_markdown
+from yuxi.services.research_project_report_service import render_project_csv, render_project_docx, render_project_markdown
 
 
 def _report():
@@ -74,6 +75,31 @@ def test_docx_report_is_openable_and_contains_project_execution_details():
     assert "Consumer research plan" in text
     assert "Verify source" in text
     assert "源成果已失效" in text
+
+
+def test_csv_report_is_flat_and_preserves_project_plan_and_asset_rows():
+    content = render_project_csv(_report()).decode("utf-8-sig")
+    rows = list(csv.DictReader(StringIO(content)))
+
+    assert [row["record_type"] for row in rows] == ["project", "milestone", "task", "asset"]
+    assert rows[0]["title"] == "Consumer research plan"
+    assert rows[2]["title"] == "Verify source"
+    assert rows[2]["parent_id"]
+    assert rows[3]["available"] == "false"
+
+
+def test_csv_report_escapes_formula_like_user_content():
+    report = _report()
+    report["project"]["title"] = "=SUM(A1:A2)"
+    report["project"]["description"] = "@external-reference"
+    report["plan"]["milestones"][0]["tasks"][0]["description"] = "+unsafe-formula"
+
+    content = render_project_csv(report).decode("utf-8-sig")
+    rows = list(csv.DictReader(StringIO(content)))
+
+    assert rows[0]["title"] == "'=SUM(A1:A2)"
+    assert rows[0]["notes"] == "'@external-reference"
+    assert rows[2]["notes"] == "'+unsafe-formula"
 
 
 @pytest.mark.asyncio

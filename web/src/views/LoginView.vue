@@ -168,7 +168,7 @@
                     name="loginId"
                     :rules="[{ required: true, message: '请输入UID或手机号' }]"
                   >
-                    <a-input v-model:value="loginForm.loginId" placeholder="UID或手机号">
+                    <a-input data-testid="login-id" v-model:value="loginForm.loginId" placeholder="UID或手机号">
                       <template #prefix>
                         <user-icon size="18" />
                       </template>
@@ -180,7 +180,7 @@
                     name="password"
                     :rules="[{ required: true, message: '请输入密码' }]"
                   >
-                    <a-input-password v-model:value="loginForm.password">
+                    <a-input-password data-testid="login-password" v-model:value="loginForm.password">
                       <template #prefix>
                         <lock-icon size="18" />
                       </template>
@@ -213,6 +213,7 @@
 
                   <a-form-item>
                     <a-button
+                      data-testid="login-submit"
                       type="primary"
                       html-type="submit"
                       :loading="loading"

@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict'
 import { beforeEach, mock, test } from 'node:test'
 
+import { moduleMockExportsKey } from './module_mock_compat.js'
+
 const calls = []
 let requestResult = { ok: true }
 
 mock.module(new URL('../../src/apis/base.js', import.meta.url), {
-  exports: {
+  [moduleMockExportsKey]: {
     apiGet: async (...args) => {
       calls.push({ method: 'apiGet', args })
       return requestResult
@@ -136,6 +138,53 @@ test('research project APIs encode project and asset identifiers', async () => {
       args: ['/api/research/projects/project%2F1/assets/asset%2F1', { method: 'DELETE' }]
     },
     { method: 'apiRequest', args: ['/api/research/projects/project%2F1', { method: 'DELETE' }] }
+  ])
+})
+
+test('evidence lifecycle APIs encode identifiers and preserve audit contracts', async () => {
+  const createPayload = { title: 'Evidence', source_chunk_id: 'chunk/1' }
+  const transitionPayload = { to_status: 'verified', reason: 'Reviewed' }
+
+  await researchApi.listEvidence('kb/team one', {
+    status: 'verified', query: 'graph RAG', offset: 0, limit: 20
+  })
+  await researchApi.createEvidence('kb/team one', createPayload)
+  await researchApi.transitionEvidence('evidence/1', transitionPayload)
+  await researchApi.listEvidenceActivities('evidence/1')
+  await researchApi.listEvidenceCitations('evidence/1')
+  await researchApi.listEvidenceImpacts('evidence/1')
+
+  assert.deepEqual(calls, [
+    {
+      method: 'apiGet',
+      args: ['/api/research/databases/kb%2Fteam%20one/evidence?status=verified&query=graph+RAG&offset=0&limit=20']
+    },
+    {
+      method: 'apiRequest',
+      args: [
+        '/api/research/databases/kb%2Fteam%20one/evidence',
+        { method: 'POST', body: JSON.stringify(createPayload) }
+      ]
+    },
+    {
+      method: 'apiRequest',
+      args: [
+        '/api/research/evidence/evidence%2F1/transition',
+        { method: 'POST', body: JSON.stringify(transitionPayload) }
+      ]
+    },
+    {
+      method: 'apiGet',
+      args: ['/api/research/evidence/evidence%2F1/activities']
+    },
+    {
+      method: 'apiGet',
+      args: ['/api/research/evidence/evidence%2F1/citations']
+    },
+    {
+      method: 'apiGet',
+      args: ['/api/research/evidence/evidence%2F1/impacts']
+    }
   ])
 })
 

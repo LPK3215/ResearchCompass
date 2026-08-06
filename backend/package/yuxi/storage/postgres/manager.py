@@ -179,6 +179,83 @@ class PostgresManager(metaclass=SingletonMeta):
         """确保知识库 schema 包含所有必要字段"""
         self._check_initialized()
         stmts = [
+            "ALTER TABLE IF EXISTS research_project_activities ADD COLUMN IF NOT EXISTS operator_uid VARCHAR(64)",
+            "ALTER TABLE IF EXISTS research_project_activities ADD COLUMN IF NOT EXISTS from_status VARCHAR(32)",
+            "ALTER TABLE IF EXISTS research_project_activities ADD COLUMN IF NOT EXISTS to_status VARCHAR(32)",
+            "ALTER TABLE IF EXISTS research_project_activities ADD COLUMN IF NOT EXISTS precondition JSONB NOT NULL DEFAULT '{}'::jsonb",
+            "ALTER TABLE IF EXISTS research_synthesis_runs ADD COLUMN IF NOT EXISTS retryable BOOLEAN NOT NULL DEFAULT FALSE",
+            "ALTER TABLE IF EXISTS research_synthesis_runs ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE IF EXISTS research_synthesis_runs ADD COLUMN IF NOT EXISTS dependency VARCHAR(32)",
+            "ALTER TABLE IF EXISTS research_search_runs ADD COLUMN IF NOT EXISTS retryable BOOLEAN NOT NULL DEFAULT FALSE",
+            "ALTER TABLE IF EXISTS research_search_runs ADD COLUMN IF NOT EXISTS dependency VARCHAR(32)",
+            "ALTER TABLE IF EXISTS research_search_runs ADD COLUMN IF NOT EXISTS parent_run_id VARCHAR(64)",
+            "ALTER TABLE IF EXISTS research_search_runs ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS retryable BOOLEAN NOT NULL DEFAULT FALSE",
+            "ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS dependency VARCHAR(64)",
+            "ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0",
+            "CREATE INDEX IF NOT EXISTS ix_research_search_runs_parent ON research_search_runs (parent_run_id)",
+            """CREATE TABLE IF NOT EXISTS user_notifications (
+                id SERIAL PRIMARY KEY, notification_id VARCHAR(64) UNIQUE NOT NULL,
+                recipient_uid VARCHAR(64) NOT NULL, notification_type VARCHAR(64) NOT NULL,
+                title VARCHAR(255) NOT NULL, message TEXT NOT NULL,
+                resource_type VARCHAR(64), resource_id VARCHAR(128),
+                idempotency_key VARCHAR(255) UNIQUE NOT NULL, read_at TIMESTAMPTZ,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )""",
+            """CREATE TABLE IF NOT EXISTS research_evidence (
+                id SERIAL PRIMARY KEY, evidence_id VARCHAR(64) UNIQUE NOT NULL, kb_id VARCHAR(80) NOT NULL,
+                source_chunk_id VARCHAR(128) NOT NULL, content_snapshot TEXT NOT NULL,
+                status VARCHAR(32) NOT NULL DEFAULT 'unverified', invalid_reason TEXT,
+                created_by VARCHAR(64) NOT NULL, verified_by VARCHAR(64), verified_at TIMESTAMPTZ,
+                archived_by VARCHAR(64), archived_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW(),
+                CONSTRAINT uq_research_evidence_source UNIQUE(kb_id, source_chunk_id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS research_evidence_citations (
+                id SERIAL PRIMARY KEY, citation_id VARCHAR(64) UNIQUE NOT NULL,
+                evidence_id VARCHAR(64) NOT NULL REFERENCES research_evidence(evidence_id) ON DELETE RESTRICT,
+                synthesis_run_id VARCHAR(64) NOT NULL REFERENCES research_synthesis_runs(run_id) ON DELETE CASCADE,
+                cited_by VARCHAR(64) NOT NULL, cited_at TIMESTAMPTZ DEFAULT NOW(),
+                CONSTRAINT uq_research_evidence_citation UNIQUE(evidence_id, synthesis_run_id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS research_evidence_activities (
+                id SERIAL PRIMARY KEY, activity_id VARCHAR(64) UNIQUE NOT NULL,
+                evidence_id VARCHAR(64) NOT NULL REFERENCES research_evidence(evidence_id) ON DELETE RESTRICT,
+                operator_uid VARCHAR(64) NOT NULL, from_status VARCHAR(32) NOT NULL,
+                to_status VARCHAR(32) NOT NULL, reason TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )""",
+            """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint WHERE conname = 'fk_research_evidence_kb'
+                ) THEN
+                    ALTER TABLE research_evidence
+                        ADD CONSTRAINT fk_research_evidence_kb
+                        FOREIGN KEY (kb_id) REFERENCES knowledge_bases(kb_id) ON DELETE CASCADE;
+                END IF;
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint WHERE conname = 'fk_research_evidence_activities_evidence'
+                ) THEN
+                    ALTER TABLE research_evidence_activities
+                        ADD CONSTRAINT fk_research_evidence_activities_evidence
+                        FOREIGN KEY (evidence_id) REFERENCES research_evidence(evidence_id) ON DELETE RESTRICT;
+                END IF;
+            END $$
+            """,
+            """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint WHERE conname = 'ck_research_evidence_status'
+                ) THEN
+                    ALTER TABLE research_evidence
+                        ADD CONSTRAINT ck_research_evidence_status
+                        CHECK (status IN ('unverified', 'verified', 'invalid', 'archived'));
+                END IF;
+            END $$
+            """,
+            "CREATE INDEX IF NOT EXISTS ix_research_evidence_kb_status ON research_evidence (kb_id, status)",
+            "CREATE INDEX IF NOT EXISTS ix_research_evidence_activities_evidence_created ON research_evidence_activities (evidence_id, created_at)",
             "ALTER TABLE IF EXISTS knowledge_bases ADD COLUMN IF NOT EXISTS embedding_model_spec VARCHAR(512)",
             "ALTER TABLE IF EXISTS knowledge_bases ADD COLUMN IF NOT EXISTS llm_model_spec VARCHAR(512)",
             "ALTER TABLE IF EXISTS knowledge_bases DROP COLUMN IF EXISTS embed_info",

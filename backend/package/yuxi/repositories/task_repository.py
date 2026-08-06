@@ -141,6 +141,32 @@ class TaskRepository:
             result = await session.execute(statement)
             return result.scalar_one_or_none()
 
+    async def claim_retry(self, task_id: str, *, max_retries: int) -> TaskRecord | None:
+        """Atomically reserve one retry for a failed resumable task."""
+        async with pg_manager.get_async_session_context() as session:
+            statement = (
+                update(TaskRecord)
+                .where(
+                    TaskRecord.id == task_id,
+                    TaskRecord.status == "failed",
+                    TaskRecord.retryable.is_(True),
+                    TaskRecord.retry_count < max_retries,
+                )
+                .values(
+                    status="pending",
+                    progress=0.0,
+                    message="任务已重新排队",
+                    error=None,
+                    result=None,
+                    retry_count=TaskRecord.retry_count + 1,
+                    started_at=None,
+                    completed_at=None,
+                )
+                .returning(TaskRecord)
+            )
+            result = await session.execute(statement)
+            return result.scalar_one_or_none()
+
     async def create_or_get_by_payload(
         self,
         *,

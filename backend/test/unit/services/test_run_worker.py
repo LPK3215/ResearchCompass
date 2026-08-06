@@ -220,6 +220,49 @@ async def test_process_agent_run_restores_invocation_meta(monkeypatch: pytest.Mo
     assert terminal_statuses == ["completed"]
 
 
+@pytest.mark.asyncio
+async def test_process_agent_run_persists_approval_notification(monkeypatch: pytest.MonkeyPatch):
+    run_obj = _build_run()
+    _patch_common(monkeypatch, run_obj)
+    notifications: list[dict] = []
+
+    async def fake_append_event(*args, **kwargs):
+        del args, kwargs
+
+    async def fake_mark_terminal(run_id: str, status: str, error_type=None, error_message=None):
+        del run_id, error_type, error_message
+        return run_worker.TerminalTransition(status=status, changed=True)
+
+    async def fake_create_notification(**kwargs):
+        notifications.append(kwargs)
+        return kwargs
+
+    monkeypatch.setattr(run_worker, "append_run_event", fake_append_event)
+    monkeypatch.setattr(run_worker, "mark_run_terminal", fake_mark_terminal)
+    monkeypatch.setattr(run_worker, "create_notification", fake_create_notification)
+    monkeypatch.setattr(
+        run_worker,
+        "stream_agent_chat",
+        lambda **kwargs: _BytesAsyncIter(
+            [b'{"status":"human_approval_required","request_id":"req-1","thread_id":"thread-1"}\n']
+        ),
+    )
+
+    await run_worker.process_agent_run({"job_try": 1}, "run-1")
+
+    assert notifications == [
+        {
+            "recipient_uid": "user-1",
+            "notification_type": "approval_required",
+            "title": "等待审批",
+            "message": "智能体需要你审批工具操作后才能继续",
+            "resource_type": "agent_run",
+            "resource_id": "run-1",
+            "idempotency_key": "agent-run:run-1:approval_required",
+        }
+    ]
+
+
 def test_trusted_research_context_requires_copilot_source_and_agent():
     context = {"kb_id": "kb-1", "project_id": "project-1"}
 

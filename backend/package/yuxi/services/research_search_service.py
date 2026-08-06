@@ -345,6 +345,8 @@ async def search_papers(
     chat_model: str | None,
     reranker_model: str | None,
     retrieval_mode: str | None = None,
+    parent_run_id: str | None = None,
+    retry_count: int = 0,
 ) -> dict[str, Any]:
     query = query.strip()
     if not query or len(query) > 4000:
@@ -390,6 +392,8 @@ async def search_papers(
         )
     await run_repo.create(
         run_id=run_id,
+        parent_run_id=parent_run_id,
+        retry_count=retry_count,
         kb_id=kb_id,
         uid=str(current_user.uid),
         raw_query=query,
@@ -527,6 +531,8 @@ async def search_papers(
         )
         return response
     except ResearchSearchError as exc:
+        retryable = exc.error_type == "retrieval_failure"
+        dependency = "vector_store" if exc.error_type == "retrieval_failure" else None
         await run_repo.update(
             run_id,
             {
@@ -534,6 +540,8 @@ async def search_papers(
                 "stage_timings": timings,
                 "error_type": exc.error_type,
                 "error_message": exc.message,
+                "retryable": retryable,
+                "dependency": dependency,
                 "completed_at": utc_now_naive(),
             },
         )
@@ -541,6 +549,7 @@ async def search_papers(
     except Exception as exc:
         failure_type = "strict_research_failure" if citation_graph_enabled else "local_research_failure"
         failure_message = "科研严格图谱检索执行失败" if citation_graph_enabled else "科研本地混合检索执行失败"
+        dependency = "vector_store" if not citation_graph_enabled else "retrieval"
         await run_repo.update(
             run_id,
             {
@@ -548,6 +557,8 @@ async def search_papers(
                 "stage_timings": timings,
                 "error_type": failure_type,
                 "error_message": failure_message,
+                "retryable": True,
+                "dependency": dependency,
                 "completed_at": utc_now_naive(),
             },
         )
@@ -599,6 +610,39 @@ async def set_search_run_pinned(*, run_id: str, current_user: User, is_pinned: b
     return repository.serialize(updated)
 
 
+MAX_RESEARCH_SEARCH_RETRIES = 3
+
+
+async def retry_search_run(*, run_id: str, current_user: User) -> dict[str, Any]:
+    repository = ResearchSearchRunRepository()
+    record = await repository.get(run_id, uid=str(current_user.uid))
+    if record is None:
+        raise ResearchSearchError("run_not_found", "检索运行记录不存在")
+    await _ensure_access(current_user, str(record.kb_id))
+    if record.status != "failed" or not bool(record.retryable):
+        raise ResearchSearchError("search_not_retryable", "该检索不是可重试失败状态")
+    retry_count = int(record.retry_count or 0)
+    if retry_count >= MAX_RESEARCH_SEARCH_RETRIES:
+        raise ResearchSearchError("search_retry_limit", "检索重试次数已达上限")
+    claimed_retry_count = await repository.claim_retry(
+        str(record.run_id), uid=str(current_user.uid), max_retries=MAX_RESEARCH_SEARCH_RETRIES
+    )
+    if claimed_retry_count is None:
+        raise ResearchSearchError("search_retry_limit", "检索重试次数已达上限或运行状态已改变")
+    retrieval = record.retrieval_config or {}
+    models = record.model_config_json or {}
+    result = await search_papers(
+        kb_id=str(record.kb_id), current_user=current_user, query=str(record.raw_query),
+        top_k=int(retrieval.get("top_k") or 8), recall_top_k=int(retrieval.get("recall_top_k") or 50),
+        year_from=retrieval.get("year_from"), year_to=retrieval.get("year_to"),
+        chat_model=str(models.get("chat_model") or ""), reranker_model=str(models.get("reranker_model") or ""),
+        retrieval_mode=str(retrieval.get("mode") or LOCAL_HYBRID_MODE), parent_run_id=str(record.run_id),
+        retry_count=claimed_retry_count,
+    )
+    result["retry_count"] = claimed_retry_count
+    return result
+
+
 async def delete_search_run(*, run_id: str, current_user: User) -> None:
     repository = ResearchSearchRunRepository()
     record = await repository.get(run_id, uid=str(current_user.uid))
@@ -620,5 +664,6 @@ __all__ = [
     "get_search_run",
     "list_search_runs",
     "search_papers",
+    "retry_search_run",
     "set_search_run_pinned",
 ]

@@ -8,11 +8,22 @@ from __future__ import annotations
 import pytest
 
 from yuxi.services.academic_paper_import_service import (
+    _classify_import_dependency_failure,
     AcademicPaperImportError,
     _open_access_url,
     _paper_metadata,
     _safe_filename,
 )
+
+
+def test_classify_import_dependency_failure_marks_transient_vector_and_model_errors():
+    assert _classify_import_dependency_failure(TimeoutError("provider timeout")) == (True, "external_dependency")
+    assert _classify_import_dependency_failure(RuntimeError("milvus unavailable")) == (True, "vector_store")
+    assert _classify_import_dependency_failure(RuntimeError("model inference unavailable")) == (True, "model")
+
+
+def test_classify_import_dependency_failure_does_not_mark_business_errors_retryable():
+    assert _classify_import_dependency_failure(ValueError("invalid paper metadata")) == (False, None)
 
 
 # ---------------------------------------------------------------------------

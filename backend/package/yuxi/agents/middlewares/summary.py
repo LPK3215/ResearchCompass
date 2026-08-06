@@ -17,6 +17,8 @@ from deepagents.middleware.summarization import (
     _aclip_overflow_tail,
     _clip_overflow_tail,
 )
+from deepagents.backends.state import StateBackend
+from deepagents.backends.filesystem import FilesystemBackend
 from langchain.agents.middleware.summarization import ContextSize
 from langchain.agents.middleware.types import ExtendedModelResponse, ModelRequest, ModelResponse
 from langchain.chat_models import BaseChatModel
@@ -304,10 +306,29 @@ class YuxiSummarizationMiddleware(SummarizationMiddleware):
         tool_arg_max_length: int = _DEFAULT_TOOL_ARG_MAX_LENGTH,
         **kwargs,
     ) -> None:
+        backend_factory = kwargs.get("backend")
+        if callable(backend_factory):
+            kwargs["backend"] = None
         super().__init__(*args, **kwargs)
+        if callable(backend_factory):
+            self._backend = backend_factory
         self.tool_result_offload_token_limit = tool_result_offload_token_limit
         self.l1_l2_trigger_ratio = l1_l2_trigger_ratio
         self.tool_arg_max_length = tool_arg_max_length
+
+    def _get_backend(self, state, runtime):
+        backend = _SUMMARY_BACKEND.get()
+        if backend is not None:
+            return backend
+        configured_backend = self._backend
+        if callable(configured_backend):
+            try:
+                return configured_backend(runtime)
+            except (TypeError, ValueError):
+                return FilesystemBackend(virtual_mode=True)
+        if configured_backend is not None:
+            return configured_backend
+        return FilesystemBackend(virtual_mode=True)
 
     def _should_summarize(self, messages: list[AnyMessage], total_tokens: int) -> bool:
         if not self._lc_helper._trigger_clauses:
@@ -566,11 +587,12 @@ class YuxiSummarizationMiddleware(SummarizationMiddleware):
         handler: Callable[[ModelRequest], ModelResponse],
     ) -> ModelResponse | ExtendedModelResponse:
         effective_messages = self._get_effective_messages(request)
-        truncated_messages, _ = self._truncate_args(
+        initial_tokens = self._count_request_tokens(
             effective_messages,
-            request.system_message,
-            request.tools,
+            system_message=request.system_message,
+            tools=request.tools,
         )
+        truncated_messages, _ = self._truncate_args(effective_messages, initial_tokens)
         total_tokens = self._count_request_tokens(
             truncated_messages,
             system_message=request.system_message,
@@ -657,11 +679,12 @@ class YuxiSummarizationMiddleware(SummarizationMiddleware):
         handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
     ) -> ModelResponse | ExtendedModelResponse:
         effective_messages = self._get_effective_messages(request)
-        truncated_messages, _ = self._truncate_args(
+        initial_tokens = self._count_request_tokens(
             effective_messages,
-            request.system_message,
-            request.tools,
+            system_message=request.system_message,
+            tools=request.tools,
         )
+        truncated_messages, _ = self._truncate_args(effective_messages, initial_tokens)
         total_tokens = self._count_request_tokens(
             truncated_messages,
             system_message=request.system_message,

@@ -58,6 +58,22 @@ class FakeTaskRepository:
         data["cancel_requested"] = 1
         return SimpleNamespace(to_dict=lambda: {"id": task_id, **data})
 
+    async def claim_retry(self, task_id, *, max_retries):
+        data = self.records.get(task_id)
+        if (
+            data is None
+            or data["status"] != "failed"
+            or not data.get("retryable")
+            or int(data.get("retry_count", 0)) >= max_retries
+        ):
+            return None
+        data.update(
+            status="pending", progress=0.0, message="任务已重新排队", error=None,
+            result=None, retry_count=int(data.get("retry_count", 0)) + 1,
+            started_at=None, completed_at=None,
+        )
+        return SimpleNamespace(to_dict=lambda: {"id": task_id, **data})
+
     async def delete_terminal(self, task_id, statuses):
         data = self.records.get(task_id)
         if data is None or data["status"] not in statuses:
@@ -154,6 +170,40 @@ async def test_cooperative_task_is_cancelled_at_explicit_safety_point():
 
 
 @pytest.mark.asyncio
+async def test_cancelled_task_emits_cancelled_notification(monkeypatch):
+    tasker = Tasker(worker_count=1, default_timeout_seconds=5)
+    tasker._repo = FakeTaskRepository()
+    notifications = []
+
+    async def fake_create_notification(**kwargs):
+        notifications.append(kwargs)
+
+    from yuxi.services import notification_service
+
+    monkeypatch.setattr(notification_service, "create_notification", fake_create_notification)
+    task = await tasker.enqueue(
+        name="cancelled notification",
+        task_type="test",
+        payload={"uid": "user-1"},
+        coroutine=lambda context: asyncio.sleep(0),
+    )
+
+    await tasker._update_task(task.id, status="cancelled", message="用户主动取消")
+
+    assert notifications == [
+        {
+            "recipient_uid": "user-1",
+            "notification_type": "task_cancelled",
+            "title": "任务已取消",
+            "message": "用户主动取消",
+            "resource_type": "task",
+            "resource_id": task.id,
+            "idempotency_key": f"task:{task.id}:cancelled",
+        }
+    ]
+
+
+@pytest.mark.asyncio
 async def test_unique_payload_is_shared_across_tasker_instances():
     repository = FakeTaskRepository()
     first_tasker = Tasker(worker_count=1, default_timeout_seconds=5)
@@ -186,6 +236,76 @@ async def test_unique_payload_is_shared_across_tasker_instances():
     assert second.id == first.id
     assert first_tasker._queue.qsize() == 1
     assert second_tasker._queue.qsize() == 0
+
+
+@pytest.mark.asyncio
+async def test_retry_task_requeues_resumable_failure_and_increments_count():
+    tasker = Tasker(worker_count=1, default_timeout_seconds=5)
+    tasker._repo = FakeTaskRepository()
+    executed = asyncio.Event()
+
+    async def handler(context):
+        executed.set()
+        return {"ok": True}
+
+    tasker.register_resumable_handler("academic_paper_import", handler)
+    task = await tasker.enqueue(
+        name="paper", task_type="academic_paper_import", payload={"uid": "u1"}, coroutine=handler
+    )
+    await tasker._update_task(
+        task.id, status="failed", error="temporary", retryable=True, dependency="semantic_scholar"
+    )
+
+    retried = await tasker.retry_task(task.id)
+    assert retried is not None
+    assert retried["status"] == "pending"
+    assert retried["retry_count"] == 1
+    assert retried["dependency"] == "semantic_scholar"
+
+    await tasker.start()
+    try:
+        await asyncio.wait_for(executed.wait(), timeout=1)
+    finally:
+        await tasker.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_retry_task_rejects_limit_and_non_resumable_failure():
+    tasker = Tasker(worker_count=1, default_timeout_seconds=5)
+    tasker._repo = FakeTaskRepository()
+    task = await tasker.enqueue(name="plain", task_type="plain", coroutine=lambda context: asyncio.sleep(0))
+    await tasker._update_task(task.id, status="failed", retryable=True, dependency="model")
+    assert await tasker.retry_task(task.id) is None
+
+    tasker.register_resumable_handler("plain", lambda context: asyncio.sleep(0))
+    task.retry_count = 3
+    tasker._tasks[task.id] = task
+    tasker._repo.records[task.id]["retry_count"] = 3
+    assert await tasker.retry_task(task.id, max_retries=3) is None
+
+
+@pytest.mark.asyncio
+async def test_retry_task_shared_repository_allows_only_one_concurrent_claim():
+    repository = FakeTaskRepository()
+    first = Tasker(worker_count=1, default_timeout_seconds=5)
+    second = Tasker(worker_count=1, default_timeout_seconds=5)
+    first._repo = repository
+    second._repo = repository
+
+    async def handler(context):
+        return {"ok": True}
+
+    first.register_resumable_handler("academic_paper_import", handler)
+    second.register_resumable_handler("academic_paper_import", handler)
+    task = await first.enqueue(
+        name="paper", task_type="academic_paper_import", payload={}, coroutine=handler
+    )
+    await first._update_task(task.id, status="failed", retryable=True, dependency="semantic_scholar")
+    second._tasks[task.id] = task_service.Task.from_dict({"id": task.id, **repository.records[task.id]})
+
+    results = await asyncio.gather(first.retry_task(task.id), second.retry_task(task.id))
+    assert sum(result is not None for result in results) == 1
+    assert repository.records[task.id]["retry_count"] == 1
 
 
 @pytest.mark.asyncio

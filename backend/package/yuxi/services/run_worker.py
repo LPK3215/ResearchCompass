@@ -21,6 +21,7 @@ from yuxi.services.agent_request_queue_service import (
 )
 from yuxi.services.chat_service import stream_agent_chat, stream_agent_resume
 from yuxi.services.input_message_service import restore_chat_input_message
+from yuxi.services.notification_service import create_notification
 from yuxi.services.research_copilot_service import RESEARCH_COPILOT_SOURCE
 from yuxi.services.run_queue_service import (
     append_run_stream_event,
@@ -323,6 +324,36 @@ async def _finish_run(
     return transition
 
 
+async def _notify_run_waiting_for_input(*, run_id: str, uid: str, status: str) -> None:
+    """Persist an actionable notification after an agent run pauses for user input."""
+    if status == "human_approval_required":
+        notification_type = "approval_required"
+        title = "等待审批"
+        message = "智能体需要你审批工具操作后才能继续"
+    else:
+        notification_type = "question_required"
+        title = "需要回答问题"
+        message = "智能体需要你的回答后才能继续"
+    try:
+        await create_notification(
+            recipient_uid=str(uid),
+            notification_type=notification_type,
+            title=title,
+            message=message,
+            resource_type="agent_run",
+            resource_id=run_id,
+            idempotency_key=f"agent-run:{run_id}:{notification_type}",
+        )
+    except Exception as exc:  # noqa: BLE001
+        # Notification persistence must never roll back the already-recorded run state.
+        logger.warning(
+            "Agent run input notification failed: run_id={}, notification_type={}, exception_type={}",
+            run_id,
+            notification_type,
+            type(exc).__name__,
+        )
+
+
 async def _consume_stream_with_cancel(agen, run_ctx: RunContext):
     try:
         while True:
@@ -576,6 +607,12 @@ async def process_agent_run(ctx, run_id: str):
                             ),
                         )
                         terminal_set = transition.status is not None
+                        if transition.changed:
+                            await _notify_run_waiting_for_input(
+                                run_id=run_id,
+                                uid=str(uid),
+                                status=status,
+                            )
 
         await writer.flush()
         if not terminal_set:

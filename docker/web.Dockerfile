@@ -9,6 +9,7 @@ RUN npm install -g pnpm@10.11.0
 # 复制 package.json 和 pnpm-lock.yaml
 COPY ./web/package*.json ./
 COPY ./web/pnpm-lock.yaml* ./
+COPY ./web/pnpm-workspace.yaml ./
 
 # 安装依赖
 RUN --mount=type=cache,id=yuxi-pnpm-store,target=/root/.local/share/pnpm/store \
@@ -33,6 +34,7 @@ RUN npm install -g pnpm@10.11.0
 # 复制依赖文件
 COPY ./web/package*.json ./
 COPY ./web/pnpm-lock.yaml* ./
+COPY ./web/pnpm-workspace.yaml ./
 
 # 安装依赖
 RUN --mount=type=cache,id=yuxi-pnpm-store,target=/root/.local/share/pnpm/store \

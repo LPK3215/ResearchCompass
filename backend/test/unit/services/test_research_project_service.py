@@ -17,9 +17,6 @@ def stub_empty_plan_repository(monkeypatch):
         async def get_plan_records(self, project_id):
             return [], [], []
 
-        async def count_open_tasks(self, project_id, *, milestone_id=None):
-            return 0
-
     monkeypatch.setattr(research_project_service, "ResearchProjectPlanRepository", EmptyPlanRepository)
 
 
@@ -77,11 +74,11 @@ async def test_update_project_applies_lifecycle_timestamps(monkeypatch):
             assert (project_id, uid) == ("project-1", "user-1")
             return project
 
-        async def update(self, project_id, *, uid, values, activity_type):
-            captured.append((dict(values), activity_type))
+        async def update(self, project_id, *, uid, values, activity_type, require_no_open_tasks=False):
+            captured.append((dict(values), activity_type, require_no_open_tasks))
             for key, value in values.items():
                 setattr(project, key, value)
-            return project
+            return project, 0
 
         async def get_asset_counts(self, project_id):
             return _empty_counts()
@@ -103,6 +100,7 @@ async def test_update_project_applies_lifecycle_timestamps(monkeypatch):
     assert completed["progress"] == 100
     assert completed["completed_at"] is not None
     assert captured[-1][1] == "project_status_changed"
+    assert captured[-1][2] is True
 
     reactivated = await research_project_service.update_research_project(
         project_id="project-1",
@@ -114,6 +112,68 @@ async def test_update_project_applies_lifecycle_timestamps(monkeypatch):
     assert reactivated["progress"] == 60
     assert reactivated["completed_at"] is None
     assert reactivated["archived_at"] is None
+    assert captured[-1][2] is False
+
+
+@pytest.mark.asyncio
+async def test_completed_project_can_be_archived(monkeypatch):
+    project = _project(status="completed")
+
+    class FakeRepository:
+        async def get(self, project_id, *, uid):
+            return project
+
+        async def update(self, project_id, *, uid, values, activity_type, require_no_open_tasks=False):
+            for key, value in values.items():
+                setattr(project, key, value)
+            return project, 0
+
+        async def get_asset_counts(self, project_id):
+            return _empty_counts()
+
+    async def allow_access(current_user, kb_id):
+        return None
+
+    monkeypatch.setattr(research_project_service, "ResearchProjectRepository", FakeRepository)
+    monkeypatch.setattr(research_project_service, "_ensure_access", allow_access)
+
+    archived = await research_project_service.update_research_project(
+        project_id="project-1",
+        current_user=_user(),
+        values={"status": "archived"},
+    )
+
+    assert archived["status"] == "archived"
+    assert archived["archived_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_update_project_maps_atomic_open_task_conflict(monkeypatch):
+    project = _project()
+
+    class FakeRepository:
+        async def get(self, project_id, *, uid):
+            return project
+
+        async def update(self, project_id, *, uid, values, activity_type, require_no_open_tasks=False):
+            assert require_no_open_tasks is True
+            return project, 2
+
+    async def allow_access(current_user, kb_id):
+        return None
+
+    monkeypatch.setattr(research_project_service, "ResearchProjectRepository", FakeRepository)
+    monkeypatch.setattr(research_project_service, "_ensure_access", allow_access)
+
+    with pytest.raises(research_project_service.ResearchProjectError) as exc_info:
+        await research_project_service.update_research_project(
+            project_id="project-1",
+            current_user=_user(),
+            values={"status": "completed"},
+        )
+
+    assert exc_info.value.error_type == "project_has_open_tasks"
+    assert "2 个未完成任务" in exc_info.value.message
 
 
 @pytest.mark.asyncio
@@ -181,10 +241,10 @@ async def test_completed_project_progress_remains_complete_when_metadata_changes
         async def get(self, project_id, *, uid):
             return project
 
-        async def update(self, project_id, *, uid, values, activity_type):
+        async def update(self, project_id, *, uid, values, activity_type, require_no_open_tasks=False):
             for key, value in values.items():
                 setattr(project, key, value)
-            return project
+            return project, 0
 
         async def get_asset_counts(self, project_id):
             return _empty_counts()
@@ -248,7 +308,7 @@ async def test_add_assets_resolves_batch_and_preserves_request_order(monkeypatch
                 },
             }
 
-        async def add_assets(self, project_id, assets):
+        async def add_assets(self, project_id, assets, *, operator_uid):
             assert [item["reference_id"] for item in assets] == ["paper-1", "paper-2"]
             return [_asset(reference_id=item["reference_id"]) for item in assets]
 
@@ -296,7 +356,7 @@ async def test_add_assets_maps_unique_constraint_race_to_business_error(monkeypa
                 }
             }
 
-        async def add_assets(self, project_id, assets):
+        async def add_assets(self, project_id, assets, *, operator_uid):
             raise IntegrityError("insert", {}, Exception("duplicate"))
 
     async def allow_access(current_user, kb_id):
@@ -347,7 +407,7 @@ async def test_update_asset_notes_reports_deleted_source_as_unavailable(monkeypa
         async def get(self, project_id, *, uid):
             return _project()
 
-        async def update_asset_notes(self, project_id, asset_id, *, notes):
+        async def update_asset_notes(self, project_id, asset_id, *, notes, operator_uid):
             record.notes = notes
             return record
 

@@ -50,6 +50,14 @@ from yuxi.services.research_project_plan_service import (
     update_project_task,
 )
 from yuxi.services.research_project_report_service import export_research_project_report
+from yuxi.services.research_evidence_service import (
+    create_evidence,
+    list_evidence,
+    list_evidence_activities,
+    list_evidence_citations,
+    list_evidence_impacts,
+    transition_evidence,
+)
 from yuxi.services.research_paper_service import (
     add_paper_tag_view,
     export_papers_bibtex,
@@ -71,6 +79,7 @@ from yuxi.services.research_search_service import (
     get_search_run,
     list_search_runs,
     search_papers,
+    retry_search_run,
     set_search_run_pinned,
 )
 from yuxi.services.research_synthesis_service import (
@@ -81,6 +90,7 @@ from yuxi.services.research_synthesis_service import (
     get_research_synthesis,
     list_research_syntheses,
     regenerate_research_synthesis,
+    retry_research_synthesis,
 )
 from yuxi.services.academic_trend_service import AcademicTrendError, get_academic_trends
 from yuxi.services.academic_paper_analysis_service import (
@@ -114,6 +124,49 @@ from yuxi.services.academic_paper_analysis_evaluation_service import (
 from yuxi.storage.postgres.models_business import User
 
 research = APIRouter(prefix="/research", tags=["research"])
+
+
+class ResearchEvidenceCreateRequest(BaseModel):
+    chunk_id: str = Field(min_length=1, max_length=128)
+
+
+class ResearchEvidenceTransitionRequest(BaseModel):
+    status: str = Field(pattern=r"^(verified|invalid|archived)$")
+    reason: str | None = Field(default=None, max_length=2000)
+
+
+@research.post("/databases/{kb_id}/evidence", status_code=201)
+async def create_research_evidence(kb_id: str, payload: ResearchEvidenceCreateRequest, current_user: User = Depends(get_required_user)):
+    return await create_evidence(kb_id=kb_id, chunk_id=payload.chunk_id, current_user=current_user)
+
+
+@research.get("/databases/{kb_id}/evidence")
+async def list_research_evidence(
+    kb_id: str,
+    status: str | None = Query(default=None, pattern=r"^(unverified|verified|invalid|archived)$"),
+    current_user: User = Depends(get_required_user),
+):
+    return {"items": await list_evidence(kb_id=kb_id, status=status, current_user=current_user)}
+
+
+@research.post("/evidence/{evidence_id}/transition")
+async def transition_research_evidence(evidence_id: str, payload: ResearchEvidenceTransitionRequest, current_user: User = Depends(get_required_user)):
+    return await transition_evidence(evidence_id=evidence_id, status=payload.status, reason=payload.reason, current_user=current_user)
+
+
+@research.get("/evidence/{evidence_id}/activities")
+async def research_evidence_activities(evidence_id: str, current_user: User = Depends(get_required_user)):
+    return {"items": await list_evidence_activities(evidence_id=evidence_id, current_user=current_user)}
+
+
+@research.get("/evidence/{evidence_id}/citations")
+async def research_evidence_citations(evidence_id: str, current_user: User = Depends(get_required_user)):
+    return {"items": await list_evidence_citations(evidence_id=evidence_id, current_user=current_user)}
+
+
+@research.get("/evidence/{evidence_id}/impacts")
+async def research_evidence_impacts(evidence_id: str, current_user: User = Depends(get_required_user)):
+    return {"items": await list_evidence_impacts(evidence_id=evidence_id, current_user=current_user)}
 
 
 class PaperTagRequest(BaseModel):
@@ -200,7 +253,7 @@ class UpdateResearchProjectRequest(BaseModel):
 class AddResearchProjectAssetsRequest(BaseModel):
     asset_type: str = Field(
         ...,
-        pattern=r"^(paper|search_run|synthesis_run|analysis_run|evaluation_experiment)$",
+        pattern=r"^(paper|search_run|synthesis_run|analysis_run|evaluation_experiment|evidence)$",
     )
     reference_ids: list[str] = Field(..., min_length=1, max_length=100)
     notes: str = Field(default="", max_length=4000)
@@ -234,9 +287,17 @@ class CreateResearchProjectMilestoneRequest(BaseModel):
     status: str = Field(default="planned", pattern=r"^(planned|active|completed)$")
     target_date: date | None = None
 
-    @field_validator("title", "description")
+    @field_validator("title")
     @classmethod
-    def normalize_milestone_text(cls, value: str) -> str:
+    def normalize_milestone_title(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("里程碑名称不能为空")
+        return normalized
+
+    @field_validator("description")
+    @classmethod
+    def normalize_milestone_description(cls, value: str) -> str:
         return value.strip()
 
 
@@ -281,9 +342,17 @@ class CreateResearchProjectTaskRequest(BaseModel):
     due_date: date | None = None
     milestone_id: str | None = Field(default=None, max_length=64)
 
-    @field_validator("title", "description")
+    @field_validator("title")
     @classmethod
-    def normalize_task_text(cls, value: str) -> str:
+    def normalize_task_title(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("任务名称不能为空")
+        return normalized
+
+    @field_validator("description")
+    @classmethod
+    def normalize_task_description(cls, value: str) -> str:
         return value.strip()
 
 
@@ -353,7 +422,9 @@ class PaperMetadataUpdate(BaseModel):
 
     @field_validator("title")
     @classmethod
-    def normalize_title(cls, value: str) -> str:
+    def normalize_title(cls, value: str | None) -> str:
+        if value is None:
+            raise ValueError("标题不能为 null")
         normalized = value.strip()
         if not normalized:
             raise ValueError("标题不能为空")
@@ -544,6 +615,8 @@ _SEARCH_STATUS_MAP = {
     "citation_graph_failure": 502,
     "local_research_failure": 502,
     "strict_research_failure": 502,
+    "search_not_retryable": 409,
+    "search_retry_limit": 409,
 }
 
 _SYNTHESIS_STATUS_MAP = {
@@ -570,6 +643,8 @@ _SYNTHESIS_STATUS_MAP = {
     "synthesis_retrieval_failed": 502,
     "synthesis_record_failed": 502,
     "synthesis_enqueue_failed": 503,
+    "synthesis_not_retryable": 409,
+    "synthesis_retry_limit": 409,
 }
 
 _GRAPH_STATUS_MAP = {
@@ -942,7 +1017,7 @@ async def remove_plan_asset_link(
 @research.get("/projects/{project_id}/report")
 async def project_report(
     project_id: str,
-    format: str = Query(default="markdown", pattern=r"^(markdown|docx)$"),
+    format: str = Query(default="markdown", pattern=r"^(markdown|docx|csv)$"),
     current_user: User = Depends(get_required_user),
 ):
     try:
@@ -965,7 +1040,7 @@ async def project_asset_candidates(
     project_id: str,
     asset_type: str = Query(
         ...,
-        pattern=r"^(paper|search_run|synthesis_run|analysis_run|evaluation_experiment)$",
+        pattern=r"^(paper|search_run|synthesis_run|analysis_run|evaluation_experiment|evidence)$",
     ),
     query: str | None = Query(default=None, max_length=500),
     offset: int = Query(default=0, ge=0),
@@ -1333,6 +1408,14 @@ async def research_search_runs(
         raise _to_http_error(exc, _SEARCH_STATUS_MAP) from exc
 
 
+@research.post("/search-runs/{run_id}/retry")
+async def retry_research_search_run(run_id: str, current_user: User = Depends(get_required_user)):
+    try:
+        return await retry_search_run(run_id=run_id, current_user=current_user)
+    except ResearchSearchError as exc:
+        raise _to_http_error(exc, _SEARCH_STATUS_MAP) from exc
+
+
 @research.patch("/search-runs/{run_id}")
 async def update_research_search_run(
     run_id: str,
@@ -1417,6 +1500,14 @@ async def cancel_research_synthesis_run(run_id: str, current_user: User = Depend
 async def regenerate_research_synthesis_run(run_id: str, current_user: User = Depends(get_required_user)):
     try:
         return await regenerate_research_synthesis(run_id=run_id, current_user=current_user)
+    except ResearchSynthesisError as exc:
+        raise _to_http_error(exc, _SYNTHESIS_STATUS_MAP) from exc
+
+
+@research.post("/synthesis-runs/{run_id}/retry")
+async def retry_research_synthesis_run(run_id: str, current_user: User = Depends(get_required_user)):
+    try:
+        return await retry_research_synthesis(run_id=run_id, current_user=current_user)
     except ResearchSynthesisError as exc:
         raise _to_http_error(exc, _SYNTHESIS_STATUS_MAP) from exc
 

@@ -31,9 +31,11 @@ class _TaskExecutionTimeout(TimeoutError):
 class PublicTaskError(RuntimeError):
     """A deliberately sanitized failure that may be shown in task details."""
 
-    def __init__(self, message: str):
+    def __init__(self, message: str, *, retryable: bool = False, dependency: str | None = None):
         super().__init__(message)
         self.message = message
+        self.retryable = retryable
+        self.dependency = dependency
 
 
 def _public_task_error_message(exc: Exception) -> str:
@@ -63,6 +65,9 @@ class Task:
     payload: dict[str, Any] = field(default_factory=dict)
     result: Any | None = None
     error: str | None = None
+    retryable: bool = False
+    dependency: str | None = None
+    retry_count: int = 0
     cancel_requested: bool = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -90,6 +95,9 @@ class Task:
             payload=data.get("payload", {}),
             result=data.get("result"),
             error=data.get("error"),
+            retryable=bool(data.get("retryable", False)),
+            dependency=data.get("dependency"),
+            retry_count=int(data.get("retry_count", 0) or 0),
             cancel_requested=bool(data.get("cancel_requested", False)),
         )
 
@@ -113,6 +121,12 @@ class TaskContext:
 
     async def set_result(self, result: Any) -> None:
         await self._tasker._update_task(self.task_id, result=result)
+
+    async def update_payload(self, values: dict[str, Any]) -> None:
+        """Persist task payload progress needed to resume a multi-stage task safely."""
+        if not isinstance(values, dict):
+            raise TypeError("Task payload updates must be a mapping")
+        await self._tasker._update_task(self.task_id, payload=values)
 
     def is_cancel_requested(self) -> bool:
         return self._tasker._is_cancel_requested(self.task_id)
@@ -302,6 +316,27 @@ class Tasker:
         logger.info("Cancellation requested for task {}", task_id)
         return True
 
+    async def retry_task(self, task_id: str, *, max_retries: int = 3) -> dict[str, Any] | None:
+        """Requeue a failed resumable task without creating a second task record."""
+        async with self._lock:
+            task = self._tasks.get(task_id)
+            task_type = task.type if task is not None else None
+            if task_type is None:
+                record = await self._repo.get_by_id(task_id)
+                task_type = str(record.to_dict().get("type")) if record else None
+            if task_type is None:
+                return None
+            handler = self._resumable_handlers.get(task_type)
+            if handler is None:
+                return None
+            record = await self._repo.claim_retry(task_id, max_retries=max_retries)
+            if record is None:
+                return None
+            task = Task.from_dict(record.to_dict())
+            await self._queue.put((task.id, handler, self.default_timeout_seconds))
+            self._tasks[task.id] = task
+            return task.to_dict()
+
     async def delete_task(self, task_id: str) -> bool:
         """Delete a terminal task by id. Active work must first finish or cancel."""
         deleted = await self._repo.delete_terminal(task_id, TERMINAL_STATUSES)
@@ -394,6 +429,8 @@ class Tasker:
                             progress=100.0,
                             message="任务执行失败",
                             error=public_error,
+                            retryable=bool(getattr(exc, "retryable", False)),
+                            dependency=getattr(exc, "dependency", None),
                             completed_at=utc_isoformat(),
                         )
                 finally:
@@ -477,6 +514,9 @@ class Tasker:
         message: str | None = None,
         result: Any = _UNSET,
         error: Any = _UNSET,
+        retryable: bool | None = None,
+        dependency: str | None | Any = _UNSET,
+        payload: dict[str, Any] | None = None,
         started_at: str | None = None,
         completed_at: str | None = None,
     ) -> None:
@@ -484,6 +524,7 @@ class Tasker:
             task = self._tasks.get(task_id)
             if not task:
                 return
+            previous_status = task.status
             if status:
                 task.status = status
             if progress is not None:
@@ -494,6 +535,12 @@ class Tasker:
                 task.result = result
             if error is not _UNSET:
                 task.error = error
+            if retryable is not None:
+                task.retryable = retryable
+            if dependency is not _UNSET:
+                task.dependency = dependency
+            if payload is not None:
+                task.payload.update(payload)
             if started_at is not None:
                 task.started_at = started_at
             if completed_at is not None:
@@ -503,6 +550,7 @@ class Tasker:
             # 仅进度推进的高频更新做节流；状态切换、结果、错误、起止时间一律立即落库
             only_progress = (
                 status is None and result is _UNSET and error is _UNSET and started_at is None and completed_at is None
+                and payload is None
             )
             if only_progress:
                 last = self._last_persisted_progress.get(task_id)
@@ -510,6 +558,27 @@ class Tasker:
                     return
             self._last_persisted_progress[task_id] = task.progress
             await self._persist_task(task)
+            if status in TERMINAL_STATUSES and previous_status not in TERMINAL_STATUSES:
+                uid = str(task.payload.get("uid") or "")
+                if uid:
+                    try:
+                        from yuxi.services.notification_service import create_notification
+                        notification_by_status = {
+                            "success": ("task_success", "任务已完成"),
+                            "failed": ("task_failed", "任务执行失败"),
+                            "cancelled": ("task_cancelled", "任务已取消"),
+                        }
+                        notification_type, title = notification_by_status[status]
+                        await create_notification(
+                            recipient_uid=uid,
+                            notification_type=notification_type,
+                            title=title,
+                            message=task.message or title,
+                            resource_type="task", resource_id=task.id,
+                            idempotency_key=f"task:{task.id}:{status}",
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        logger.error("Failed to persist task notification: error_type={}", type(exc).__name__)
 
     def _is_cancel_requested(self, task_id: str) -> bool:
         task = self._tasks.get(task_id)
@@ -615,6 +684,9 @@ class Tasker:
             "payload": task.payload,
             "result": task.result,
             "error": task.error,
+            "retryable": task.retryable,
+            "dependency": task.dependency,
+            "retry_count": task.retry_count,
             "cancel_requested": 1 if task.cancel_requested else 0,
             "created_at": _iso_to_utc_naive(task.created_at),
             "updated_at": _iso_to_utc_naive(task.updated_at),

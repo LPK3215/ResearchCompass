@@ -62,6 +62,7 @@
         <label for="research-query" class="query-label">自然语言研究问题</label>
         <a-textarea
           id="research-query"
+          data-testid="research-query"
           v-model:value="searchQuery"
           :rows="4"
           :maxlength="4000"
@@ -78,7 +79,7 @@
             <a-tag v-if="filters.retrievalMode === strictHybridGraphMode" color="blue">引用图谱 PPR</a-tag>
             <a-tag v-else color="green">本地证据聚合</a-tag>
           </div>
-          <a-button type="primary" :loading="searchLoading" :disabled="!kbId || !searchQuery.trim()" @click="runResearchSearch">
+          <a-button data-testid="research-search-submit" type="primary" :loading="searchLoading" :disabled="!kbId || !searchQuery.trim()" @click="runResearchSearch">
             <template #icon><Search :size="15" /></template>
             开始检索
           </a-button>
@@ -181,7 +182,15 @@
       <template #extra>
         <a-space wrap>
           <a-button @click="loadHistory">刷新历史</a-button>
-          <a-button type="primary" :disabled="!searchQuery.trim()" @click="runResearchSearch">重新执行</a-button>
+          <a-button
+            v-if="selectedRun?.retryable"
+            type="primary"
+            :loading="retryingRunId === selectedRun.run_id"
+            @click="retryFailedRun(selectedRun)"
+          >
+            重试失败运行
+          </a-button>
+          <a-button v-else type="primary" :disabled="!searchQuery.trim()" @click="runResearchSearch">重新执行</a-button>
         </a-space>
       </template>
     </a-result>
@@ -357,6 +366,7 @@ const selectedRun = ref(null)
 const detailLoading = ref(false)
 const pinningRunId = ref('')
 const deletingRunId = ref('')
+const retryingRunId = ref('')
 const graphCounts = ref(null)
 let requestGeneration = 0
 
@@ -573,6 +583,26 @@ const rerunHistoryRun = async (run) => {
   await runResearchSearch()
 }
 
+const retryFailedRun = async (run) => {
+  if (!run?.run_id || !run.retryable || retryingRunId.value) return
+  const generation = requestGeneration
+  retryingRunId.value = run.run_id
+  searchError.value = ''
+  try {
+    const result = await researchApi.retrySearchRun(run.run_id)
+    if (generation !== requestGeneration) return
+    searchQuery.value = result.query || run.query || searchQuery.value
+    await loadHistory()
+    await selectHistoryRun({ run_id: result.run_id })
+    message.success('已提交检索重试任务')
+  } catch (error) {
+    if (generation !== requestGeneration) return
+    searchError.value = error.message || '检索重试失败'
+  } finally {
+    if (generation === requestGeneration) retryingRunId.value = ''
+  }
+}
+
 const rerunCurrentResult = async () => {
   applyRunConfig(selectedRun.value || { query: searchResult.value?.query, config: searchResult.value?.config })
   await runResearchSearch()
@@ -596,6 +626,7 @@ const resetWorkspace = () => {
   detailLoading.value = false
   pinningRunId.value = ''
   deletingRunId.value = ''
+  retryingRunId.value = ''
   searchError.value = ''
   historyError.value = ''
   searchResult.value = null

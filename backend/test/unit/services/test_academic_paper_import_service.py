@@ -21,6 +21,18 @@ def _record(*, file_id: str, created_by: str | None = "user-1"):
     )
 
 
+@pytest.mark.parametrize("error", [
+    RuntimeError("MinioException: service unavailable"),
+    RuntimeError("S3Error: SlowDown"),
+    RuntimeError("object storage unavailable"),
+])
+def test_object_storage_failures_are_retryable(error):
+    retryable, dependency = academic_paper_import_service._classify_import_dependency_failure(error)
+
+    assert retryable is True
+    assert dependency == "object_storage"
+
+
 @pytest.mark.asyncio
 async def test_recovery_continues_after_one_enqueue_failure(monkeypatch):
     updates = []
@@ -199,76 +211,68 @@ async def test_import_execution_failure_does_not_persist_provider_secret(monkeyp
 
 
 @pytest.mark.asyncio
-async def test_import_enqueue_failure_returns_fixed_error_and_cleans_artifacts(monkeypatch):
-    secret = "Authorization=secret-api-key provider-body=<private>"
-    deleted_files = []
-    deleted_objects = []
-
-    class FakeSemanticScholarClient:
-        async def get_paper(self, identifier):
-            return {
-                "paperId": "remote-1",
-                "title": "A paper",
-                "authors": [],
-                "externalIds": {},
-                "openAccessPdf": {"url": "https://papers.example/paper.pdf"},
-            }
-
-        async def download_open_access_pdf(self, url):
-            return b"%PDF-1.7 test", url
-
-    class FakePaperRepository:
-        async def find_duplicate_for_import(self, **kwargs):
-            return None
-
-    class FakeMinioClient:
-        async def aupload_file(self, **kwargs):
-            return SimpleNamespace(url="minio://documents/paper.pdf")
-
-        async def adelete_file(self, bucket, object_name):
-            deleted_objects.append((bucket, object_name))
-
+async def test_import_queues_before_external_dependency_calls(monkeypatch):
     async def allow_access(*args, **kwargs):
         return None
 
     async def get_support(kb_id):
         return None, True
 
-    async def not_duplicate(kb_id, content_hash):
-        return False
-
-    async def content_hash(data):
-        return "content-hash"
-
-    async def add_file_record(*args, **kwargs):
-        return {"file_id": "file-1"}
-
-    async def delete_file(kb_id, file_id):
-        deleted_files.append((kb_id, file_id))
-
     async def fail_enqueue(**kwargs):
-        raise RuntimeError(secret)
+        return SimpleNamespace(id="task-1")
 
     monkeypatch.setattr(academic_paper_import_service, "_ensure_access", allow_access)
-    monkeypatch.setattr(academic_paper_import_service, "SemanticScholarClient", FakeSemanticScholarClient)
-    monkeypatch.setattr(academic_paper_import_service, "AcademicPaperRepository", FakePaperRepository)
-    monkeypatch.setattr(academic_paper_import_service, "get_minio_client", lambda: FakeMinioClient())
-    monkeypatch.setattr(academic_paper_import_service, "calculate_content_hash", content_hash)
     monkeypatch.setattr(academic_paper_import_service.knowledge_base, "get_database_document_support", get_support)
-    monkeypatch.setattr(academic_paper_import_service.knowledge_base, "file_existed_in_db", not_duplicate)
-    monkeypatch.setattr(academic_paper_import_service.knowledge_base, "add_file_record", add_file_record)
-    monkeypatch.setattr(academic_paper_import_service.knowledge_base, "delete_file", delete_file)
     monkeypatch.setattr(academic_paper_import_service.tasker, "enqueue", fail_enqueue)
 
-    with pytest.raises(academic_paper_import_service.AcademicPaperImportError) as exc_info:
-        await academic_paper_import_service.import_external_paper(
-            identifier="remote-1",
-            kb_id="kb-1",
-            current_user=SimpleNamespace(uid="admin-1"),
-        )
+    result = await academic_paper_import_service.import_external_paper(
+        identifier="remote-1", kb_id="kb-1", current_user=SimpleNamespace(uid="admin-1")
+    )
+    assert result == {"status": "queued", "task_id": "task-1", "kb_id": "kb-1", "identifier": "remote-1"}
 
-    assert exc_info.value.error_type == "paper_import_enqueue_failed"
-    assert exc_info.value.message == "外部论文导入任务提交失败"
-    assert secret not in str(exc_info.value)
-    assert deleted_files == [("kb-1", "file-1")]
-    assert len(deleted_objects) == 1
+
+@pytest.mark.asyncio
+async def test_stage_reuses_file_created_before_payload_checkpoint(monkeypatch):
+    calls = []
+
+    class ExistingFileRepository:
+        async def find_external_import(self, **kwargs):
+            calls.append(("find_file", kwargs))
+            return SimpleNamespace(file_id="file-existing")
+
+    class PaperRepository:
+        async def find_duplicate_for_import(self, **kwargs):
+            raise AssertionError("existing external file must be reused before paper duplicate lookup")
+
+    class Client:
+        async def get_paper(self, identifier):
+            calls.append(("get_paper", identifier))
+            return {
+                "paperId": "paper-1",
+                "title": "Existing paper",
+                "externalIds": {"DOI": "10.1/example"},
+            }
+
+        async def download_open_access_pdf(self, url):
+            raise AssertionError("existing file must be reused before downloading")
+
+    async def allow_access(**kwargs):
+        return SimpleNamespace(uid="admin-1")
+
+    monkeypatch.setattr(academic_paper_import_service, "KnowledgeFileRepository", ExistingFileRepository)
+    monkeypatch.setattr(academic_paper_import_service, "AcademicPaperRepository", PaperRepository)
+    monkeypatch.setattr(academic_paper_import_service, "SemanticScholarClient", Client)
+    monkeypatch.setattr(academic_paper_import_service, "_ensure_access_by_uid", allow_access)
+
+    async def set_progress(*args):
+        return None
+
+    result = await academic_paper_import_service._stage_external_paper_import(
+        SimpleNamespace(set_progress=set_progress),
+        kb_id="kb-1",
+        identifier="paper-1",
+        operator_id="admin-1",
+    )
+
+    assert result["file_id"] == "file-existing"
+    assert [item[0] for item in calls] == ["get_paper", "find_file"]

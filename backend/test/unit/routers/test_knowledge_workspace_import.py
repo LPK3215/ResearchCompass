@@ -12,7 +12,7 @@ pytestmark = pytest.mark.asyncio
 
 async def test_import_workspace_files_uploads_workspace_file_to_minio(tmp_path, monkeypatch):
     source = tmp_path / "note.md"
-    source.write_text("# workspace note\n", encoding="utf-8")
+    source.write_bytes(b"# workspace note\n")
 
     async def fake_ensure_database_supports_documents(slug: str, operation: str) -> None:
         assert slug == "db_1"

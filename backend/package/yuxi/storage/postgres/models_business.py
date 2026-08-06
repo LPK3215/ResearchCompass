@@ -14,6 +14,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import relationship
@@ -694,6 +695,9 @@ class TaskRecord(Base):
     payload = Column(JSON, nullable=True)
     result = Column(JSON, nullable=True)
     error = Column(Text, nullable=True)
+    retryable = Column(Boolean, nullable=False, default=False)
+    dependency = Column(String(64), nullable=True)
+    retry_count = Column(Integer, nullable=False, default=0)
     cancel_requested = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime, default=utc_now_naive, index=True)
     updated_at = Column(DateTime, default=utc_now_naive, onupdate=utc_now_naive)
@@ -715,6 +719,9 @@ class TaskRecord(Base):
             "payload": self.payload or {},
             "result": self.result,
             "error": self.error,
+            "retryable": bool(self.retryable),
+            "dependency": self.dependency,
+            "retry_count": int(self.retry_count or 0),
             "cancel_requested": bool(self.cancel_requested),
         }
 
@@ -723,6 +730,28 @@ class TaskRecord(Base):
         data.pop("payload", None)
         data.pop("result", None)
         return data
+
+
+class UserNotification(Base):
+    """面向用户的持久化事件通知。"""
+
+    __tablename__ = "user_notifications"
+    __table_args__ = (
+        UniqueConstraint("idempotency_key", name="uq_user_notifications_idempotency"),
+        Index("ix_user_notifications_recipient_created", "recipient_uid", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    notification_id = Column(String(64), nullable=False, unique=True, index=True)
+    recipient_uid = Column(String(64), nullable=False, index=True)
+    notification_type = Column(String(64), nullable=False)
+    title = Column(String(255), nullable=False)
+    message = Column(Text, nullable=False)
+    resource_type = Column(String(64))
+    resource_id = Column(String(128))
+    idempotency_key = Column(String(255), nullable=False)
+    read_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), default=utc_now_naive, nullable=False)
 
 
 class APIKey(Base):

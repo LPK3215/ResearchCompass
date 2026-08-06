@@ -159,6 +159,24 @@ async def test_generate_database_mindmap_sanitizes_invalid_model_output(monkeypa
     assert secret not in " ".join(captured_logger.messages)
 
 
+def test_parse_mindmap_content_accepts_fenced_and_wrapped_json():
+    assert mm.parse_mindmap_content('说明\n```json\n{"content":"库","children":[]}\n```') == {
+        "content": "库",
+        "children": [],
+    }
+    assert mm.parse_mindmap_content('结果如下: {"content":"库","children":[]}') == {
+        "content": "库",
+        "children": [],
+    }
+
+
+def test_parse_mindmap_content_rejects_malformed_structure():
+    with pytest.raises(ValueError, match="代码围栏未闭合"):
+        mm.parse_mindmap_content('```json\n{"content": "库"}')
+    with pytest.raises(ValueError, match="children"):
+        mm.parse_mindmap_content('{"content":"库","children":{}}')
+
+
 @pytest.mark.asyncio
 async def test_generate_database_mindmap_reports_persistence_failure(monkeypatch):
     secret = "Authorization=secret-api-key provider-body=<private>"

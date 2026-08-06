@@ -16,6 +16,32 @@ const buildQuery = (params = {}) => {
 }
 
 export const researchApi = {
+  listEvidence: (kbId, params = {}) => {
+    const query = buildQuery(params)
+    return apiGet(
+      `/api/research/databases/${encodeURIComponent(kbId)}/evidence${query ? `?${query}` : ''}`
+    )
+  },
+
+  createEvidence: (kbId, payload) =>
+    apiRequest(`/api/research/databases/${encodeURIComponent(kbId)}/evidence`, {
+      method: 'POST', body: JSON.stringify(payload)
+    }),
+
+  transitionEvidence: (evidenceId, payload) =>
+    apiRequest(`/api/research/evidence/${encodeURIComponent(evidenceId)}/transition`, {
+      method: 'POST', body: JSON.stringify(payload)
+    }),
+
+  listEvidenceActivities: (evidenceId) =>
+    apiGet(`/api/research/evidence/${encodeURIComponent(evidenceId)}/activities`),
+
+  listEvidenceCitations: (evidenceId) =>
+    apiGet(`/api/research/evidence/${encodeURIComponent(evidenceId)}/citations`),
+
+  listEvidenceImpacts: (evidenceId) =>
+    apiGet(`/api/research/evidence/${encodeURIComponent(evidenceId)}/impacts`),
+
   ensureCopilotThread: (payload) =>
     apiRequest('/api/research/copilot/thread', {
       method: 'POST', body: JSON.stringify(payload)
@@ -220,6 +246,9 @@ export const researchApi = {
     ),
 
   getSearchRun: (runId) => apiGet(`/api/research/search-runs/${encodeURIComponent(runId)}`),
+
+  retrySearchRun: (runId) =>
+    apiRequest(`/api/research/search-runs/${encodeURIComponent(runId)}/retry`, { method: 'POST' }),
 
   listSearchRuns: (kbId, params = {}) => {
     const query = buildQuery(params)

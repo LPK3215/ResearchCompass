@@ -35,6 +35,15 @@ async def cancel_task(task_id: str, current_user: User = Depends(get_superadmin_
     return {"task_id": task_id, "status": "cancelled"}
 
 
+@tasks.post("/{task_id}/retry")
+async def retry_task(task_id: str, current_user: User = Depends(get_superadmin_user)):
+    """Retry a failed resumable task when its dependency is transient."""
+    task = await tasker.retry_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=409, detail="Task is not retryable or retry limit was reached")
+    return {"task": task}
+
+
 @tasks.delete("/{task_id}")
 async def delete_task(task_id: str, current_user: User = Depends(get_superadmin_user)):
     """Delete a task by id."""

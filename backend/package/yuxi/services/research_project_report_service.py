@@ -7,8 +7,9 @@
 
 from __future__ import annotations
 
+import csv
 from datetime import UTC, datetime
-from io import BytesIO
+from io import BytesIO, StringIO
 from typing import Any
 
 from docx import Document
@@ -48,14 +49,15 @@ ASSET_LABELS = {
     "synthesis_run": "研究综述",
     "analysis_run": "论文分析",
     "evaluation_experiment": "消融实验",
+    "evidence": "证据",
 }
 
 
 async def export_research_project_report(
     *, project_id: str, current_user: User, export_format: str
 ) -> tuple[str, bytes, str]:
-    if export_format not in {"markdown", "docx"}:
-        raise ResearchProjectError("invalid_report_format", "报告格式只支持 markdown 或 docx")
+    if export_format not in {"markdown", "docx", "csv"}:
+        raise ResearchProjectError("invalid_report_format", "报告格式只支持 markdown、docx 或 csv")
     project = await get_owned_project(project_id, current_user)
     repository = ResearchProjectRepository()
     assets = await repository.list_all_assets(project_id)
@@ -83,6 +85,8 @@ async def export_research_project_report(
     filename_base = f"research-project-{project.project_id}"
     if export_format == "markdown":
         return f"{filename_base}.md", render_project_markdown(report).encode("utf-8"), "text/markdown; charset=utf-8"
+    if export_format == "csv":
+        return f"{filename_base}.csv", render_project_csv(report), "text/csv; charset=utf-8"
     return (
         f"{filename_base}.docx",
         render_project_docx(report),
@@ -92,6 +96,7 @@ async def export_research_project_report(
 
 def render_project_markdown(report: dict[str, Any]) -> str:
     project = report["project"]
+    project_id = str(project.get("project_id") or "project")
     plan = report["plan"]
     progress_source = "任务自动计算" if project["progress_source"] == "tasks" else "手动维护"
     lines = [
@@ -148,6 +153,96 @@ def render_project_markdown(report: dict[str, Any]) -> str:
         lines.append("")
     lines.extend(["---", "", f"报告生成时间：{report['generated_at']}", ""])
     return "\n".join(lines)
+
+
+def render_project_csv(report: dict[str, Any]) -> bytes:
+    """Render a flat, audit-friendly project snapshot for spreadsheet workflows."""
+    output = StringIO(newline="")
+    writer = csv.writer(output, lineterminator="\n")
+    _write_csv_row(writer, [
+            "record_type",
+            "record_id",
+            "parent_id",
+            "title",
+            "status",
+            "priority",
+            "due_date",
+            "asset_type",
+            "available",
+            "notes",
+    ])
+    project = report["project"]
+    project_id = str(project.get("project_id") or "project")
+    _write_csv_row(writer, [
+            "project",
+            project_id,
+            "",
+            project.get("title", ""),
+            project.get("status", ""),
+            "",
+            project.get("target_date", "") or "",
+            "",
+            "true",
+            project.get("description", "") or "",
+    ])
+    for milestone in report["plan"].get("milestones", []):
+        milestone_id = milestone.get("milestone_id") or f"milestone-{milestone.get('title', 'unknown')}"
+        _write_csv_row(writer, [
+            "milestone",
+            milestone_id,
+            project_id,
+                milestone.get("title", ""),
+                milestone.get("status", ""),
+                "",
+                milestone.get("target_date", "") or "",
+                "",
+                "true",
+                milestone.get("description", "") or "",
+        ])
+        for task in milestone.get("tasks", []):
+            _write_csv_row(writer, _task_csv_row(task, milestone_id))
+    for task in report["plan"].get("unassigned_tasks", []):
+        _write_csv_row(writer, _task_csv_row(task, project_id))
+    for asset in report.get("assets", []):
+        _write_csv_row(writer, [
+                "asset",
+                asset.get("asset_id", ""),
+                project_id,
+                asset.get("title", ""),
+                "",
+                "",
+                "",
+                asset.get("asset_type", ""),
+                str(bool(asset.get("available"))).lower(),
+                asset.get("notes", "") or "",
+        ])
+    return output.getvalue().encode("utf-8-sig")
+
+
+def _task_csv_row(task: dict[str, Any], parent_id: str) -> list[str]:
+    return [
+        "task",
+        task.get("task_id", ""),
+        parent_id,
+        task.get("title", ""),
+        task.get("status", ""),
+        task.get("priority", ""),
+        task.get("due_date", "") or "",
+        "",
+        "true",
+        task.get("description", "") or "",
+    ]
+
+
+def _csv_cell(value: Any) -> str:
+    text = "" if value is None else str(value)
+    if text.lstrip().startswith(("=", "+", "-", "@")):
+        return f"'{text}"
+    return text
+
+
+def _write_csv_row(writer: csv.writer, row: list[Any]) -> None:
+    writer.writerow([_csv_cell(value) for value in row])
 
 
 def _append_markdown_tasks(lines: list[str], tasks: list[dict[str, Any]]) -> None:
@@ -260,4 +355,4 @@ def _append_docx_tasks(document: Document, tasks: list[dict[str, Any]]) -> None:
             document.add_paragraph(f"证据：{asset['title']}{suffix}", style="List Bullet 2")
 
 
-__all__ = ["export_research_project_report", "render_project_docx", "render_project_markdown"]
+__all__ = ["export_research_project_report", "render_project_csv", "render_project_docx", "render_project_markdown"]

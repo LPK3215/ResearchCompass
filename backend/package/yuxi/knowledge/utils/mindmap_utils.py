@@ -193,18 +193,44 @@ def build_mindmap_incremental_user_message(
 
 
 def parse_mindmap_content(content: str) -> dict[str, Any]:
-    if "```json" in content:
-        json_start = content.find("```json") + 7
-        json_end = content.find("```", json_start)
-        content = content[json_start:json_end].strip()
-    elif "```" in content:
-        json_start = content.find("```") + 3
-        json_end = content.find("```", json_start)
-        content = content[json_start:json_end].strip()
+    if not isinstance(content, str) or not content.strip():
+        raise ValueError("思维导图响应为空")
 
-    mindmap_data = json.loads(content)
-    if not isinstance(mindmap_data, dict) or "content" not in mindmap_data:
+    candidate = content.strip()
+    if "```" in candidate:
+        fence_start = candidate.find("```") + 3
+        fence_end = candidate.find("```", fence_start)
+        if fence_end < 0:
+            raise ValueError("思维导图代码围栏未闭合")
+        candidate = candidate[fence_start:fence_end].strip()
+        if candidate.lower().startswith("json"):
+            candidate = candidate[4:].lstrip()
+
+    try:
+        mindmap_data = json.loads(candidate)
+    except json.JSONDecodeError:
+        json_start = candidate.find("{")
+        json_end = candidate.rfind("}")
+        if json_start < 0 or json_end <= json_start:
+            raise ValueError("思维导图不是有效 JSON") from None
+        try:
+            mindmap_data = json.loads(candidate[json_start : json_end + 1])
+        except json.JSONDecodeError as error:
+            raise ValueError("思维导图不是有效 JSON") from error
+
+    if not isinstance(mindmap_data, dict) or not isinstance(mindmap_data.get("content"), str):
         raise ValueError("思维导图结构不正确")
+
+    def validate_node(node: Any) -> None:
+        if not isinstance(node, dict) or not isinstance(node.get("content"), str):
+            raise ValueError("思维导图节点结构不正确")
+        children = node.get("children", [])
+        if not isinstance(children, list):
+            raise ValueError("思维导图 children 必须是数组")
+        for child in children:
+            validate_node(child)
+
+    validate_node(mindmap_data)
     return mindmap_data
 
 

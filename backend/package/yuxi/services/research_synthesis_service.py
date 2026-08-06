@@ -21,6 +21,7 @@ from typing import Any
 from docx import Document
 from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import delete, select
 
 from yuxi.config import config
 from yuxi.knowledge.chunking.ragflow_like.nlp import count_tokens
@@ -35,6 +36,8 @@ from yuxi.services.research_paper_service import _ensure_access
 from yuxi.services.research_search_service import LOCAL_HYBRID_MODE, ResearchSearchError, search_papers
 from yuxi.services.task_service import PublicTaskError, TaskContext, tasker
 from yuxi.storage.postgres.models_business import User
+from yuxi.storage.postgres.models_knowledge import ResearchEvidence, ResearchEvidenceCitation
+from yuxi.storage.postgres.manager import pg_manager
 from yuxi.utils.datetime_utils import utc_now_naive
 
 
@@ -46,6 +49,7 @@ class ResearchSynthesisError(PublicTaskError):
 
 
 DEFAULT_SYNTHESIS_INPUT_BUDGET = 24_000
+MAX_SYNTHESIS_RETRIES = 3
 SYNTHESIS_CONTEXT_OVERHEAD = 1_024
 SYNTHESIS_CONTEXT_RATIO = 0.75
 SYNTHESIS_RULES_VERSION = "evidence-synthesis-v1"
@@ -240,6 +244,12 @@ async def _verified_evidence_index(kb_id: str, snapshot: dict[str, Any]) -> dict
     if set(chunks_by_id) != set(chunk_ids):
         raise ResearchSynthesisError("synthesis_evidence_changed", "部分检索证据已被删除，不能生成可验证综述")
 
+    async with pg_manager.get_async_session_context() as session:
+        result = await session.execute(select(ResearchEvidence.source_chunk_id).where(
+            ResearchEvidence.kb_id == kb_id, ResearchEvidence.source_chunk_id.in_(chunk_ids),
+            ResearchEvidence.status == "verified"))
+        if {str(value) for value in result.scalars().all()} != set(chunk_ids):
+            raise ResearchSynthesisError("synthesis_insufficient_evidence", "综述只能引用已验证证据,请先完成证据验证")
     file_ids = list(dict.fromkeys(str(chunk.file_id) for chunk in chunks))
     papers = await AcademicPaperRepository().list_by_file_ids(kb_id=kb_id, file_ids=file_ids)
     papers_by_file = {str(paper.file_id): paper for paper in papers}
@@ -264,6 +274,41 @@ async def _verified_evidence_index(kb_id: str, snapshot: dict[str, Any]) -> dict
             "locator": evidence.get("locator") or {},
         }
     return verified
+
+
+async def _record_evidence_citations(*, kb_id: str, run_id: str, uid: str, result: dict[str, Any]) -> None:
+    """将验证后的综述引用固化,使历史结果不依赖可变的检索快照。"""
+    chunk_ids = {
+        str(chunk["chunk_id"])
+        for collection in (result.get("claims"), result.get("contradictions"), result.get("limitations"), result.get("research_gaps"))
+        for item in (collection or [])
+        for chunk in (item.get("evidence") or [])
+        if chunk.get("chunk_id")
+    }
+    if not chunk_ids:
+        return
+    async with pg_manager.get_async_session_context() as session:
+        await session.execute(delete(ResearchEvidenceCitation).where(
+            ResearchEvidenceCitation.synthesis_run_id == run_id
+        ))
+        rows = await session.execute(select(ResearchEvidence).where(
+            ResearchEvidence.kb_id == kb_id,
+            ResearchEvidence.source_chunk_id.in_(chunk_ids),
+            ResearchEvidence.status == "verified",
+        ))
+        evidence_by_chunk = {str(row.source_chunk_id): row for row in rows.scalars().all()}
+        if set(evidence_by_chunk) != chunk_ids:
+            raise ResearchSynthesisError("synthesis_evidence_changed", "综述引用的证据在落库前已失效")
+        session.add_all([
+            ResearchEvidenceCitation(
+                citation_id=uuid.uuid4().hex,
+                evidence_id=row.evidence_id,
+                synthesis_run_id=run_id,
+                cited_by=uid,
+            )
+            for row in evidence_by_chunk.values()
+        ])
+        await session.flush()
 
 
 def _citations(chunk_ids: list[str], evidence_index: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
@@ -577,6 +622,7 @@ async def _run_synthesis(
         evidence_index = await _verified_evidence_index(kb_id, snapshot)
         result = _validate_report(raw_report, query=query, snapshot=snapshot, evidence_index=evidence_index)
         timings["validation_ms"] = _elapsed(started)
+        await _record_evidence_citations(kb_id=kb_id, run_id=run_id, uid=str(current_user.uid), result=result)
         await context.raise_if_cancelled()
         await _refresh_synthesis_owner(current_user, kb_id)
         completed = await repo.update_if_not_cancelled(
@@ -627,6 +673,18 @@ async def _run_synthesis(
             failure = ResearchSynthesisError(exc.error_type, exc.message)
         else:
             failure = ResearchSynthesisError("synthesis_failed", "综述任务执行失败")
+        retryable = failure.error_type in {
+            "synthesis_retrieval_failed",
+            "synthesis_generation_failed",
+            "synthesis_model_unavailable",
+            "synthesis_reranker_unavailable",
+        }
+        dependency = (
+            "retrieval" if failure.error_type == "synthesis_retrieval_failed"
+            else "model" if "model" in failure.error_type or "generation" in failure.error_type
+            else "reranker" if "reranker" in failure.error_type
+            else None
+        )
         await repo.update_if_not_cancelled(
             run_id,
             {
@@ -635,6 +693,8 @@ async def _run_synthesis(
                 "stage_timings": timings,
                 "error_type": failure.error_type,
                 "error_message": failure.message,
+                "retryable": retryable,
+                "dependency": dependency,
                 "completed_at": utc_now_naive(),
             },
         )
@@ -868,6 +928,31 @@ async def regenerate_research_synthesis(*, run_id: str, current_user: User) -> d
         reranker_model=str(models.get("reranker_model") or ""),
         parent_run_id=str(record.run_id),
     )
+
+
+async def retry_research_synthesis(*, run_id: str, current_user: User) -> dict[str, Any]:
+    """仅重试可重试的外部依赖失败,并保留父运行作为审计记录。"""
+    record = await _authorized_run(run_id, current_user)
+    if str(record.uid) != str(current_user.uid):
+        raise ResearchSynthesisError("forbidden", "管理员不能代替其他用户重试综述")
+    if record.status != "failed" or not bool(record.retryable):
+        raise ResearchSynthesisError("synthesis_not_retryable", "该综述不是可重试失败状态")
+    retry_count = int(record.retry_count or 0)
+    if retry_count >= MAX_SYNTHESIS_RETRIES:
+        raise ResearchSynthesisError("synthesis_retry_limit", "综述重试次数已达上限")
+    retrieval = record.retrieval_config or {}
+    models = record.model_config_json or {}
+    result = await enqueue_research_synthesis(
+        kb_id=str(record.kb_id), current_user=current_user, query=str(record.raw_query),
+        top_k=int(retrieval.get("top_k") or 8), recall_top_k=int(retrieval.get("recall_top_k") or 50),
+        year_from=retrieval.get("year_from"), year_to=retrieval.get("year_to"),
+        model_spec=str(models.get("model") or ""), reranker_model=str(models.get("reranker_model") or ""),
+        parent_run_id=str(record.run_id),
+    )
+    await ResearchSynthesisRepository().update(str(record.run_id), {"retry_count": retry_count + 1})
+    await ResearchSynthesisRepository().update(str(result["run_id"]), {"retry_count": retry_count + 1})
+    result["retry_count"] = retry_count + 1
+    return result
 
 
 def _report_references(result: dict[str, Any]) -> tuple[dict[str, int], list[dict[str, Any]]]:
@@ -1124,4 +1209,5 @@ __all__ = [
     "list_research_syntheses",
     "recover_research_synthesis_runs",
     "regenerate_research_synthesis",
+    "retry_research_synthesis",
 ]

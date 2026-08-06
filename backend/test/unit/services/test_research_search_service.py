@@ -20,6 +20,68 @@ def test_search_mode_validation_preserves_strict_default():
 
 
 @pytest.mark.asyncio
+async def test_retry_search_run_rejects_non_retryable_failure(monkeypatch):
+    class FakeRepository:
+        async def get(self, run_id, *, uid):
+            return SimpleNamespace(run_id=run_id, uid=uid, kb_id="kb-1", status="failed", retryable=False, retry_count=0)
+
+    async def allow_access(current_user, kb_id):
+        assert kb_id == "kb-1"
+
+    monkeypatch.setattr(research_search_service, "ResearchSearchRunRepository", FakeRepository)
+    monkeypatch.setattr(research_search_service, "_ensure_access", allow_access)
+    with pytest.raises(research_search_service.ResearchSearchError) as exc_info:
+        await research_search_service.retry_search_run(
+            run_id="run-1", current_user=SimpleNamespace(uid="user-1")
+        )
+    assert exc_info.value.error_type == "search_not_retryable"
+
+
+@pytest.mark.asyncio
+async def test_retry_search_run_inherits_configuration_and_parent(monkeypatch):
+    record = SimpleNamespace(
+        run_id="run-1", uid="user-1", kb_id="kb-1", status="failed", retryable=True, retry_count=1,
+        raw_query="graph methods", retrieval_config={"mode": "local_hybrid", "top_k": 5, "recall_top_k": 20,
+                                                        "year_from": 2020, "year_to": 2025},
+        model_config_json={"chat_model": "chat:model", "reranker_model": "rerank:model"},
+    )
+    updates = []
+    calls = []
+
+    class FakeRepository:
+        async def get(self, run_id, *, uid):
+            return record
+
+        async def update(self, run_id, values):
+            updates.append((run_id, values))
+            return None
+
+        async def claim_retry(self, run_id, *, uid, max_retries):
+            assert (run_id, uid, max_retries) == ("run-1", "user-1", 3)
+            return 2
+
+    async def allow_access(current_user, kb_id):
+        return None
+
+    async def fake_search_papers(**kwargs):
+        calls.append(kwargs)
+        return {"run_id": "run-2", "query": kwargs["query"]}
+
+    monkeypatch.setattr(research_search_service, "ResearchSearchRunRepository", FakeRepository)
+    monkeypatch.setattr(research_search_service, "_ensure_access", allow_access)
+    monkeypatch.setattr(research_search_service, "search_papers", fake_search_papers)
+    result = await research_search_service.retry_search_run(
+        run_id="run-1", current_user=SimpleNamespace(uid="user-1")
+    )
+    assert result["retry_count"] == 2
+    assert calls[0]["parent_run_id"] == "run-1"
+    assert calls[0]["retry_count"] == 2
+    assert calls[0]["retrieval_mode"] == "local_hybrid"
+    assert calls[0]["top_k"] == 5
+    assert updates == []
+
+
+@pytest.mark.asyncio
 async def test_citation_graph_fusion_keeps_seed_mapping_outside_truncated_ppr_results(monkeypatch):
     requested_graph_ids = []
 

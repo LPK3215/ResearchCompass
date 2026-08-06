@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { mock, test } from 'node:test'
 
+import { moduleMockExportsKey } from './module_mock_compat.js'
+
 const calls = []
 
 const record = (method) => async (...args) => {
@@ -9,7 +11,7 @@ const record = (method) => async (...args) => {
 }
 
 mock.module(new URL('../../src/apis/base.js', import.meta.url), {
-  exports: {
+  [moduleMockExportsKey]: {
     apiGet: record('apiGet'),
     apiAdminGet: record('apiAdminGet'),
     apiAdminPost: record('apiAdminPost'),

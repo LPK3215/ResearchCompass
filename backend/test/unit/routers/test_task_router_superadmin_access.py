@@ -13,7 +13,7 @@ from server.utils.auth_middleware import get_superadmin_user
 def test_all_task_routes_require_superadmin_dependency():
     routes = [route for route in tasks.routes if isinstance(route, APIRoute)]
 
-    assert len(routes) == 4
+    assert len(routes) == 5
     for route in routes:
         dependency_calls = {dependency.call for dependency in route.dependant.dependencies}
         assert get_superadmin_user in dependency_calls

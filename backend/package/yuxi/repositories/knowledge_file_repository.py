@@ -61,6 +61,24 @@ class KnowledgeFileRepository:
             result = await session.execute(select(KnowledgeFile).where(KnowledgeFile.file_id == file_id))
             return result.scalar_one_or_none()
 
+    async def find_external_import(self, *, kb_id: str, identifier: str) -> KnowledgeFile | None:
+        """Find a file created by an external-paper import with the same provider identifier."""
+        normalized_identifier = str(identifier or "").strip()
+        if not normalized_identifier:
+            return None
+        async with pg_manager.get_async_session_context() as session:
+            result = await session.execute(
+                select(KnowledgeFile)
+                .where(
+                    KnowledgeFile.kb_id == kb_id,
+                    KnowledgeFile.processing_params["external_import"]["identifier"].as_string()
+                    == normalized_identifier,
+                )
+                .order_by(KnowledgeFile.id.asc())
+                .limit(1)
+            )
+            return result.scalar_one_or_none()
+
     async def list_by_file_ids(self, file_ids: list[str]) -> list[KnowledgeFile]:
         normalized_ids = [file_id for file_id in file_ids if file_id]
         if not normalized_ids:

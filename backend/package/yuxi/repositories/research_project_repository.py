@@ -22,12 +22,14 @@ from yuxi.storage.postgres.models_knowledge import (
     ResearchProject,
     ResearchProjectActivity,
     ResearchProjectAsset,
+    ResearchProjectTask,
+    ResearchEvidence,
     ResearchSearchRun,
     ResearchSynthesisRun,
 )
 
 
-ASSET_TYPES = {"paper", "search_run", "synthesis_run", "analysis_run", "evaluation_experiment"}
+ASSET_TYPES = {"paper", "search_run", "synthesis_run", "analysis_run", "evaluation_experiment", "evidence"}
 
 
 def build_project_activity(
@@ -37,6 +39,10 @@ def build_project_activity(
     asset_type: str | None = None,
     reference_id: str | None = None,
     payload: dict[str, Any] | None = None,
+    operator_uid: str | None = None,
+    from_status: str | None = None,
+    to_status: str | None = None,
+    precondition: dict[str, Any] | None = None,
 ) -> ResearchProjectActivity:
     normalized_payload = {}
     for key, value in (payload or {}).items():
@@ -48,6 +54,10 @@ def build_project_activity(
         asset_type=asset_type,
         reference_id=reference_id,
         payload=normalized_payload,
+        operator_uid=operator_uid,
+        from_status=from_status,
+        to_status=to_status,
+        precondition=precondition or {},
     )
 
 
@@ -56,7 +66,7 @@ class ResearchProjectRepository:
         record = ResearchProject(**values)
         async with pg_manager.get_async_session_context() as session:
             session.add(record)
-            session.add(build_project_activity(record.project_id, "project_created", payload={"title": record.title}))
+            session.add(build_project_activity(record.project_id, "project_created", operator_uid=str(record.uid), payload={"title": record.title}))
             await session.flush()
         return record
 
@@ -113,21 +123,49 @@ class ResearchProjectRepository:
         uid: str,
         values: dict[str, Any],
         activity_type: str,
-    ) -> ResearchProject | None:
+        require_no_open_tasks: bool = False,
+    ) -> tuple[ResearchProject | None, int]:
         async with pg_manager.get_async_session_context() as session:
             record = await session.scalar(
-                select(ResearchProject).where(
+                select(ResearchProject)
+                .where(
                     ResearchProject.project_id == project_id,
                     ResearchProject.uid == uid,
                 )
+                .with_for_update(key_share=True)
             )
             if record is None:
-                return None
+                return None, 0
+            if require_no_open_tasks:
+                open_task_count = int(
+                    await session.scalar(
+                        select(func.count())
+                        .select_from(ResearchProjectTask)
+                        .where(
+                            ResearchProjectTask.project_id == project_id,
+                            ResearchProjectTask.status != "done",
+                        )
+                    )
+                    or 0
+                )
+                if open_task_count:
+                    return record, open_task_count
+            previous_status = str(record.status)
             for key, value in values.items():
                 setattr(record, key, value)
-            session.add(build_project_activity(project_id, activity_type, payload=values))
+            session.add(
+                build_project_activity(
+                    project_id,
+                    activity_type,
+                    payload=values,
+                    operator_uid=uid,
+                    from_status=previous_status if "status" in values else None,
+                    to_status=str(values.get("status")) if "status" in values else None,
+                    precondition={"require_no_open_tasks": require_no_open_tasks, "open_task_count": 0},
+                )
+            )
             await session.flush()
-            return record
+            return record, 0
 
     async def delete(self, project_id: str, *, uid: str) -> bool:
         async with pg_manager.get_async_session_context() as session:
@@ -176,7 +214,7 @@ class ResearchProjectRepository:
             )
             return list(result.scalars().all()), int(total or 0)
 
-    async def add_assets(self, project_id: str, assets: list[dict[str, Any]]) -> list[ResearchProjectAsset]:
+    async def add_assets(self, project_id: str, assets: list[dict[str, Any]], *, operator_uid: str) -> list[ResearchProjectAsset]:
         records = [ResearchProjectAsset(asset_id=uuid.uuid4().hex, project_id=project_id, **asset) for asset in assets]
         async with pg_manager.get_async_session_context() as session:
             session.add_all(records)
@@ -185,6 +223,7 @@ class ResearchProjectRepository:
                     build_project_activity(
                         project_id,
                         "asset_added",
+                        operator_uid=operator_uid,
                         asset_type=record.asset_type,
                         reference_id=record.reference_id,
                         payload={"title": record.title_snapshot},
@@ -208,6 +247,7 @@ class ResearchProjectRepository:
         asset_id: str,
         *,
         notes: str | None,
+        operator_uid: str,
     ) -> ResearchProjectAsset | None:
         async with pg_manager.get_async_session_context() as session:
             record = await session.scalar(
@@ -223,6 +263,7 @@ class ResearchProjectRepository:
                 build_project_activity(
                     project_id,
                     "asset_notes_updated",
+                    operator_uid=operator_uid,
                     asset_type=record.asset_type,
                     reference_id=record.reference_id,
                     payload={"title": record.title_snapshot},
@@ -231,7 +272,7 @@ class ResearchProjectRepository:
             await session.flush()
             return record
 
-    async def remove_asset(self, project_id: str, asset_id: str) -> ResearchProjectAsset | None:
+    async def remove_asset(self, project_id: str, asset_id: str, *, operator_uid: str) -> ResearchProjectAsset | None:
         async with pg_manager.get_async_session_context() as session:
             record = await session.scalar(
                 select(ResearchProjectAsset).where(
@@ -245,6 +286,7 @@ class ResearchProjectRepository:
                 build_project_activity(
                     project_id,
                     "asset_removed",
+                    operator_uid=operator_uid,
                     asset_type=record.asset_type,
                     reference_id=record.reference_id,
                     payload={"title": record.title_snapshot},
@@ -323,6 +365,7 @@ class ResearchProjectRepository:
             "synthesis_run": ResearchSynthesisRun.run_id,
             "analysis_run": AcademicPaperAnalysisRun.run_id,
             "evaluation_experiment": EvaluationExperiment.experiment_id,
+            "evidence": ResearchEvidence.evidence_id,
         }[asset_type]
         async with pg_manager.get_async_session_context() as session:
             result = await session.execute(statement.where(identity == reference_id))
@@ -345,9 +388,12 @@ class ResearchProjectRepository:
             "synthesis_run": ResearchSynthesisRun.run_id,
             "analysis_run": AcademicPaperAnalysisRun.run_id,
             "evaluation_experiment": EvaluationExperiment.experiment_id,
+            "evidence": ResearchEvidence.evidence_id,
         }[asset_type]
         statement, _ = self._candidate_statements(kb_id=kb_id, uid=uid, asset_type=asset_type, query=None)
         async with pg_manager.get_async_session_context() as session:
+            if asset_type == "evidence":
+                statement = statement.where(ResearchEvidence.status.notin_(["invalid", "archived"]))
             result = await session.execute(statement.where(identity.in_(reference_ids)))
             candidates = [self._serialize_candidate(asset_type, row) for row in result.all()]
         return {candidate["reference_id"]: candidate for candidate in candidates}
@@ -368,6 +414,7 @@ class ResearchProjectRepository:
             "synthesis_run": ResearchSynthesisRun.run_id,
             "analysis_run": AcademicPaperAnalysisRun.run_id,
             "evaluation_experiment": EvaluationExperiment.experiment_id,
+            "evidence": ResearchEvidence.evidence_id,
         }[asset_type]
         statement, _ = self._candidate_statements(kb_id=kb_id, uid=uid, asset_type=asset_type, query=None)
         async with pg_manager.get_async_session_context() as session:
@@ -440,6 +487,15 @@ class ResearchProjectRepository:
                 )
             statement = select(EvaluationExperiment).where(*filters).order_by(EvaluationExperiment.created_at.desc())
             count_statement = select(func.count()).select_from(EvaluationExperiment).where(*filters)
+        elif asset_type == "evidence":
+            filters = [
+                ResearchEvidence.kb_id == kb_id,
+                ResearchEvidence.status.notin_(["invalid", "archived"]),
+            ]
+            if pattern:
+                filters.append(ResearchEvidence.content_snapshot.ilike(pattern))
+            statement = select(ResearchEvidence).where(*filters).order_by(ResearchEvidence.created_at.desc())
+            count_statement = select(func.count()).select_from(ResearchEvidence).where(*filters)
         else:
             raise ValueError(f"Unsupported research project asset type: {asset_type}")
         return statement, count_statement
@@ -488,6 +544,15 @@ class ResearchProjectRepository:
                 "status": record.status,
                 "created_at": record.created_at.isoformat() if record.created_at else None,
                 "metadata": {"stage": record.stage},
+            }
+        if asset_type == "evidence":
+            return {
+                "reference_id": record.evidence_id,
+                "title": f"证据 · {record.source_chunk_id}",
+                "summary": record.content_snapshot,
+                "status": record.status,
+                "created_at": record.created_at.isoformat() if record.created_at else None,
+                "metadata": {"source_chunk_id": record.source_chunk_id, "verified_by": record.verified_by},
             }
         return {
             "reference_id": record.experiment_id,

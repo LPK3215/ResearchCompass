@@ -1,6 +1,7 @@
 """证据约束研究综述的关键验证规则测试。"""
 
 import asyncio
+from contextlib import asynccontextmanager
 from io import BytesIO
 from types import SimpleNamespace
 
@@ -209,6 +210,22 @@ async def test_verified_evidence_index_rejects_changed_evidence(monkeypatch):
     monkeypatch.setattr(research_synthesis_service, "KnowledgeChunkRepository", FakeChunkRepository)
     monkeypatch.setattr(research_synthesis_service, "AcademicPaperRepository", FakePaperRepository)
 
+    class FakeSession:
+        async def execute(self, statement):
+            class Result:
+                def scalars(self):
+                    class ScalarResult:
+                        def all(self):
+                            return ["chunk-1", "chunk-2"]
+                    return ScalarResult()
+            return Result()
+
+    @asynccontextmanager
+    async def fake_session_context():
+        yield FakeSession()
+
+    monkeypatch.setattr(research_synthesis_service.pg_manager, "get_async_session_context", fake_session_context)
+
     with pytest.raises(research_synthesis_service.ResearchSynthesisError) as exc_info:
         await research_synthesis_service._verified_evidence_index("kb-1", _snapshot())
 
@@ -347,12 +364,17 @@ async def test_resume_synthesis_reuses_persisted_snapshot_without_search(monkeyp
         "_verified_evidence_index",
         lambda *args: asyncio.sleep(0, result=_evidence_index()),
     )
+    monkeypatch.setattr(
+        research_synthesis_service,
+        "_record_evidence_citations",
+        lambda **kwargs: asyncio.sleep(0),
+    )
 
     result = await research_synthesis_service._run_synthesis(
         Context(),
         run_id="run-1",
         kb_id="kb-1",
-        current_user=SimpleNamespace(),
+        current_user=SimpleNamespace(uid="user-1"),
         query="What evidence supports the approach?",
         model_spec="chat:model",
         reranker_model="rerank:model",
@@ -778,3 +800,33 @@ async def test_synthesis_unknown_failure_is_persisted_and_raised_without_provide
     assert exc_info.value.error_type == "synthesis_failed"
     assert exc_info.value.message == "综述任务执行失败"
     assert secret not in repr(updates)
+@pytest.mark.asyncio
+async def test_retry_research_synthesis_rejects_non_retryable_run(monkeypatch):
+    record = SimpleNamespace(run_id="run-1", kb_id="kb-1", uid="user-1", status="failed", retryable=False)
+    monkeypatch.setattr(research_synthesis_service, "_authorized_run", lambda *args, **kwargs: asyncio.sleep(0, result=record))
+    with pytest.raises(research_synthesis_service.ResearchSynthesisError) as exc:
+        await research_synthesis_service.retry_research_synthesis(run_id="run-1", current_user=SimpleNamespace(uid="user-1"))
+    assert exc.value.error_type == "synthesis_not_retryable"
+
+
+@pytest.mark.asyncio
+async def test_retry_research_synthesis_creates_child_and_increments_count(monkeypatch):
+    parent = SimpleNamespace(run_id="run-1", kb_id="kb-1", uid="user-1", status="failed", retryable=True, retry_count=1,
+        raw_query="question", retrieval_config={"top_k": 2, "recall_top_k": 20},
+        model_config_json={"model": "chat:model", "reranker_model": "rerank:model"})
+    updates = []
+    monkeypatch.setattr(research_synthesis_service, "_authorized_run", lambda *args, **kwargs: asyncio.sleep(0, result=parent))
+    async def enqueue(**kwargs):
+        return {"run_id": "run-2", "task_id": "task-2", "status": "pending"}
+    class FakeRepository:
+        async def update(self, run_id, values):
+            updates.append((run_id, values))
+    monkeypatch.setattr(research_synthesis_service, "enqueue_research_synthesis", enqueue)
+    monkeypatch.setattr(research_synthesis_service, "ResearchSynthesisRepository", FakeRepository)
+    result = await research_synthesis_service.retry_research_synthesis(run_id="run-1", current_user=SimpleNamespace(uid="user-1"))
+    assert result["run_id"] == "run-2"
+    assert result["retry_count"] == 2
+    assert updates == [
+        ("run-1", {"retry_count": 2}),
+        ("run-2", {"retry_count": 2}),
+    ]

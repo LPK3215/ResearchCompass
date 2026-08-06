@@ -25,6 +25,10 @@ from yuxi.storage.postgres.models_knowledge import (
 from yuxi.utils.datetime_utils import utc_now_naive
 
 
+class ResearchProjectPlanWriteConflict(RuntimeError):
+    """计划写入期间项目已变为只读。"""
+
+
 class ResearchProjectPlanRepository:
     async def get_plan_records(
         self, project_id: str
@@ -80,7 +84,7 @@ class ResearchProjectPlanRepository:
                 tasks[str(task.project_id)].append(task)
         return milestones, tasks
 
-    async def create_milestone(self, project_id: str, values: dict[str, Any]) -> ResearchProjectMilestone:
+    async def create_milestone(self, project_id: str, values: dict[str, Any], *, operator_uid: str) -> ResearchProjectMilestone:
         async with pg_manager.get_async_session_context() as session:
             max_order = await session.scalar(
                 select(func.max(ResearchProjectMilestone.sort_order)).where(
@@ -98,6 +102,7 @@ class ResearchProjectPlanRepository:
                 build_project_activity(
                     project_id,
                     "milestone_created",
+                    operator_uid=operator_uid,
                     reference_id=record.milestone_id,
                     payload={"title": record.title, "status": record.status, "target_date": record.target_date},
                 )
@@ -122,7 +127,9 @@ class ResearchProjectPlanRepository:
         *,
         values: dict[str, Any],
         activity_type: str,
-    ) -> ResearchProjectMilestone | None:
+        require_no_open_tasks: bool = False,
+        operator_uid: str,
+    ) -> tuple[ResearchProjectMilestone | None, int]:
         async with pg_manager.get_async_session_context() as session:
             record = await session.scalar(
                 select(ResearchProjectMilestone)
@@ -130,25 +137,44 @@ class ResearchProjectPlanRepository:
                     ResearchProjectMilestone.project_id == project_id,
                     ResearchProjectMilestone.milestone_id == milestone_id,
                 )
-                .with_for_update()
+                .with_for_update(key_share=True)
             )
             if record is None:
-                return None
+                return None, 0
+            if require_no_open_tasks:
+                open_task_count = int(
+                    await session.scalar(
+                        select(func.count())
+                        .select_from(ResearchProjectTask)
+                        .where(
+                            ResearchProjectTask.project_id == project_id,
+                            ResearchProjectTask.milestone_id == milestone_id,
+                            ResearchProjectTask.status != "done",
+                        )
+                    )
+                    or 0
+                )
+                if open_task_count:
+                    return record, open_task_count
             for key, value in values.items():
                 setattr(record, key, value)
             session.add(
                 build_project_activity(
                     project_id,
                     activity_type,
+                    operator_uid=operator_uid,
+                    from_status=str(record.status) if "status" in values else None,
+                    to_status=str(values.get("status")) if "status" in values else None,
+                    precondition={"require_no_open_tasks": require_no_open_tasks, "open_task_count": 0},
                     reference_id=record.milestone_id,
                     payload={"title": record.title, "status": record.status, "target_date": record.target_date},
                 )
             )
             await self._touch_project(session, project_id)
             await session.flush()
-            return record
+            return record, 0
 
-    async def delete_milestone(self, project_id: str, milestone_id: str) -> tuple[ResearchProjectMilestone | None, int]:
+    async def delete_milestone(self, project_id: str, milestone_id: str, *, operator_uid: str) -> tuple[ResearchProjectMilestone | None, int]:
         async with pg_manager.get_async_session_context() as session:
             record = await session.scalar(
                 select(ResearchProjectMilestone)
@@ -177,6 +203,7 @@ class ResearchProjectPlanRepository:
                 build_project_activity(
                     project_id,
                     "milestone_deleted",
+                    operator_uid=operator_uid,
                     reference_id=milestone_id,
                     payload={"title": record.title},
                 )
@@ -185,7 +212,7 @@ class ResearchProjectPlanRepository:
             await self._touch_project(session, project_id)
             return record, 0
 
-    async def reorder_milestones(self, project_id: str, milestone_ids: list[str]) -> bool:
+    async def reorder_milestones(self, project_id: str, milestone_ids: list[str], *, operator_uid: str) -> bool:
         async with pg_manager.get_async_session_context() as session:
             result = await session.execute(
                 select(ResearchProjectMilestone)
@@ -197,12 +224,12 @@ class ResearchProjectPlanRepository:
                 return False
             for index, milestone_id in enumerate(milestone_ids):
                 records[milestone_id].sort_order = index
-            session.add(build_project_activity(project_id, "milestones_reordered"))
+            session.add(build_project_activity(project_id, "milestones_reordered", operator_uid=operator_uid))
             await self._touch_project(session, project_id)
             await session.flush()
             return True
 
-    async def create_task(self, project_id: str, values: dict[str, Any]) -> ResearchProjectTask | None:
+    async def create_task(self, project_id: str, values: dict[str, Any], *, operator_uid: str) -> ResearchProjectTask | None:
         async with pg_manager.get_async_session_context() as session:
             milestone_id = values.get("milestone_id")
             if milestone_id and not await self._locked_milestone(session, project_id, milestone_id):
@@ -231,6 +258,7 @@ class ResearchProjectPlanRepository:
                 build_project_activity(
                     project_id,
                     "task_created",
+                    operator_uid=operator_uid,
                     reference_id=record.task_id,
                     payload={"title": record.title, "status": record.status, "milestone_id": milestone_id},
                 )
@@ -254,6 +282,7 @@ class ResearchProjectPlanRepository:
         *,
         values: dict[str, Any],
         activity_type: str,
+        operator_uid: str,
     ) -> ResearchProjectTask | None:
         async with pg_manager.get_async_session_context() as session:
             record = await session.scalar(
@@ -291,6 +320,9 @@ class ResearchProjectPlanRepository:
                 build_project_activity(
                     project_id,
                     activity_type,
+                    operator_uid=operator_uid,
+                    from_status=str(record.status) if "status" in values else None,
+                    to_status=str(values.get("status")) if "status" in values else None,
                     reference_id=record.task_id,
                     payload={
                         "title": record.title,
@@ -303,7 +335,7 @@ class ResearchProjectPlanRepository:
             await session.flush()
             return record
 
-    async def delete_task(self, project_id: str, task_id: str) -> ResearchProjectTask | None:
+    async def delete_task(self, project_id: str, task_id: str, *, operator_uid: str) -> ResearchProjectTask | None:
         async with pg_manager.get_async_session_context() as session:
             record = await session.scalar(
                 select(ResearchProjectTask)
@@ -320,6 +352,7 @@ class ResearchProjectPlanRepository:
                 build_project_activity(
                     project_id,
                     "task_deleted",
+                    operator_uid=operator_uid,
                     reference_id=task_id,
                     payload={"title": record.title, "milestone_id": milestone_id},
                 )
@@ -331,7 +364,7 @@ class ResearchProjectPlanRepository:
             await self._touch_project(session, project_id, sync_progress=True)
             return record
 
-    async def reorder_tasks(self, project_id: str, milestone_id: str | None, task_ids: list[str]) -> bool:
+    async def reorder_tasks(self, project_id: str, milestone_id: str | None, task_ids: list[str], *, operator_uid: str) -> bool:
         async with pg_manager.get_async_session_context() as session:
             group_filter = ResearchProjectTask.milestone_id == milestone_id
             if milestone_id is None:
@@ -350,22 +383,13 @@ class ResearchProjectPlanRepository:
                 build_project_activity(
                     project_id,
                     "tasks_reordered",
+                    operator_uid=operator_uid,
                     payload={"milestone_id": milestone_id},
                 )
             )
             await self._touch_project(session, project_id)
             await session.flush()
             return True
-
-    async def count_open_tasks(self, project_id: str, *, milestone_id: str | None = None) -> int:
-        filters = [
-            ResearchProjectTask.project_id == project_id,
-            ResearchProjectTask.status != "done",
-        ]
-        if milestone_id is not None:
-            filters.append(ResearchProjectTask.milestone_id == milestone_id)
-        async with pg_manager.get_async_session_context() as session:
-            return int(await session.scalar(select(func.count()).select_from(ResearchProjectTask).where(*filters)) or 0)
 
     async def asset_link_exists(
         self,
@@ -374,6 +398,7 @@ class ResearchProjectPlanRepository:
         asset_id: str,
         milestone_id: str | None,
         task_id: str | None,
+        operator_uid: str,
     ) -> bool:
         filters = [
             ResearchProjectPlanAssetLink.project_id == project_id,
@@ -429,6 +454,7 @@ class ResearchProjectPlanRepository:
                 build_project_activity(
                     project_id,
                     "plan_asset_linked",
+                    operator_uid=operator_uid,
                     asset_type=asset.asset_type,
                     reference_id=asset.reference_id,
                     payload={
@@ -444,7 +470,7 @@ class ResearchProjectPlanRepository:
             return record
 
     async def delete_asset_link(
-        self, project_id: str, link_id: str
+        self, project_id: str, link_id: str, *, operator_uid: str
     ) -> tuple[ResearchProjectPlanAssetLink, ResearchProjectAsset] | None:
         async with pg_manager.get_async_session_context() as session:
             result = await session.execute(
@@ -464,6 +490,7 @@ class ResearchProjectPlanRepository:
                 build_project_activity(
                     project_id,
                     "plan_asset_unlinked",
+                    operator_uid=operator_uid,
                     asset_type=asset.asset_type,
                     reference_id=asset.reference_id,
                     payload={
@@ -533,6 +560,8 @@ class ResearchProjectPlanRepository:
         )
         if project is None:
             return
+        if project.status != "active":
+            raise ResearchProjectPlanWriteConflict
         if sync_progress:
             total, completed = (
                 await session.execute(
@@ -546,4 +575,4 @@ class ResearchProjectPlanRepository:
         project.updated_at = utc_now_naive()
 
 
-__all__ = ["ResearchProjectPlanRepository"]
+__all__ = ["ResearchProjectPlanRepository", "ResearchProjectPlanWriteConflict"]

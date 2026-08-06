@@ -8,12 +8,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable
 from datetime import date
 from typing import Any
 
 from sqlalchemy.exc import IntegrityError
 
-from yuxi.repositories.research_project_plan_repository import ResearchProjectPlanRepository
+from yuxi.repositories.research_project_plan_repository import (
+    ResearchProjectPlanRepository,
+    ResearchProjectPlanWriteConflict,
+)
 from yuxi.repositories.research_project_repository import ResearchProjectRepository
 from yuxi.services.research_project_plan_utils import (
     MILESTONE_STATUSES,
@@ -37,6 +41,13 @@ from yuxi.storage.postgres.models_knowledge import (
     ResearchProjectTask,
 )
 from yuxi.utils.datetime_utils import utc_now_naive
+
+
+async def _execute_plan_write[T](operation: Awaitable[T]) -> T:
+    try:
+        return await operation
+    except ResearchProjectPlanWriteConflict as exc:
+        raise ResearchProjectError("project_read_only", "已完成或归档项目需恢复为进行中后才能修改成果") from exc
 
 
 def serialize_milestone(
@@ -158,15 +169,17 @@ async def create_project_milestone(
     project = await get_owned_project(project_id, current_user)
     ensure_project_writable(project)
     _validate_milestone_status(status)
-    record = await ResearchProjectPlanRepository().create_milestone(
-        project_id,
-        {
-            "title": title,
-            "description": description or None,
-            "status": status,
-            "target_date": target_date,
-            "completed_at": utc_now_naive() if status == "completed" else None,
-        },
+    record = await _execute_plan_write(
+        ResearchProjectPlanRepository().create_milestone(
+            project_id,
+            {
+                "title": title,
+                "description": description or None,
+                "status": status,
+                "target_date": target_date,
+                "completed_at": utc_now_naive() if status == "completed" else None,
+            }, operator_uid=str(current_user.uid),
+        )
     )
     return serialize_milestone(record, [], [])
 
@@ -186,18 +199,22 @@ async def update_project_milestone(
         raise ResearchProjectError("milestone_not_found", "里程碑不存在")
     status = values.get("status", current.status)
     _validate_milestone_status(status)
-    if status == "completed" and await repository.count_open_tasks(project_id, milestone_id=milestone_id):
-        raise ResearchProjectError("milestone_has_open_tasks", "里程碑仍有未完成任务，不能标记完成")
     if "description" in values:
         values["description"] = values["description"] or None
     if status != current.status:
         values["completed_at"] = utc_now_naive() if status == "completed" else None
-    record = await repository.update_milestone(
-        project_id,
-        milestone_id,
-        values=values,
-        activity_type="milestone_status_changed" if status != current.status else "milestone_updated",
+    record, open_tasks = await _execute_plan_write(
+        repository.update_milestone(
+            project_id,
+            milestone_id,
+            values=values,
+            activity_type="milestone_status_changed" if status != current.status else "milestone_updated",
+            require_no_open_tasks=status == "completed",
+            operator_uid=str(current_user.uid),
+        )
     )
+    if open_tasks:
+        raise ResearchProjectError("milestone_has_open_tasks", "里程碑仍有未完成任务，不能标记完成")
     if record is None:
         raise ResearchProjectError("milestone_not_found", "里程碑不存在")
     _, tasks, link_records = await repository.get_plan_records(project_id)
@@ -208,7 +225,9 @@ async def update_project_milestone(
 async def delete_project_milestone(*, project_id: str, milestone_id: str, current_user: User) -> None:
     project = await get_owned_project(project_id, current_user)
     ensure_project_writable(project)
-    record, task_count = await ResearchProjectPlanRepository().delete_milestone(project_id, milestone_id)
+    record, task_count = await _execute_plan_write(
+        ResearchProjectPlanRepository().delete_milestone(project_id, milestone_id, operator_uid=str(current_user.uid))
+    )
     if record is None:
         raise ResearchProjectError("milestone_not_found", "里程碑不存在")
     if task_count:
@@ -218,7 +237,7 @@ async def delete_project_milestone(*, project_id: str, milestone_id: str, curren
 async def reorder_project_milestones(*, project_id: str, current_user: User, milestone_ids: list[str]) -> None:
     project = await get_owned_project(project_id, current_user)
     ensure_project_writable(project)
-    if not await ResearchProjectPlanRepository().reorder_milestones(project_id, milestone_ids):
+    if not await _execute_plan_write(ResearchProjectPlanRepository().reorder_milestones(project_id, milestone_ids, operator_uid=str(current_user.uid))):
         raise ResearchProjectError("invalid_milestone_order", "排序必须包含当前项目的全部里程碑且不能重复")
 
 
@@ -239,17 +258,19 @@ async def create_project_task(
     repository = ResearchProjectPlanRepository()
     if milestone_id and await repository.get_milestone(project_id, milestone_id) is None:
         raise ResearchProjectError("milestone_not_found", "里程碑不存在")
-    record = await repository.create_task(
-        project_id,
-        {
-            "title": title,
-            "description": description or None,
-            "status": status,
-            "priority": priority,
-            "due_date": due_date,
-            "milestone_id": milestone_id,
-            "completed_at": utc_now_naive() if status == "done" else None,
-        },
+    record = await _execute_plan_write(
+        repository.create_task(
+            project_id,
+            {
+                "title": title,
+                "description": description or None,
+                "status": status,
+                "priority": priority,
+                "due_date": due_date,
+                "milestone_id": milestone_id,
+                "completed_at": utc_now_naive() if status == "done" else None,
+            }, operator_uid=str(current_user.uid),
+        )
     )
     if record is None:
         raise ResearchProjectError("milestone_not_found", "里程碑不存在")
@@ -279,11 +300,14 @@ async def update_project_task(
         values["description"] = values["description"] or None
     if status != current.status:
         values["completed_at"] = utc_now_naive() if status == "done" else None
-    record = await repository.update_task(
-        project_id,
-        task_id,
-        values=values,
-        activity_type="task_status_changed" if status != current.status else "task_updated",
+    record = await _execute_plan_write(
+        repository.update_task(
+            project_id,
+            task_id,
+            values=values,
+            activity_type="task_status_changed" if status != current.status else "task_updated",
+            operator_uid=str(current_user.uid),
+        )
     )
     if record is None:
         raise ResearchProjectError("task_not_found", "任务不存在")
@@ -295,7 +319,7 @@ async def update_project_task(
 async def delete_project_task(*, project_id: str, task_id: str, current_user: User) -> None:
     project = await get_owned_project(project_id, current_user)
     ensure_project_writable(project)
-    if await ResearchProjectPlanRepository().delete_task(project_id, task_id) is None:
+    if await _execute_plan_write(ResearchProjectPlanRepository().delete_task(project_id, task_id, operator_uid=str(current_user.uid))) is None:
         raise ResearchProjectError("task_not_found", "任务不存在")
 
 
@@ -311,7 +335,7 @@ async def reorder_project_tasks(
     repository = ResearchProjectPlanRepository()
     if milestone_id and await repository.get_milestone(project_id, milestone_id) is None:
         raise ResearchProjectError("milestone_not_found", "里程碑不存在")
-    if not await repository.reorder_tasks(project_id, milestone_id, task_ids):
+    if not await _execute_plan_write(repository.reorder_tasks(project_id, milestone_id, task_ids, operator_uid=str(current_user.uid))):
         raise ResearchProjectError("invalid_task_order", "排序必须包含当前分组的全部任务且不能重复")
 
 
@@ -328,6 +352,13 @@ async def create_project_plan_asset_link(
     if bool(milestone_id) == bool(task_id):
         raise ResearchProjectError("invalid_plan_asset_target", "成果必须且只能关联一个里程碑或任务")
     repository = ResearchProjectPlanRepository()
+    asset = await ResearchProjectRepository().get_asset(project_id, asset_id)
+    if asset is None:
+        raise ResearchProjectError("asset_not_found", "项目成果不存在")
+    if asset.asset_type == "evidence":
+        available = await get_available_project_asset_ids(project, current_user, [asset])
+        if asset.asset_id not in available:
+            raise ResearchProjectError("evidence_unavailable", "失效或归档证据不能关联执行项")
     if await repository.asset_link_exists(
         project_id,
         asset_id=asset_id,
@@ -336,19 +367,19 @@ async def create_project_plan_asset_link(
     ):
         raise ResearchProjectError("plan_asset_already_linked", "该成果已经关联到这个执行项")
     try:
-        link = await repository.create_asset_link(
-            project_id,
-            asset_id=asset_id,
-            milestone_id=milestone_id,
-            task_id=task_id,
+        link = await _execute_plan_write(
+            repository.create_asset_link(
+                project_id,
+                asset_id=asset_id,
+                milestone_id=milestone_id,
+                task_id=task_id,
+                operator_uid=str(current_user.uid),
+            )
         )
     except IntegrityError as exc:
         raise ResearchProjectError("plan_asset_already_linked", "该成果已经关联到这个执行项") from exc
     if link is None:
         raise ResearchProjectError("plan_asset_target_not_found", "项目成果或执行项不存在")
-    asset = await ResearchProjectRepository().get_asset(project_id, asset_id)
-    if asset is None:
-        raise ResearchProjectError("asset_not_found", "项目成果不存在")
     available = await get_available_project_asset_ids(project, current_user, [asset])
     return serialize_asset_link(link, asset, available=asset.asset_id in available)
 
@@ -356,7 +387,7 @@ async def create_project_plan_asset_link(
 async def delete_project_plan_asset_link(*, project_id: str, link_id: str, current_user: User) -> None:
     project = await get_owned_project(project_id, current_user)
     ensure_project_writable(project)
-    if await ResearchProjectPlanRepository().delete_asset_link(project_id, link_id) is None:
+    if await _execute_plan_write(ResearchProjectPlanRepository().delete_asset_link(project_id, link_id, operator_uid=str(current_user.uid))) is None:
         raise ResearchProjectError("plan_asset_link_not_found", "成果关联不存在")
 
 

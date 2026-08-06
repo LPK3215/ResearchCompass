@@ -29,7 +29,7 @@
             <span>{{ projectsTotal }} 个项目</span>
           </div>
           <a-tooltip title="新建研究项目">
-            <a-button type="primary" class="square-action" aria-label="新建研究项目" @click="openCreateProject">
+            <a-button data-testid="create-research-project" type="primary" class="square-action" aria-label="新建研究项目" @click="openCreateProject">
               <Plus :size="17" />
             </a-button>
           </a-tooltip>
@@ -156,6 +156,7 @@
                   <a-menu @click="downloadReport">
                     <a-menu-item key="markdown">Markdown 报告</a-menu-item>
                     <a-menu-item key="docx">Word 报告</a-menu-item>
+                    <a-menu-item key="csv">CSV 数据</a-menu-item>
                   </a-menu>
                 </template>
               </a-dropdown>
@@ -277,6 +278,15 @@
                       继续研究
                       <ArrowRight :size="14" />
                     </a-button>
+                    <a-button
+                      v-if="asset.asset_type === 'evidence'"
+                      type="link"
+                      size="small"
+                      :loading="evidenceImpactsLoading === asset.reference_id"
+                      @click="showEvidenceImpacts(asset)"
+                    >
+                      查看影响
+                    </a-button>
                     <a-tooltip title="编辑备注">
                       <a-button
                         type="text"
@@ -364,6 +374,21 @@
 
     <a-empty v-else description="请选择论文知识库" class="page-empty" />
 
+    <a-modal v-model:open="evidenceImpactsOpen" title="证据影响的执行项" :footer="null" width="560px">
+      <a-spin v-if="evidenceImpactsLoading === evidenceImpactsId" />
+      <a-empty v-else-if="!evidenceImpacts.length" description="当前证据尚未关联任务或里程碑" />
+      <a-list v-else :data-source="evidenceImpacts" bordered>
+        <template #renderItem="{ item }">
+          <a-list-item>
+            <div>
+              <strong>{{ item.target_title || item.target_id }}</strong>
+              <div class="evidence-impact-meta">{{ item.project_title }} · {{ item.target_type === 'task' ? '任务' : '里程碑' }}</div>
+            </div>
+          </a-list-item>
+        </template>
+      </a-list>
+    </a-modal>
+
     <a-modal
       v-model:open="projectModalOpen"
       :title="editingProject ? '编辑研究项目' : '新建研究项目'"
@@ -375,7 +400,7 @@
     >
       <a-form layout="vertical" class="project-form">
         <a-form-item label="项目名称" required>
-          <a-input
+          <a-input data-testid="project-title"
             v-model:value="projectForm.title"
             :disabled="editingProject && projectDetail?.status === 'completed'"
             :maxlength="255"
@@ -383,7 +408,7 @@
           />
         </a-form-item>
         <a-form-item label="核心研究问题" required>
-          <a-textarea
+          <a-textarea data-testid="project-research-question"
             v-model:value="projectForm.researchQuestion"
             :disabled="editingProject && projectDetail?.status === 'completed'"
             :rows="4"
@@ -573,6 +598,7 @@ const emit = defineEmits(['change-database', 'continue-asset', 'project-change']
 const userStore = useUserStore()
 const assetTypeOptions = [
   { value: 'paper', label: '论文', shortLabel: '论文', icon: BookOpen },
+  { value: 'evidence', label: '证据', shortLabel: '证据', icon: CircleCheck },
   { value: 'search_run', label: '检索运行', shortLabel: '检索', icon: Search },
   { value: 'synthesis_run', label: '证据综述', shortLabel: '综述', icon: FileText },
   { value: 'analysis_run', label: '论文分析', shortLabel: '分析', icon: FileSearch },
@@ -628,6 +654,10 @@ const candidatePage = ref(1)
 const candidatePageSize = 20
 const candidateNotes = ref('')
 const selectedCandidateIds = ref([])
+const evidenceImpactsOpen = ref(false)
+const evidenceImpactsId = ref('')
+const evidenceImpacts = ref([])
+const evidenceImpactsLoading = ref('')
 let requestGeneration = 0
 let projectRequestSequence = 0
 let detailRequestSequence = 0
@@ -678,6 +708,7 @@ const assetMetadata = (asset) => {
   if (asset.asset_type === 'search_run') return `${metadata.result_count || 0} 篇结果 · ${metadata.mode || '检索模式未知'}`
   if (asset.asset_type === 'synthesis_run') return metadata.stage || '综述运行'
   if (asset.asset_type === 'analysis_run') return metadata.strategy || 'multi_agent'
+  if (asset.asset_type === 'evidence') return metadata.source_chunk_id ? `来源片段 ${metadata.source_chunk_id}` : '证据快照'
   return `${metadata.completed_variants || 0}/${metadata.total_variants || 0} 个变体`
 }
 const candidateMetadata = (candidate) => assetMetadata({ asset_type: assetType.value, metadata: candidate.metadata || {} })
@@ -845,6 +876,23 @@ const applyAssetSearch = () => {
   void loadAssets()
 }
 
+const showEvidenceImpacts = async (asset) => {
+  const evidenceId = asset?.reference_id
+  if (!evidenceId) return
+  evidenceImpactsOpen.value = true
+  evidenceImpactsId.value = evidenceId
+  evidenceImpactsLoading.value = evidenceId
+  evidenceImpacts.value = []
+  try {
+    const result = await researchApi.listEvidenceImpacts(evidenceId)
+    if (evidenceImpactsId.value === evidenceId) evidenceImpacts.value = result || []
+  } catch (error) {
+    message.error(error.message || '证据影响加载失败')
+  } finally {
+    if (evidenceImpactsId.value === evidenceId) evidenceImpactsLoading.value = ''
+  }
+}
+
 const resetProjectForm = () => {
   Object.assign(projectForm, {
     title: '', researchQuestion: '', description: '', targetDate: '', tags: [], nextAction: '', progress: 0
@@ -956,7 +1004,8 @@ const downloadReport = async ({ key }) => {
     const response = await researchApi.exportProjectReport(selectedProjectId.value, key)
     const blob = await response.blob()
     const disposition = response.headers.get('Content-Disposition') || ''
-    const filename = disposition.match(/filename="?([^";]+)"?/)?.[1] || `research-project.${key === 'docx' ? 'docx' : 'md'}`
+    const filename = disposition.match(/filename="?([^";]+)"?/)?.[1]
+      || `research-project.${key === 'docx' ? 'docx' : key === 'csv' ? 'csv' : 'md'}`
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url

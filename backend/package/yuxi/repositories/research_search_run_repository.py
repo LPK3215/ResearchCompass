@@ -22,6 +22,8 @@ class ResearchSearchRunRepository:
         self,
         *,
         run_id: str,
+        parent_run_id: str | None = None,
+        retry_count: int = 0,
         kb_id: str,
         uid: str,
         raw_query: str,
@@ -30,6 +32,8 @@ class ResearchSearchRunRepository:
     ) -> ResearchSearchRun:
         record = ResearchSearchRun(
             run_id=run_id,
+            parent_run_id=parent_run_id,
+            retry_count=retry_count,
             kb_id=kb_id,
             uid=uid,
             raw_query=raw_query,
@@ -57,6 +61,9 @@ class ResearchSearchRunRepository:
             "is_pinned",
             "error_type",
             "error_message",
+            "retryable",
+            "dependency",
+            "retry_count",
             "completed_at",
         }
         async with pg_manager.get_async_session_context() as session:
@@ -69,6 +76,27 @@ class ResearchSearchRunRepository:
                     setattr(record, key, value)
             await session.flush()
             return record
+
+    async def claim_retry(self, run_id: str, *, uid: str, max_retries: int) -> int | None:
+        """Atomically reserve the next retry attempt for an owned failed run."""
+        async with pg_manager.get_async_session_context() as session:
+            result = await session.execute(
+                select(ResearchSearchRun)
+                .where(
+                    ResearchSearchRun.run_id == run_id,
+                    ResearchSearchRun.uid == uid,
+                )
+                .with_for_update()
+            )
+            record = result.scalar_one_or_none()
+            if record is None or record.status != "failed" or not bool(record.retryable):
+                return None
+            current = int(record.retry_count or 0)
+            if current >= max_retries:
+                return None
+            record.retry_count = current + 1
+            await session.flush()
+            return current + 1
 
     async def get(self, run_id: str, *, uid: str | None = None) -> ResearchSearchRun | None:
         filters = [ResearchSearchRun.run_id == run_id]
@@ -93,6 +121,7 @@ class ResearchSearchRunRepository:
                 select(ResearchSearchRun)
                 .options(
                     load_only(
+                        ResearchSearchRun.parent_run_id,
                         ResearchSearchRun.run_id,
                         ResearchSearchRun.kb_id,
                         ResearchSearchRun.raw_query,
@@ -106,6 +135,9 @@ class ResearchSearchRunRepository:
                         ResearchSearchRun.is_pinned,
                         ResearchSearchRun.error_type,
                         ResearchSearchRun.error_message,
+                        ResearchSearchRun.retryable,
+                        ResearchSearchRun.dependency,
+                        ResearchSearchRun.retry_count,
                         ResearchSearchRun.created_at,
                         ResearchSearchRun.started_at,
                         ResearchSearchRun.completed_at,
@@ -136,6 +168,7 @@ class ResearchSearchRunRepository:
     def serialize(record: ResearchSearchRun, *, include_result: bool = False) -> dict[str, Any]:
         payload = {
             "run_id": record.run_id,
+            "parent_run_id": record.parent_run_id,
             "kb_id": record.kb_id,
             "query": record.raw_query,
             "rewritten_query": record.rewritten_query,
@@ -150,6 +183,9 @@ class ResearchSearchRunRepository:
             "is_pinned": bool(record.is_pinned),
             "error_type": record.error_type,
             "error_message": record.error_message,
+            "retryable": bool(record.retryable),
+            "dependency": record.dependency,
+            "retry_count": int(record.retry_count or 0),
             "created_at": record.created_at.isoformat() if record.created_at else None,
             "started_at": record.started_at.isoformat() if record.started_at else None,
             "completed_at": record.completed_at.isoformat() if record.completed_at else None,

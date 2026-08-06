@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
 import { afterEach, mock, test } from 'node:test'
 
+import { moduleMockExportsKey } from './module_mock_compat.js'
+
 mock.module(new URL('../../src/stores/user.js', import.meta.url), {
-  exports: {
+  [moduleMockExportsKey]: {
     checkAdminPermission: () => {},
     checkSuperAdminPermission: () => {},
     useUserStore: () => ({
@@ -13,7 +15,7 @@ mock.module(new URL('../../src/stores/user.js', import.meta.url), {
 })
 
 mock.module('ant-design-vue', {
-  exports: {
+  [moduleMockExportsKey]: {
     message: { error: () => {} }
   }
 })
