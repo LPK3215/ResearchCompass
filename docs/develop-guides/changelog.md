@@ -8,6 +8,7 @@
 
 ## v0.11.0 (current)
 
+- 修复科研检索在向量服务余额不足或暂时不可用时直接阻塞的问题:仅在异常链明确指向 Embedding 失败时切换到 Milvus BM25 关键词召回,关闭不适用的重排,并在响应配置中标记 `retrieval_degraded` 与原因;其他检索/数据错误仍显式失败。ModelScope 凭据改为通过 `MODELSCOPE_ACCESS_TOKEN` 运行时环境变量注入,数据库不再保存明文 API Key,并补充降级判定单元回归测试。
 - 外部论文导入改为先持久化可恢复任务:Semantic Scholar 元数据/PDF 获取、对象存储上传及文件记录创建在任务 handler 内执行,临时依赖故障可进入统一重试态;阶段性 `file_id`/元数据写回任务 payload,避免解析失败重试时重复下载和创建文件记录。
 - 增加外部论文导入阶段幂等恢复:任务在文件记录已创建但 payload 检查点尚未写回时,按知识库和 Semantic Scholar 标识复用已有文件,避免重试重复下载与上传。
 - 新增证据引用审计查询接口 `GET /api/research/evidence/{evidence_id}/citations`,返回综述运行、运行状态、操作者和引用时间,并复用知识库权限校验。

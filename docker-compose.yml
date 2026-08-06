@@ -3,6 +3,9 @@ x-api-worker-env: &api-worker-env
   LITE_MODE: ${LITE_MODE:-false}
   RUNNING_IN_DOCKER: "true"
   YUXI_ENV: development
+  # Model provider credentials are supplied by the host environment or .env;
+  # never persist provider secrets in the database or source tree.
+  MODELSCOPE_ACCESS_TOKEN: ${MODELSCOPE_ACCESS_TOKEN:-}
   # Docker Desktop bind mounts can exhaust the native watcher during startup.
   WATCHFILES_FORCE_POLLING: ${WATCHFILES_FORCE_POLLING:-true}
   # DBs and other services

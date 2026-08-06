@@ -19,6 +19,13 @@ def test_search_mode_validation_preserves_strict_default():
     assert exc_info.value.error_type == "invalid_retrieval_config"
 
 
+def test_embedding_failure_detection_only_follows_exception_chain():
+    assert research_search_service._is_embedding_failure(ValueError("Embedding request failed"))
+    assert research_search_service._is_embedding_failure(
+        RuntimeError("query failed")
+    ) is False
+
+
 @pytest.mark.asyncio
 async def test_retry_search_run_rejects_non_retryable_failure(monkeypatch):
     class FakeRepository:

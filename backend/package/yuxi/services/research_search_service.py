@@ -53,6 +53,17 @@ def _elapsed(start: float) -> int:
     return round((time.perf_counter() - start) * 1000)
 
 
+def _is_embedding_failure(exc: BaseException) -> bool:
+    """仅识别向量服务失败，避免把任意检索错误错误地降级。"""
+    current: BaseException | None = exc
+    while current is not None:
+        message = str(current).lower()
+        if "embedding" in message or "向量" in message:
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
 def _parse_rewrite(content: str) -> dict[str, Any]:
     value = content.strip()
     value = re.sub(r"^```(?:json)?\s*|\s*```$", "", value, flags=re.IGNORECASE | re.DOTALL).strip()
@@ -470,23 +481,27 @@ async def search_papers(
             )
             return response
         started = time.perf_counter()
+        degraded_retrieval = False
         try:
             chunks = await knowledge_base.aquery(
-                rewrite["rewritten_query"],
-                kb_id,
-                strict_research=True,
-                search_mode="hybrid",
-                recall_top_k=recall_top_k,
-                final_top_k=recall_top_k,
-                use_reranker=True,
-                reranker_model=reranker_model,
-                use_graph_retrieval=False,
-                file_ids=file_ids,
-                include_distances=True,
-                similarity_threshold=0.0,
+                rewrite["rewritten_query"], kb_id, strict_research=True, search_mode="hybrid",
+                recall_top_k=recall_top_k, final_top_k=recall_top_k, use_reranker=True,
+                reranker_model=reranker_model, use_graph_retrieval=False, file_ids=file_ids,
+                include_distances=True, similarity_threshold=0.0,
             )
         except Exception as exc:
-            raise ResearchSearchError("retrieval_failure", "混合召回或重排序阶段失败") from exc
+            if not _is_embedding_failure(exc):
+                raise ResearchSearchError("retrieval_failure", "混合召回或重排序阶段失败") from exc
+            try:
+                chunks = await knowledge_base.aquery(
+                    rewrite["rewritten_query"], kb_id, strict_research=False, search_mode="keyword",
+                    recall_top_k=recall_top_k, final_top_k=recall_top_k, use_reranker=False,
+                    use_graph_retrieval=False, file_ids=file_ids, include_distances=True,
+                    similarity_threshold=0.0,
+                )
+                degraded_retrieval = True
+            except Exception as fallback_exc:
+                raise ResearchSearchError("retrieval_failure", "混合召回与关键词降级均失败") from fallback_exc
         timings["retrieval_ms"] = _elapsed(started)
         started = time.perf_counter()
         results = _aggregate_results(kb_id, chunks, recall_top_k)
@@ -514,6 +529,8 @@ async def search_papers(
             "graph_expansion": graph_expansion,
             "config": {
                 **retrieval_config,
+                **({"retrieval_degraded": True, "retrieval_degraded_reason": "embedding_unavailable"}
+                   if degraded_retrieval else {}),
                 **public_models,
                 **({"graph_status": graph_status} if graph_status is not None else {}),
             },
