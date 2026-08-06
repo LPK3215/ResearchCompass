@@ -141,6 +141,7 @@ class ResearchProjectPlanRepository:
             )
             if record is None:
                 return None, 0
+            previous_status = str(record.status)
             if require_no_open_tasks:
                 open_task_count = int(
                     await session.scalar(
@@ -163,7 +164,7 @@ class ResearchProjectPlanRepository:
                     project_id,
                     activity_type,
                     operator_uid=operator_uid,
-                    from_status=str(record.status) if "status" in values else None,
+                    from_status=previous_status if "status" in values else None,
                     to_status=str(values.get("status")) if "status" in values else None,
                     precondition={"require_no_open_tasks": require_no_open_tasks, "open_task_count": 0},
                     reference_id=record.milestone_id,
@@ -295,6 +296,7 @@ class ResearchProjectPlanRepository:
             )
             if record is None:
                 return None
+            previous_status = str(record.status)
             old_milestone_id = str(record.milestone_id) if record.milestone_id else None
             new_milestone_id = values.get("milestone_id", old_milestone_id)
             if new_milestone_id and not await self._locked_milestone(session, project_id, new_milestone_id):
@@ -321,7 +323,7 @@ class ResearchProjectPlanRepository:
                     project_id,
                     activity_type,
                     operator_uid=operator_uid,
-                    from_status=str(record.status) if "status" in values else None,
+                    from_status=previous_status if "status" in values else None,
                     to_status=str(values.get("status")) if "status" in values else None,
                     reference_id=record.task_id,
                     payload={
