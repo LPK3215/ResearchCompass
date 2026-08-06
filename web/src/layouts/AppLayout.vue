@@ -32,6 +32,7 @@ import TaskCenterDrawer from '@/components/TaskCenterDrawer.vue'
 import SettingsModal from '@/components/SettingsModal.vue'
 import ConversationNavSection from '@/components/ConversationNavSection.vue'
 import ConversationSearchModal from '@/components/ConversationSearchModal.vue'
+import NotificationCenter from '@/components/NotificationCenter.vue'
 import {
   AGENT_ENTRY_PATH,
   DEFAULT_PRODUCT_ENTRY,
@@ -430,6 +431,10 @@ provide('settingsModal', {
         />
       </div>
       <div class="foo">
+        <div class="nav-item notification-nav-item" @click.stop>
+          <NotificationCenter />
+          <span v-if="!sidebarCollapsed" class="nav-text">通知</span>
+        </div>
         <div class="github nav-item" @click.stop>
           <a-tooltip placement="right" :open="sidebarCollapsed ? undefined : false">
             <template #title>欢迎 Star</template>
