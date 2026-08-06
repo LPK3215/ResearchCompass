@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 
 from fastapi import HTTPException
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from yuxi.repositories.knowledge_chunk_repository import KnowledgeChunkRepository
 from yuxi.services.research_paper_service import _ensure_access
@@ -49,7 +50,10 @@ async def create_evidence(*, kb_id: str, chunk_id: str, current_user: User) -> d
             to_status="unverified",
             reason="evidence_created",
         ))
-        await session.flush()
+        try:
+            await session.flush()
+        except IntegrityError as exc:
+            raise HTTPException(status_code=409, detail="该知识片段已经录入为证据") from exc
         return serialize_evidence(row)
 
 
@@ -57,7 +61,9 @@ async def transition_evidence(*, evidence_id: str, status: str, reason: str | No
     if status not in {"verified", "invalid", "archived"}:
         raise HTTPException(status_code=422, detail="不支持的证据状态")
     async with pg_manager.get_async_session_context() as session:
-        row = await session.scalar(select(ResearchEvidence).where(ResearchEvidence.evidence_id == evidence_id))
+        row = await session.scalar(
+            select(ResearchEvidence).where(ResearchEvidence.evidence_id == evidence_id).with_for_update()
+        )
         if row is None:
             raise HTTPException(status_code=404, detail="证据不存在")
         await _ensure_access(current_user, str(row.kb_id))
