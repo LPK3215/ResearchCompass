@@ -41,15 +41,19 @@ import { notificationApi } from '@/apis/notification_api'
 const open = ref(false)
 const loading = ref(false)
 const items = ref([])
+const unreadTotal = ref(0)
 let pollTimer
 
-const unreadCount = computed(() => items.value.filter((item) => !item.read_at).length)
+const unreadCount = computed(() => unreadTotal.value)
 
 const load = async () => {
   loading.value = true
   try {
     const result = await notificationApi.list({ limit: 50 })
     items.value = result.items || []
+    unreadTotal.value = Number.isInteger(result.unread_total)
+      ? result.unread_total
+      : items.value.filter((item) => !item.read_at).length
   } catch (error) {
     if (open.value) message.error(error.message || '通知加载失败')
   } finally {
@@ -62,6 +66,7 @@ const read = async (item) => {
   try {
     await notificationApi.markRead(item.notification_id)
     item.read_at = new Date().toISOString()
+    unreadTotal.value = Math.max(0, unreadTotal.value - 1)
   } catch (error) {
     message.error(error.message || '通知标记失败')
   }

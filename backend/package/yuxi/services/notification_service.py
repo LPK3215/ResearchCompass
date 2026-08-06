@@ -35,13 +35,28 @@ async def list_notifications(*, recipient_uid: str, unread_only: bool, offset: i
         if unread_only:
             filters.append(UserNotification.read_at.is_(None))
         total = int(await session.scalar(select(func.count()).select_from(UserNotification).where(*filters)) or 0)
+        unread_total = int(
+            await session.scalar(
+                select(func.count())
+                .select_from(UserNotification)
+                .where(UserNotification.recipient_uid == recipient_uid, UserNotification.read_at.is_(None))
+            )
+            or 0
+        )
         result = await session.execute(
             select(UserNotification).where(*filters)
             .order_by(UserNotification.created_at.desc(), UserNotification.id.desc())
             .offset(offset).limit(limit)
         )
         items = [serialize_notification(item) for item in result.scalars().all()]
-        return {"items": items, "total": total, "offset": offset, "limit": limit, "has_more": offset + len(items) < total}
+        return {
+            "items": items,
+            "total": total,
+            "unread_total": unread_total,
+            "offset": offset,
+            "limit": limit,
+            "has_more": offset + len(items) < total,
+        }
 
 
 async def mark_notification_read(*, notification_id: str, recipient_uid: str) -> bool:
