@@ -113,6 +113,7 @@ def _pause_milestone_update(monkeypatch: pytest.MonkeyPatch) -> tuple[asyncio.Ev
         values: dict[str, Any],
         activity_type: str,
         require_no_open_tasks: bool = False,
+        operator_uid: str,
     ):
         reached_update.set()
         await resume_update.wait()
@@ -123,6 +124,7 @@ def _pause_milestone_update(monkeypatch: pytest.MonkeyPatch) -> tuple[asyncio.Ev
             values=values,
             activity_type=activity_type,
             require_no_open_tasks=require_no_open_tasks,
+            operator_uid=operator_uid,
         )
 
     monkeypatch.setattr(ResearchProjectPlanRepository, "update_milestone", update_milestone)

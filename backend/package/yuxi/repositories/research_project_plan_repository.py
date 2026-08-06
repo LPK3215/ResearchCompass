@@ -398,7 +398,6 @@ class ResearchProjectPlanRepository:
         asset_id: str,
         milestone_id: str | None,
         task_id: str | None,
-        operator_uid: str,
     ) -> bool:
         filters = [
             ResearchProjectPlanAssetLink.project_id == project_id,
@@ -418,6 +417,7 @@ class ResearchProjectPlanRepository:
         asset_id: str,
         milestone_id: str | None,
         task_id: str | None,
+        operator_uid: str,
     ) -> ResearchProjectPlanAssetLink | None:
         async with pg_manager.get_async_session_context() as session:
             asset = await session.scalar(
