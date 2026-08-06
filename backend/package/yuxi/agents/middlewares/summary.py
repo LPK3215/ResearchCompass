@@ -592,7 +592,11 @@ class YuxiSummarizationMiddleware(SummarizationMiddleware):
             system_message=request.system_message,
             tools=request.tools,
         )
-        truncated_messages, _ = self._truncate_args(effective_messages, initial_tokens)
+        truncated_messages, _ = self._truncate_args(
+            effective_messages,
+            request.system_message,
+            request.tools,
+        )
         total_tokens = self._count_request_tokens(
             truncated_messages,
             system_message=request.system_message,
@@ -684,7 +688,11 @@ class YuxiSummarizationMiddleware(SummarizationMiddleware):
             system_message=request.system_message,
             tools=request.tools,
         )
-        truncated_messages, _ = self._truncate_args(effective_messages, initial_tokens)
+        truncated_messages, _ = self._truncate_args(
+            effective_messages,
+            request.system_message,
+            request.tools,
+        )
         total_tokens = self._count_request_tokens(
             truncated_messages,
             system_message=request.system_message,

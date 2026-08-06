@@ -100,7 +100,7 @@ class YuxiFilesystemMiddleware(FilesystemMiddleware):
         if request.tool_call["name"] in _TOOL_RESULT_EVICTION_EXEMPT_TOOLS:
             return tool_result
 
-        return self._intercept_large_tool_result(tool_result)
+        return self._intercept_large_tool_result(tool_result, request.runtime)
 
     async def awrap_tool_call(self, request, handler):
         tool_result = await handler(request)
@@ -110,7 +110,7 @@ class YuxiFilesystemMiddleware(FilesystemMiddleware):
         if request.tool_call["name"] in _TOOL_RESULT_EVICTION_EXEMPT_TOOLS:
             return tool_result
 
-        return await self._aintercept_large_tool_result(tool_result)
+        return await self._aintercept_large_tool_result(tool_result, request.runtime)
 
 
 @dataclass(frozen=True)
