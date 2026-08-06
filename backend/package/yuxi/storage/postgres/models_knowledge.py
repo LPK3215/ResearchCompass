@@ -171,6 +171,52 @@ class ResearchProject(Base):
     archived_at = Column(DateTime(timezone=True))
 
 
+class ResearchProjectRisk(Base):
+    """研究项目风险登记,用于跟踪责任人、缓解措施及处置状态。"""
+
+    __tablename__ = "research_project_risks"
+    __table_args__ = (
+        UniqueConstraint("risk_id", name="uq_research_project_risks_id"),
+        CheckConstraint("severity IN ('low', 'medium', 'high', 'critical')", name="ck_research_project_risks_severity"),
+        CheckConstraint("status IN ('open', 'mitigating', 'accepted', 'resolved', 'closed')", name="ck_research_project_risks_status"),
+        Index("ix_research_project_risks_project_status", "project_id", "status"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    risk_id = Column(String(64), nullable=False, unique=True, index=True)
+    project_id = Column(String(64), ForeignKey("research_projects.project_id", ondelete="CASCADE"), nullable=False, index=True)
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=False)
+    severity = Column(String(16), nullable=False, default="medium", index=True)
+    status = Column(String(16), nullable=False, default="open", index=True)
+    owner_uid = Column(String(64), nullable=False, index=True)
+    mitigation = Column(Text, nullable=False, default="")
+    due_date = Column(Date)
+    created_by = Column(String(64), nullable=False)
+    resolved_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
+    updated_at = Column(DateTime(timezone=True), default=utc_now_naive, onupdate=utc_now_naive)
+
+
+class ResearchProjectRiskActivity(Base):
+    """风险字段和状态变化的不可变审计记录。"""
+
+    __tablename__ = "research_project_risk_activities"
+    __table_args__ = (Index("ix_research_project_risk_activities_risk_created", "risk_id", "created_at"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    activity_id = Column(String(64), nullable=False, unique=True, index=True)
+    risk_id = Column(String(64), ForeignKey("research_project_risks.risk_id", ondelete="CASCADE"), nullable=False, index=True)
+    project_id = Column(String(64), ForeignKey("research_projects.project_id", ondelete="CASCADE"), nullable=False, index=True)
+    operator_uid = Column(String(64), nullable=False)
+    activity_type = Column(String(32), nullable=False)
+    from_status = Column(String(16))
+    to_status = Column(String(16))
+    changes = Column(JSON_VALUE, nullable=False, default=dict)
+    precondition = Column(JSON_VALUE, nullable=False, default=dict)
+    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
+
+
 class ResearchProjectAsset(Base):
     """项目内经过源对象权限校验的论文或研究运行引用。"""
 

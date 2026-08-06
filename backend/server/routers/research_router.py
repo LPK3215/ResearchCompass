@@ -54,6 +54,9 @@ from yuxi.services.research_project_plan_service import (
     update_project_milestone,
     update_project_task,
 )
+from yuxi.services.research_project_risk_service import (
+    create_project_risk, list_project_risks, transition_project_risk, list_project_risk_activities,
+)
 from yuxi.services.research_project_report_service import export_research_project_report
 from yuxi.services.research_evidence_service import (
     create_evidence,
@@ -401,6 +404,26 @@ class CreateResearchProjectTaskDependencyRequest(BaseModel):
         return self
 
 
+class CreateResearchProjectRiskRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=255)
+    description: str = Field(..., min_length=1, max_length=12000)
+    severity: str = Field(default="medium", pattern=r"^(low|medium|high|critical)$")
+    owner_uid: str = Field(..., min_length=1, max_length=64)
+    mitigation: str = Field(default="", max_length=12000)
+    due_date: date | None = None
+
+    @field_validator("title", "description", "owner_uid", "mitigation")
+    @classmethod
+    def normalize_risk_text(cls, value: str) -> str:
+        return value.strip()
+
+
+class TransitionResearchProjectRiskRequest(BaseModel):
+    status: str = Field(..., pattern=r"^(open|mitigating|accepted|resolved|closed)$")
+    mitigation: str | None = Field(default=None, max_length=12000)
+    reason: str | None = Field(default=None, max_length=4000)
+
+
 class ResearchProjectTaskOrderRequest(BaseModel):
     milestone_id: str | None = Field(default=None, max_length=64)
     task_ids: list[str] = Field(..., min_length=1, max_length=1000)
@@ -745,6 +768,7 @@ _PROJECT_STATUS_MAP = {
     "asset_already_linked": 409,
     "project_archived": 409,
     "project_read_only": 409,
+    "risk_not_found": 404,
     "project_has_open_tasks": 409,
     "milestone_has_open_tasks": 409,
     "milestone_has_tasks": 409,
@@ -882,6 +906,44 @@ async def remove_project(project_id: str, current_user: User = Depends(get_requi
 async def project_plan(project_id: str, current_user: User = Depends(get_required_user)):
     try:
         return await get_research_project_plan(project_id=project_id, current_user=current_user)
+    except ResearchProjectError as exc:
+        raise _to_http_error(exc, _PROJECT_STATUS_MAP) from exc
+
+
+@research.get("/projects/{project_id}/risks")
+async def project_risks(project_id: str, current_user: User = Depends(get_required_user)):
+    try:
+        return {"items": await list_project_risks(project_id=project_id, current_user=current_user)}
+    except ResearchProjectError as exc:
+        raise _to_http_error(exc, _PROJECT_STATUS_MAP) from exc
+
+
+@research.post("/projects/{project_id}/risks", status_code=201)
+async def create_project_risk_route(project_id: str, payload: CreateResearchProjectRiskRequest, current_user: User = Depends(get_required_user)):
+    try:
+        return await create_project_risk(project_id=project_id, current_user=current_user, **payload.model_dump())
+    except ResearchProjectError as exc:
+        raise _to_http_error(exc, _PROJECT_STATUS_MAP) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@research.post("/projects/{project_id}/risks/{risk_id}/transition")
+async def transition_project_risk_route(project_id: str, risk_id: str, payload: TransitionResearchProjectRiskRequest, current_user: User = Depends(get_required_user)):
+    try:
+        return await transition_project_risk(project_id=project_id, risk_id=risk_id, current_user=current_user, **payload.model_dump())
+    except ResearchProjectError as exc:
+        raise _to_http_error(exc, _PROJECT_STATUS_MAP) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@research.get("/projects/{project_id}/risks/{risk_id}/activities")
+async def project_risk_activities(project_id: str, risk_id: str, current_user: User = Depends(get_required_user)):
+    try:
+        return {"items": await list_project_risk_activities(project_id=project_id, risk_id=risk_id, current_user=current_user)}
     except ResearchProjectError as exc:
         raise _to_http_error(exc, _PROJECT_STATUS_MAP) from exc
 

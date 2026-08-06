@@ -67,6 +67,23 @@ export const researchApi = {
   getProjectPlan: (projectId) =>
     apiGet(`/api/research/projects/${encodeURIComponent(projectId)}/plan`),
 
+  listProjectRisks: (projectId) =>
+    apiGet(`/api/research/projects/${encodeURIComponent(projectId)}/risks`),
+
+  createProjectRisk: (projectId, payload) =>
+    apiRequest(`/api/research/projects/${encodeURIComponent(projectId)}/risks`, {
+      method: 'POST', body: JSON.stringify(payload)
+    }),
+
+  transitionProjectRisk: (projectId, riskId, payload) =>
+    apiRequest(
+      `/api/research/projects/${encodeURIComponent(projectId)}/risks/${encodeURIComponent(riskId)}/transition`,
+      { method: 'POST', body: JSON.stringify(payload) }
+    ),
+
+  listProjectRiskActivities: (projectId, riskId) =>
+    apiGet(`/api/research/projects/${encodeURIComponent(projectId)}/risks/${encodeURIComponent(riskId)}/activities`),
+
   createProjectMilestone: (projectId, payload) =>
     apiRequest(`/api/research/projects/${encodeURIComponent(projectId)}/milestones`, {
       method: 'POST', body: JSON.stringify(payload)

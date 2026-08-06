@@ -344,6 +344,9 @@
                 </section>
               </a-tab-pane>
 
+              <a-tab-pane key="risks" tab="风险登记">
+                <ResearchProjectRisks :project="projectDetail" />
+              </a-tab-pane>
               <a-tab-pane key="activity" tab="最近活动">
                 <aside class="activity-panel">
                   <header class="section-heading">
@@ -594,6 +597,7 @@ import {
 import { researchApi } from '@/apis/research_api'
 import { useUserStore } from '@/stores/user'
 import ResearchProjectPlan from './ResearchProjectPlan.vue'
+import ResearchProjectRisks from './ResearchProjectRisks.vue'
 
 const props = defineProps({
   kbId: { type: String, default: '' },
