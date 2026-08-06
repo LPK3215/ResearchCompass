@@ -88,6 +88,16 @@ def test_critical_research_workflow_in_real_browser():
             page.get_by_text("已完成", exact=True).last.click()
             page.wait_for_timeout(500)
 
+            # Risk registration is a visible, auditable project workflow.
+            page.get_by_role("tab", name="风险登记").click()
+            page.get_by_test_id("create-research-risk").click()
+            page.get_by_test_id("research-risk-title").fill("浏览器回归风险")
+            page.get_by_test_id("research-risk-description").fill("验证风险登记与处置状态机")
+            page.get_by_test_id("research-risk-owner").fill(username)
+            page.get_by_test_id("research-risk-mitigation").fill("准备替代数据源")
+            page.get_by_role("button", name="保存", exact=True).last.click()
+            page.get_by_text("浏览器回归风险", exact=True).wait_for(state="visible", timeout=15_000)
+
             page.get_by_role("tab", name="智能检索").click()
             page.get_by_test_id("research-query").wait_for(state="visible")
             search_submit = page.get_by_test_id("research-search-submit")

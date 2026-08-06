@@ -1,13 +1,13 @@
 <template>
   <section class="risk-panel">
-    <header class="section-heading"><div><h3>风险登记</h3><span>{{ risks.length }} 项</span></div><a-button type="primary" :disabled="readOnly" @click="openCreate">登记风险</a-button></header>
+    <header class="section-heading"><div><h3>风险登记</h3><span>{{ risks.length }} 项</span></div><a-button data-testid="create-research-risk" type="primary" :disabled="readOnly" @click="openCreate">登记风险</a-button></header>
     <a-alert v-if="error" type="error" :message="error" show-icon />
     <a-empty v-else-if="!loading && !risks.length" description="暂无登记风险" />
     <a-list v-else :data-source="risks" bordered>
-      <template #renderItem="{ item }"><a-list-item><div class="risk-row"><div><strong>{{ item.title }}</strong><p>{{ item.description }}</p><small>{{ severityLabel(item.severity) }} · {{ item.owner_uid }} · {{ statusLabel(item.status) }}</small></div><a-select v-if="!readOnly" :value="item.status" :options="statusOptions" size="small" @change="status => transition(item, status)" /></div></a-list-item></template>
+      <template #renderItem="{ item }"><a-list-item><div class="risk-row"><div><strong>{{ item.title }}</strong><p>{{ item.description }}</p><small>{{ severityLabel(item.severity) }} · {{ item.owner_uid }} · {{ statusLabel(item.status) }}</small></div><a-select v-if="!readOnly" :data-testid="`research-risk-status-${item.risk_id}`" :value="item.status" :options="statusOptions" size="small" @change="status => transition(item, status)" /></div></a-list-item></template>
     </a-list>
-    <a-modal v-model:open="modalOpen" title="登记研究风险" :confirm-loading="saving" @ok="create">
-      <a-form layout="vertical"><a-form-item label="标题" required><a-input v-model:value="form.title" /></a-form-item><a-form-item label="描述" required><a-textarea v-model:value="form.description" :rows="3" /></a-form-item><a-form-item label="等级"><a-select v-model:value="form.severity" :options="severityOptions" /></a-form-item><a-form-item label="责任人 UID" required><a-input v-model:value="form.owner_uid" /></a-form-item><a-form-item label="缓解措施"><a-textarea v-model:value="form.mitigation" :rows="3" /></a-form-item></a-form>
+    <a-modal v-model:open="modalOpen" title="登记研究风险" ok-text="保存" cancel-text="取消" :confirm-loading="saving" @ok="create">
+      <a-form layout="vertical"><a-form-item label="标题" required><a-input data-testid="research-risk-title" v-model:value="form.title" /></a-form-item><a-form-item label="描述" required><a-textarea data-testid="research-risk-description" v-model:value="form.description" :rows="3" /></a-form-item><a-form-item label="等级"><a-select v-model:value="form.severity" :options="severityOptions" /></a-form-item><a-form-item label="责任人 UID" required><a-input data-testid="research-risk-owner" v-model:value="form.owner_uid" /></a-form-item><a-form-item label="缓解措施"><a-textarea data-testid="research-risk-mitigation" v-model:value="form.mitigation" :rows="3" /></a-form-item></a-form>
     </a-modal>
   </section>
 </template>
