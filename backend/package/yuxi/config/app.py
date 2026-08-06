@@ -41,11 +41,11 @@ class Config(BaseModel):
     enable_content_guard: bool = Field(default=False, description="是否启用内容审查")
     enable_content_guard_llm: bool = Field(default=False, description="是否启用LLM内容审查")
     default_model: str = Field(
-        default="siliconflow-cn:Pro/MiniMaxAI/MiniMax-M2.5",
+        default="deepseek:deepseek-chat",
         description="默认对话模型",
     )
     fast_model: str = Field(
-        default="siliconflow-cn:deepseek-ai/DeepSeek-V3",
+        default="deepseek:deepseek-chat",
         description="快速响应模型",
     )
     embed_model: str = Field(
@@ -57,7 +57,7 @@ class Config(BaseModel):
         description="默认 Re-Ranker 模型",
     )
     content_guard_llm_model: str = Field(
-        default="siliconflow-cn:Pro/MiniMaxAI/MiniMax-M2.5",
+        default="deepseek:deepseek-chat",
         description="内容审查LLM模型",
     )
     default_ocr_engine: str = Field(default=DEFAULT_OCR_ENGINE, description="默认 OCR 解析引擎")
