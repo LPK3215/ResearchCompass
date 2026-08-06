@@ -149,6 +149,30 @@ test('research project APIs encode project and asset identifiers', async () => {
   ])
 })
 
+test('research project risk APIs encode project and risk identifiers', async () => {
+  const payload = { title: '风险', description: '描述', severity: 'high', owner_uid: 'u/1', mitigation: '' }
+  await researchApi.listProjectRisks('project/1')
+  await researchApi.createProjectRisk('project/1', payload)
+  await researchApi.transitionProjectRisk('project/1', 'risk/1', { status: 'mitigating' })
+  await researchApi.listProjectRiskActivities('project/1', 'risk/1')
+
+  assert.deepEqual(calls, [
+    { method: 'apiGet', args: ['/api/research/projects/project%2F1/risks'] },
+    {
+      method: 'apiRequest',
+      args: ['/api/research/projects/project%2F1/risks', { method: 'POST', body: JSON.stringify(payload) }]
+    },
+    {
+      method: 'apiRequest',
+      args: [
+        '/api/research/projects/project%2F1/risks/risk%2F1/transition',
+        { method: 'POST', body: JSON.stringify({ status: 'mitigating' }) }
+      ]
+    },
+    { method: 'apiGet', args: ['/api/research/projects/project%2F1/risks/risk%2F1/activities'] }
+  ])
+})
+
 test('evidence lifecycle APIs encode identifiers and preserve audit contracts', async () => {
   const createPayload = { title: 'Evidence', source_chunk_id: 'chunk/1' }
   const transitionPayload = { to_status: 'verified', reason: 'Reviewed' }
