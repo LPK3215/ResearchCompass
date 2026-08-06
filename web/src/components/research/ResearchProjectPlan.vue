@@ -196,6 +196,11 @@
                     <Link2 :size="14" />
                   </a-button>
                 </a-tooltip>
+                <a-tooltip title="设置前置任务">
+                  <a-button type="text" class="icon-action" aria-label="设置前置任务" @click="openDependencyModal(task)">
+                    <Link2 :size="14" />
+                  </a-button>
+                </a-tooltip>
                 <a-popconfirm title="删除这个任务？" ok-text="删除" cancel-text="取消" @confirm="removeTask(task)">
                   <a-button type="text" danger class="icon-action" aria-label="删除任务"><Trash2 :size="14" /></a-button>
                 </a-popconfirm>
@@ -248,6 +253,7 @@
               <a-button type="text" class="icon-action" :disabled="taskIndex === plan.unassigned_tasks.length - 1 || ordering" aria-label="下移任务" @click="moveTask(null, plan.unassigned_tasks, taskIndex, 1)"><ArrowDown :size="14" /></a-button>
               <a-button type="text" class="icon-action" aria-label="编辑任务" @click="openTaskModal(task, null)"><Pencil :size="14" /></a-button>
               <a-button type="text" class="icon-action" aria-label="关联任务成果" @click="openLinkModal('task', task)"><Link2 :size="14" /></a-button>
+              <a-button type="text" class="icon-action" aria-label="设置前置任务" @click="openDependencyModal(task)"><Link2 :size="14" /></a-button>
               <a-popconfirm title="删除这个任务？" ok-text="删除" cancel-text="取消" @confirm="removeTask(task)">
                 <a-button type="text" danger class="icon-action" aria-label="删除任务"><Trash2 :size="14" /></a-button>
               </a-popconfirm>
@@ -341,6 +347,34 @@
         </a-form-item>
       </a-form>
     </a-modal>
+
+    <a-modal
+      v-model:open="dependencyModalOpen"
+      title="设置前置任务"
+      :confirm-loading="dependencySaving"
+      ok-text="保存"
+      cancel-text="取消"
+      @ok="saveDependencies"
+    >
+      <a-form layout="vertical">
+        <a-form-item label="当前任务"><a-input :value="dependencyTarget?.title" disabled /></a-form-item>
+        <a-form-item label="前置任务">
+          <a-select
+            v-model:value="selectedDependencyTaskIds"
+            mode="multiple"
+            show-search
+            option-filter-prop="label"
+            :options="dependencyOptions"
+            placeholder="选择完成后才能开始的任务"
+          />
+        </a-form-item>
+        <div class="dependency-current-list">
+          {{ dependencyTarget && dependencyLabels(dependencyTarget).length
+            ? `当前前置: ${dependencyLabels(dependencyTarget).join('、')}`
+            : '当前未设置前置任务' }}
+        </div>
+      </a-form>
+    </a-modal>
   </section>
 </template>
 
@@ -382,7 +416,9 @@ const taskUpdatingId = ref('')
 const milestoneModalOpen = ref(false)
 const taskModalOpen = ref(false)
 const linkModalOpen = ref(false)
+const dependencyModalOpen = ref(false)
 const linkSaving = ref(false)
+const dependencySaving = ref(false)
 const assetsLoading = ref(false)
 const projectAssets = ref([])
 const editingMilestone = ref(null)
@@ -390,6 +426,8 @@ const editingTask = ref(null)
 const linkTargetType = ref('')
 const linkTarget = ref(null)
 const selectedAssetIds = ref([])
+const dependencyTarget = ref(null)
+const selectedDependencyTaskIds = ref([])
 let requestSequence = 0
 
 const milestoneForm = reactive({ title: '', description: '', status: 'planned', targetDate: '' })
@@ -442,6 +480,49 @@ const taskById = computed(() => {
 const dependencyLabels = (task) => (plan.value?.task_dependencies || [])
   .filter((item) => item.task_id === task.task_id)
   .map((item) => taskById.value.get(item.depends_on_task_id)?.title || item.depends_on_task_id)
+const allTasks = computed(() => [...taskById.value.values()])
+const dependencyOptions = computed(() => allTasks.value
+  .filter((task) => task.task_id !== dependencyTarget.value?.task_id)
+  .map((task) => ({ value: task.task_id, label: task.title })))
+
+const openDependencyModal = (task) => {
+  dependencyTarget.value = task
+  selectedDependencyTaskIds.value = (plan.value?.task_dependencies || [])
+    .filter((item) => item.task_id === task.task_id)
+    .map((item) => item.depends_on_task_id)
+  dependencyModalOpen.value = true
+}
+
+const saveDependencies = async () => {
+  if (!dependencyTarget.value) return
+  dependencySaving.value = true
+  try {
+    const existing = (plan.value?.task_dependencies || [])
+      .filter((item) => item.task_id === dependencyTarget.value.task_id)
+    const selected = new Set(selectedDependencyTaskIds.value)
+    for (const item of existing) {
+      if (!selected.has(item.depends_on_task_id)) {
+        await researchApi.deleteProjectTaskDependency(props.project.project_id, item.dependency_id)
+      }
+    }
+    const existingIds = new Set(existing.map((item) => item.depends_on_task_id))
+    for (const dependsOnTaskId of selected) {
+      if (!existingIds.has(dependsOnTaskId)) {
+        await researchApi.createProjectTaskDependency(props.project.project_id, {
+          task_id: dependencyTarget.value.task_id,
+          depends_on_task_id: dependsOnTaskId
+        })
+      }
+    }
+    dependencyModalOpen.value = false
+    if (typeof document !== 'undefined') message.success('前置任务已更新')
+    await notifyChanged()
+  } catch (saveError) {
+    if (typeof document !== 'undefined') message.error(saveError.message || '前置任务更新失败')
+  } finally {
+    dependencySaving.value = false
+  }
+}
 const formatDate = (value) => {
   if (!value) return ''
   const parsed = new Date(`${value}T00:00:00`)
@@ -759,6 +840,8 @@ watch(() => props.project.project_id, () => {
   border-bottom: 1px solid var(--gray-100);
 }
 .task-status-select { width: 106px; }
+.task-dependencies { color: var(--color-text-secondary); }
+.dependency-current-list { color: var(--color-text-secondary); font-size: 12px; }
 .task-content { min-width: 0; }
 .task-title-line { flex-wrap: wrap; gap: 7px; }
 .task-title-line strong { overflow-wrap: anywhere; color: var(--color-text); font-size: 13px; }

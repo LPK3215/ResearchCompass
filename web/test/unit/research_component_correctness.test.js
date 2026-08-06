@@ -49,11 +49,15 @@ const testModuleStubs = {
   enforce: 'pre',
   resolveId(source) {
     const normalizedSource = source.replaceAll('\\', '/')
+    if (source === 'ant-design-vue') return '\0ant-design-vue-stub'
     if (normalizedSource.endsWith('/components/AgentChatComponent.vue')) return '\0agent-chat-stub'
     if (/\/stores\/chatThreads(?:\.js)?$/.test(normalizedSource)) return '\0chat-threads-stub'
     if (/\/stores\/user(?:\.js)?$/.test(normalizedSource)) return '\0user-store-stub'
   },
   load(id) {
+    if (id === '\0ant-design-vue-stub') {
+      return 'export const message = { success() {}, error() {}, warning() {} }'
+    }
     if (id === '\0agent-chat-stub') return 'export default { render: () => null }'
     if (id === '\0chat-threads-stub') {
       return 'export const useChatThreadsStore = () => ({ upsertThread() {} })'
@@ -302,6 +306,85 @@ test('project plan exposes an explicit refresh operation', async () => {
   } finally {
     mounted.unmount()
     researchApi.getProjectPlan = originalGetPlan
+  }
+})
+
+test('project plan dependency editor excludes the current task and persists changes', async () => {
+  const originalGetPlan = researchApi.getProjectPlan
+  const originalCreateDependency = researchApi.createProjectTaskDependency
+  const originalDeleteDependency = researchApi.deleteProjectTaskDependency
+  const created = []
+  const deleted = []
+  const project = { project_id: 'project-a', status: 'active' }
+  const taskA = { task_id: 'task-a', title: '设计实验' }
+  const taskB = { task_id: 'task-b', title: '整理数据' }
+  const taskC = { task_id: 'task-c', title: '撰写论文' }
+  researchApi.getProjectPlan = async () => ({
+    summary: { progress: 0, next_due_date: null, tasks: {}, milestones: {} },
+    milestones: [{ milestone_id: 'milestone-a', title: '阶段一', tasks: [taskA, taskB] }],
+    unassigned_tasks: [taskC],
+    task_dependencies: [{
+      dependency_id: 'dependency-1', task_id: 'task-c', depends_on_task_id: 'task-a'
+    }]
+  })
+  researchApi.createProjectTaskDependency = async (projectId, payload) => {
+    created.push({ projectId, payload })
+    return { dependency_id: 'dependency-2', ...payload }
+  }
+  researchApi.deleteProjectTaskDependency = async (projectId, dependencyId) => {
+    deleted.push({ projectId, dependencyId })
+  }
+
+  const mounted = mountComponent(ProjectPlan, { project })
+  try {
+    await waitFor(() => mounted.instance().setupState.plan?.task_dependencies?.length === 1)
+    mounted.instance().setupState.openDependencyModal(taskC)
+    assert.deepEqual(mounted.instance().setupState.dependencyOptions, [
+      { value: 'task-a', label: '设计实验' },
+      { value: 'task-b', label: '整理数据' }
+    ])
+    assert.deepEqual(mounted.instance().setupState.selectedDependencyTaskIds, ['task-a'])
+
+    mounted.instance().setupState.selectedDependencyTaskIds = ['task-b']
+    await mounted.instance().setupState.saveDependencies()
+    assert.deepEqual(deleted, [{ projectId: 'project-a', dependencyId: 'dependency-1' }])
+    assert.deepEqual(created, [{
+      projectId: 'project-a',
+      payload: { task_id: 'task-c', depends_on_task_id: 'task-b' }
+    }])
+    assert.equal(mounted.instance().setupState.dependencyModalOpen, false)
+  } finally {
+    mounted.unmount()
+    researchApi.getProjectPlan = originalGetPlan
+    researchApi.createProjectTaskDependency = originalCreateDependency
+    researchApi.deleteProjectTaskDependency = originalDeleteDependency
+  }
+})
+
+test('project plan dependency editor keeps modal open when saving fails', async () => {
+  const originalGetPlan = researchApi.getProjectPlan
+  const originalCreateDependency = researchApi.createProjectTaskDependency
+  const project = { project_id: 'project-a', status: 'active' }
+  const task = { task_id: 'task-a', title: '设计实验' }
+  researchApi.getProjectPlan = async () => ({
+    summary: { progress: 0, next_due_date: null, tasks: {}, milestones: {} },
+    milestones: [{ milestone_id: 'milestone-a', title: '阶段一', tasks: [task] }],
+    unassigned_tasks: [],
+    task_dependencies: []
+  })
+  researchApi.createProjectTaskDependency = async () => { throw new Error('依赖服务不可用') }
+
+  const mounted = mountComponent(ProjectPlan, { project })
+  try {
+    await waitFor(() => mounted.instance().setupState.plan !== null)
+    mounted.instance().setupState.openDependencyModal(task)
+    mounted.instance().setupState.selectedDependencyTaskIds = ['missing-task']
+    await mounted.instance().setupState.saveDependencies()
+    assert.equal(mounted.instance().setupState.dependencyModalOpen, true)
+  } finally {
+    mounted.unmount()
+    researchApi.getProjectPlan = originalGetPlan
+    researchApi.createProjectTaskDependency = originalCreateDependency
   }
 })
 
