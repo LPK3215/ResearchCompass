@@ -43,9 +43,11 @@ from yuxi.services.research_project_plan_service import (
     create_project_milestone,
     create_project_plan_asset_link,
     create_project_task,
+    create_project_task_dependency,
     delete_project_milestone,
     delete_project_plan_asset_link,
     delete_project_task,
+    delete_project_task_dependency,
     get_research_project_plan,
     reorder_project_milestones,
     reorder_project_tasks,
@@ -385,6 +387,17 @@ class UpdateResearchProjectTaskRequest(BaseModel):
         for field in ("title", "status", "priority"):
             if field in self.model_fields_set and not getattr(self, field):
                 raise ValueError(f"{field} 不能为空")
+        return self
+
+
+class CreateResearchProjectTaskDependencyRequest(BaseModel):
+    task_id: str = Field(..., min_length=1, max_length=64)
+    depends_on_task_id: str = Field(..., min_length=1, max_length=64)
+
+    @model_validator(mode="after")
+    def validate_distinct_tasks(self):
+        if self.task_id == self.depends_on_task_id:
+            raise ValueError("任务不能依赖自身")
         return self
 
 
@@ -744,6 +757,10 @@ _PROJECT_STATUS_MAP = {
     "invalid_asset_type": 422,
     "invalid_milestone_status": 422,
     "invalid_task_status": 422,
+    "task_dependency_self": 422,
+    "task_dependency_cycle": 422,
+    "task_dependency_exists": 409,
+    "task_dependency_not_found": 404,
     "invalid_task_priority": 422,
     "invalid_milestone_order": 422,
     "invalid_task_order": 422,
@@ -977,6 +994,32 @@ async def remove_task(
 ):
     try:
         await delete_project_task(project_id=project_id, task_id=task_id, current_user=current_user)
+    except ResearchProjectError as exc:
+        raise _to_http_error(exc, _PROJECT_STATUS_MAP) from exc
+
+
+@research.post("/projects/{project_id}/task-dependencies", status_code=201)
+async def create_task_dependency(
+    project_id: str,
+    payload: CreateResearchProjectTaskDependencyRequest,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await create_project_task_dependency(
+            project_id=project_id, current_user=current_user, **payload.model_dump()
+        )
+    except ResearchProjectError as exc:
+        raise _to_http_error(exc, _PROJECT_STATUS_MAP) from exc
+
+
+@research.delete("/projects/{project_id}/task-dependencies/{dependency_id}", status_code=204)
+async def delete_task_dependency(
+    project_id: str, dependency_id: str, current_user: User = Depends(get_required_user)
+):
+    try:
+        await delete_project_task_dependency(
+            project_id=project_id, dependency_id=dependency_id, current_user=current_user
+        )
     except ResearchProjectError as exc:
         raise _to_http_error(exc, _PROJECT_STATUS_MAP) from exc
 

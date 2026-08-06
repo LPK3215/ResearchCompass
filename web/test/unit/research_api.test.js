@@ -278,6 +278,25 @@ test('research project execution APIs preserve plan contracts and blob responses
   ])
 })
 
+test('research task dependency APIs encode identifiers and preserve mutation contracts', async () => {
+  await researchApi.createProjectTaskDependency('project/a', {
+    task_id: 'task/1', depends_on_task_id: 'task/0'
+  })
+  await researchApi.deleteProjectTaskDependency('project/a', 'dependency/1')
+  assert.deepEqual(calls.slice(-2), [
+    {
+      method: 'apiRequest',
+      args: ['/api/research/projects/project%2Fa/task-dependencies', {
+        method: 'POST', body: JSON.stringify({ task_id: 'task/1', depends_on_task_id: 'task/0' })
+      }]
+    },
+    {
+      method: 'apiRequest',
+      args: ['/api/research/projects/project%2Fa/task-dependencies/dependency%2F1', { method: 'DELETE' }]
+    }
+  ])
+})
+
 test('search history APIs encode ids and preserve management contracts', async () => {
   await researchApi.listSearchRuns('kb/team one', { offset: 20, limit: 20 })
   await researchApi.getSearchRun('run/1')

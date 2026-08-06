@@ -238,6 +238,63 @@ async def test_research_project_template_creates_complete_plan_and_rejects_unkno
                 assert response.status_code in {200, 404}, response.text
 
 
+async def test_research_project_task_dependencies_reject_cycles_and_serialize_plan(test_client):
+    knowledge_databases: list[str] = []
+    project_ids: list[str] = []
+
+    async with _temporary_superadmin(test_client) as admin:
+        headers = admin["headers"]
+        try:
+            kb = await _create_knowledge_database(test_client, headers)
+            knowledge_databases.append(kb["kb_id"])
+            project_response = await test_client.post(
+                f"/api/research/databases/{kb['kb_id']}/projects",
+                json={"title": "Dependency project", "research_question": "Can task order be enforced?"},
+                headers=headers,
+            )
+            assert project_response.status_code == 201, project_response.text
+            project_id = project_response.json()["project_id"]
+            project_ids.append(project_id)
+            task_ids = []
+            for title in ("Collect evidence", "Validate evidence", "Write synthesis"):
+                response = await test_client.post(
+                    f"/api/research/projects/{project_id}/tasks",
+                    json={"title": title},
+                    headers=headers,
+                )
+                assert response.status_code == 201, response.text
+                task_ids.append(response.json()["task_id"])
+
+            dependency_response = await test_client.post(
+                f"/api/research/projects/{project_id}/task-dependencies",
+                json={"task_id": task_ids[1], "depends_on_task_id": task_ids[0]},
+                headers=headers,
+            )
+            assert dependency_response.status_code == 201, dependency_response.text
+            dependency_id = dependency_response.json()["dependency_id"]
+            cycle_response = await test_client.post(
+                f"/api/research/projects/{project_id}/task-dependencies",
+                json={"task_id": task_ids[0], "depends_on_task_id": task_ids[1]},
+                headers=headers,
+            )
+            assert cycle_response.status_code == 422, cycle_response.text
+            assert cycle_response.json()["detail"]["error"] == "task_dependency_cycle"
+            plan_response = await test_client.get(f"/api/research/projects/{project_id}/plan", headers=headers)
+            assert plan_response.status_code == 200, plan_response.text
+            assert plan_response.json()["task_dependencies"][0]["dependency_id"] == dependency_id
+            delete_response = await test_client.delete(
+                f"/api/research/projects/{project_id}/task-dependencies/{dependency_id}", headers=headers
+            )
+            assert delete_response.status_code == 204, delete_response.text
+        finally:
+            for project_id in project_ids:
+                response = await test_client.delete(f"/api/research/projects/{project_id}", headers=headers)
+                assert response.status_code in {204, 404}, response.text
+            for kb_id in reversed(knowledge_databases):
+                response = await test_client.delete(f"/api/knowledge/databases/{kb_id}", headers=headers)
+                assert response.status_code in {200, 404}, response.text
+
+
 async def _seed_academic_paper(kb_id: str) -> dict[str, str]:
     suffix = uuid.uuid4().hex[:12]
     file_id = f"file_{suffix}"

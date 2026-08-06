@@ -39,6 +39,7 @@ from yuxi.storage.postgres.models_knowledge import (
     ResearchProjectMilestone,
     ResearchProjectPlanAssetLink,
     ResearchProjectTask,
+    ResearchProjectTaskDependency,
 )
 from yuxi.utils.datetime_utils import utc_now_naive
 
@@ -98,6 +99,17 @@ def serialize_task(task: ResearchProjectTask, links: list[dict[str, Any]]) -> di
     }
 
 
+def serialize_task_dependency(dependency: ResearchProjectTaskDependency) -> dict[str, Any]:
+    return {
+        "dependency_id": dependency.dependency_id,
+        "project_id": dependency.project_id,
+        "task_id": dependency.task_id,
+        "depends_on_task_id": dependency.depends_on_task_id,
+        "created_by": dependency.created_by,
+        "created_at": dependency.created_at.isoformat() if dependency.created_at else None,
+    }
+
+
 def serialize_asset_link(
     link: ResearchProjectPlanAssetLink,
     asset: ResearchProjectAsset,
@@ -126,6 +138,7 @@ async def get_research_project_plan(
     project = project or await get_owned_project(project_id, current_user)
     repository = ResearchProjectPlanRepository()
     milestones, tasks, link_records = await repository.get_plan_records(project_id)
+    dependencies = await repository.list_task_dependencies(project_id)
     assets = list({asset.asset_id: asset for _, asset in link_records}.values())
     if available_asset_ids is None:
         available_asset_ids = await get_available_project_asset_ids(project, current_user, assets)
@@ -154,6 +167,7 @@ async def get_research_project_plan(
         "milestones": serialized_milestones,
         "unassigned_tasks": task_groups.get(None, []),
         "asset_links": links,
+        "task_dependencies": [serialize_task_dependency(item) for item in dependencies],
     }
 
 
@@ -323,6 +337,54 @@ async def delete_project_task(*, project_id: str, task_id: str, current_user: Us
         raise ResearchProjectError("task_not_found", "任务不存在")
 
 
+async def create_project_task_dependency(
+    *, project_id: str, task_id: str, depends_on_task_id: str, current_user: User
+) -> dict[str, Any]:
+    project = await get_owned_project(project_id, current_user)
+    ensure_project_writable(project)
+    if task_id == depends_on_task_id:
+        raise ResearchProjectError("task_dependency_self", "任务不能依赖自身")
+    repository = ResearchProjectPlanRepository()
+    dependencies = await repository.list_task_dependencies(project_id)
+    graph: dict[str, set[str]] = {}
+    for item in dependencies:
+        graph.setdefault(str(item.task_id), set()).add(str(item.depends_on_task_id))
+    graph.setdefault(task_id, set()).add(depends_on_task_id)
+    pending = [depends_on_task_id]
+    visited: set[str] = set()
+    while pending:
+        node = pending.pop()
+        if node == task_id:
+            raise ResearchProjectError("task_dependency_cycle", "任务依赖不能形成循环")
+        if node in visited:
+            continue
+        visited.add(node)
+        pending.extend(graph.get(node, set()))
+    try:
+        record = await _execute_plan_write(
+            repository.create_task_dependency(
+                project_id, task_id, depends_on_task_id, created_by=str(current_user.uid)
+            )
+        )
+    except IntegrityError as exc:
+        raise ResearchProjectError("task_dependency_exists", "该任务依赖关系已存在") from exc
+    if record is None:
+        raise ResearchProjectError("task_not_found", "任务不存在或不属于当前项目")
+    return serialize_task_dependency(record)
+
+
+async def delete_project_task_dependency(*, project_id: str, dependency_id: str, current_user: User) -> None:
+    project = await get_owned_project(project_id, current_user)
+    ensure_project_writable(project)
+    record = await _execute_plan_write(
+        ResearchProjectPlanRepository().delete_task_dependency(
+            project_id, dependency_id, operator_uid=str(current_user.uid)
+        )
+    )
+    if record is None:
+        raise ResearchProjectError("task_dependency_not_found", "任务依赖关系不存在")
+
+
 async def reorder_project_tasks(
     *,
     project_id: str,
@@ -407,15 +469,18 @@ __all__ = [
     "create_project_milestone",
     "create_project_plan_asset_link",
     "create_project_task",
+    "create_project_task_dependency",
     "delete_project_milestone",
     "delete_project_plan_asset_link",
     "delete_project_task",
+    "delete_project_task_dependency",
     "get_research_project_plan",
     "reorder_project_milestones",
     "reorder_project_tasks",
     "serialize_asset_link",
     "serialize_milestone",
     "serialize_task",
+    "serialize_task_dependency",
     "update_project_milestone",
     "update_project_task",
 ]

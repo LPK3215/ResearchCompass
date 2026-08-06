@@ -21,6 +21,7 @@ from yuxi.storage.postgres.models_knowledge import (
     ResearchProjectMilestone,
     ResearchProjectPlanAssetLink,
     ResearchProjectTask,
+    ResearchProjectTaskDependency,
 )
 from yuxi.utils.datetime_utils import utc_now_naive
 
@@ -30,6 +31,73 @@ class ResearchProjectPlanWriteConflict(RuntimeError):
 
 
 class ResearchProjectPlanRepository:
+    async def list_task_dependencies(self, project_id: str) -> list[ResearchProjectTaskDependency]:
+        async with pg_manager.get_async_session_context() as session:
+            result = await session.execute(
+                select(ResearchProjectTaskDependency)
+                .where(ResearchProjectTaskDependency.project_id == project_id)
+                .order_by(ResearchProjectTaskDependency.id)
+            )
+            return list(result.scalars().all())
+
+    async def create_task_dependency(
+        self, project_id: str, task_id: str, depends_on_task_id: str, *, created_by: str
+    ) -> ResearchProjectTaskDependency | None:
+        async with pg_manager.get_async_session_context() as session:
+            task_ids = await session.execute(
+                select(ResearchProjectTask.task_id).where(
+                    ResearchProjectTask.project_id == project_id,
+                    ResearchProjectTask.task_id.in_([task_id, depends_on_task_id]),
+                )
+            )
+            if len(task_ids.scalars().all()) != 2:
+                return None
+            record = ResearchProjectTaskDependency(
+                dependency_id=uuid.uuid4().hex,
+                project_id=project_id,
+                task_id=task_id,
+                depends_on_task_id=depends_on_task_id,
+                created_by=created_by,
+            )
+            session.add(record)
+            session.add(
+                build_project_activity(
+                    project_id,
+                    "task_dependency_created",
+                    operator_uid=created_by,
+                    reference_id=record.dependency_id,
+                    payload={"task_id": task_id, "depends_on_task_id": depends_on_task_id},
+                )
+            )
+            await self._touch_project(session, project_id)
+            await session.flush()
+            return record
+
+    async def delete_task_dependency(
+        self, project_id: str, dependency_id: str, *, operator_uid: str
+    ) -> ResearchProjectTaskDependency | None:
+        async with pg_manager.get_async_session_context() as session:
+            record = await session.scalar(
+                select(ResearchProjectTaskDependency).where(
+                    ResearchProjectTaskDependency.project_id == project_id,
+                    ResearchProjectTaskDependency.dependency_id == dependency_id,
+                ).with_for_update()
+            )
+            if record is None:
+                return None
+            session.add(
+                build_project_activity(
+                    project_id,
+                    "task_dependency_deleted",
+                    operator_uid=operator_uid,
+                    reference_id=dependency_id,
+                    payload={"task_id": record.task_id, "depends_on_task_id": record.depends_on_task_id},
+                )
+            )
+            await session.delete(record)
+            await self._touch_project(session, project_id)
+            return record
+
     async def get_plan_records(
         self, project_id: str
     ) -> tuple[

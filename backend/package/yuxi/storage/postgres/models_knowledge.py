@@ -273,6 +273,32 @@ class ResearchProjectTask(Base):
     completed_at = Column(DateTime(timezone=True))
 
 
+class ResearchProjectTaskDependency(Base):
+    """同一研究项目内任务的前置依赖关系。"""
+
+    __tablename__ = "research_project_task_dependencies"
+    __table_args__ = (
+        UniqueConstraint("dependency_id", name="uq_research_project_task_dependencies_id"),
+        UniqueConstraint(
+            "project_id", "task_id", "depends_on_task_id", name="uq_research_project_task_dependency_pair"
+        ),
+        CheckConstraint("task_id <> depends_on_task_id", name="ck_research_project_task_dependency_not_self"),
+        Index("ix_research_project_task_dependencies_project_task", "project_id", "task_id"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    dependency_id = Column(String(64), nullable=False, unique=True, index=True)
+    project_id = Column(
+        String(64), ForeignKey("research_projects.project_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    task_id = Column(String(64), ForeignKey("research_project_tasks.task_id", ondelete="CASCADE"), nullable=False)
+    depends_on_task_id = Column(
+        String(64), ForeignKey("research_project_tasks.task_id", ondelete="CASCADE"), nullable=False
+    )
+    created_by = Column(String(64), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
+
+
 class ResearchProjectPlanAssetLink(Base):
     """项目成果与一个里程碑或任务之间的计划关联。"""
 

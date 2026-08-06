@@ -146,6 +146,9 @@
                     <CalendarDays :size="13" />{{ formatDate(task.due_date) || '未设置截止日期' }}
                   </span>
                   <span v-if="task.asset_links.length"><Paperclip :size="13" />{{ task.asset_links.length }} 项证据</span>
+                  <span v-if="dependencyLabels(task).length" class="task-dependencies">
+                    前置: {{ dependencyLabels(task).join('、') }}
+                  </span>
                 </div>
                 <div v-if="task.asset_links.length" class="linked-assets">
                   <span
@@ -428,6 +431,17 @@ const linkableAssetOptions = computed(() => {
 
 const milestoneStatusLabel = (status) => milestoneStatusOptions.find((item) => item.value === status)?.label || status
 const priorityLabel = (priority) => priorityOptions.find((item) => item.value === priority)?.label || priority
+const taskById = computed(() => {
+  const result = new Map()
+  for (const milestone of plan.value?.milestones || []) {
+    for (const task of milestone.tasks || []) result.set(task.task_id, task)
+  }
+  for (const task of plan.value?.unassigned_tasks || []) result.set(task.task_id, task)
+  return result
+})
+const dependencyLabels = (task) => (plan.value?.task_dependencies || [])
+  .filter((item) => item.task_id === task.task_id)
+  .map((item) => taskById.value.get(item.depends_on_task_id)?.title || item.depends_on_task_id)
 const formatDate = (value) => {
   if (!value) return ''
   const parsed = new Date(`${value}T00:00:00`)

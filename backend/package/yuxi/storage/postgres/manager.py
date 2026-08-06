@@ -194,6 +194,18 @@ class PostgresManager(metaclass=SingletonMeta):
             "ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS dependency VARCHAR(64)",
             "ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0",
             "CREATE INDEX IF NOT EXISTS ix_research_search_runs_parent ON research_search_runs (parent_run_id)",
+            """CREATE TABLE IF NOT EXISTS research_project_task_dependencies (
+                id SERIAL PRIMARY KEY,
+                dependency_id VARCHAR(64) UNIQUE NOT NULL,
+                project_id VARCHAR(64) NOT NULL REFERENCES research_projects(project_id) ON DELETE CASCADE,
+                task_id VARCHAR(64) NOT NULL REFERENCES research_project_tasks(task_id) ON DELETE CASCADE,
+                depends_on_task_id VARCHAR(64) NOT NULL REFERENCES research_project_tasks(task_id) ON DELETE CASCADE,
+                created_by VARCHAR(64) NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                CONSTRAINT uq_research_project_task_dependency_pair UNIQUE(project_id, task_id, depends_on_task_id),
+                CONSTRAINT ck_research_project_task_dependency_not_self CHECK(task_id <> depends_on_task_id)
+            )""",
+            "CREATE INDEX IF NOT EXISTS ix_research_project_task_dependencies_project_task ON research_project_task_dependencies (project_id, task_id)",
             """CREATE TABLE IF NOT EXISTS user_notifications (
                 id SERIAL PRIMARY KEY, notification_id VARCHAR(64) UNIQUE NOT NULL,
                 recipient_uid VARCHAR(64) NOT NULL, notification_type VARCHAR(64) NOT NULL,

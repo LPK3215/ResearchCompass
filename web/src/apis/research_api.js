@@ -106,6 +106,17 @@ export const researchApi = {
       { method: 'DELETE' }
     ),
 
+  createProjectTaskDependency: (projectId, payload) =>
+    apiRequest(`/api/research/projects/${encodeURIComponent(projectId)}/task-dependencies`, {
+      method: 'POST', body: JSON.stringify(payload)
+    }),
+
+  deleteProjectTaskDependency: (projectId, dependencyId) =>
+    apiRequest(
+      `/api/research/projects/${encodeURIComponent(projectId)}/task-dependencies/${encodeURIComponent(dependencyId)}`,
+      { method: 'DELETE' }
+    ),
+
   reorderProjectTasks: (projectId, payload) =>
     apiRequest(`/api/research/projects/${encodeURIComponent(projectId)}/tasks/order`, {
       method: 'PUT', body: JSON.stringify(payload)
