@@ -6,11 +6,11 @@
         <span>{{ plan?.summary?.tasks?.open || 0 }} 项待完成</span>
       </div>
       <div v-if="!readOnly" class="plan-actions">
-        <a-button class="lucide-icon-btn" @click="openTaskModal(null, null)">
+        <a-button data-testid="create-research-task" class="lucide-icon-btn" @click="openTaskModal(null, null)">
           <template #icon><ListPlus :size="15" /></template>
           新建任务
         </a-button>
-        <a-button type="primary" class="lucide-icon-btn" @click="openMilestoneModal(null)">
+        <a-button data-testid="create-research-milestone" type="primary" class="lucide-icon-btn" @click="openMilestoneModal(null)">
           <template #icon><Flag :size="15" /></template>
           新建里程碑
         </a-button>
@@ -128,6 +128,7 @@
           <div v-if="milestone.tasks.length" class="task-list">
             <article v-for="(task, taskIndex) in milestone.tasks" :key="task.task_id" class="task-row">
               <a-select
+                data-testid="research-task-status"
                 :value="task.status"
                 :options="taskStatusOptions"
                 :disabled="readOnly || taskUpdatingId === task.task_id"
@@ -216,6 +217,7 @@
         <div v-if="plan.unassigned_tasks.length" class="task-list">
           <article v-for="(task, taskIndex) in plan.unassigned_tasks" :key="task.task_id" class="task-row">
             <a-select
+              data-testid="research-task-status"
               :value="task.status"
               :options="taskStatusOptions"
               :disabled="readOnly || taskUpdatingId === task.task_id"
@@ -270,7 +272,7 @@
     >
       <a-form layout="vertical">
         <a-form-item label="里程碑名称" required>
-          <a-input v-model:value="milestoneForm.title" :maxlength="255" show-count />
+          <a-input data-testid="research-milestone-title" v-model:value="milestoneForm.title" :maxlength="255" show-count />
         </a-form-item>
         <a-form-item label="说明">
           <a-textarea v-model:value="milestoneForm.description" :rows="3" :maxlength="12000" show-count />
@@ -297,7 +299,7 @@
     >
       <a-form layout="vertical">
         <a-form-item label="任务名称" required>
-          <a-input v-model:value="taskForm.title" :maxlength="255" show-count />
+          <a-input data-testid="research-task-title" v-model:value="taskForm.title" :maxlength="255" show-count />
         </a-form-item>
         <a-form-item label="说明">
           <a-textarea v-model:value="taskForm.description" :rows="3" :maxlength="12000" show-count />

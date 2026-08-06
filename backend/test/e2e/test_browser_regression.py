@@ -8,6 +8,7 @@ configured account is unavailable instead of being reported as passed.
 from __future__ import annotations
 
 import os
+import uuid
 
 import pytest
 
@@ -69,6 +70,24 @@ def test_critical_research_workflow_in_real_browser():
 
             # Critical controls must be rendered and usable before any write action.
             page.get_by_test_id("create-research-project").wait_for(state="visible")
+            project_title = f"浏览器回归项目-{uuid.uuid4().hex[:8]}"
+            page.get_by_test_id("create-research-project").click()
+            page.get_by_test_id("project-title").fill(project_title)
+            page.get_by_test_id("project-research-question").fill("验证科研项目主链路的浏览器回归")
+            page.get_by_role("button", name="保存", exact=True).last.click()
+            page.get_by_text(project_title, exact=True).wait_for(state="visible", timeout=15_000)
+            page.get_by_test_id("create-research-milestone").click()
+            page.get_by_test_id("research-milestone-title").fill("浏览器回归里程碑")
+            page.get_by_role("button", name="保存", exact=True).last.click()
+            page.get_by_text("浏览器回归里程碑", exact=True).wait_for(state="visible", timeout=15_000)
+            page.get_by_test_id("create-research-task").click()
+            page.get_by_test_id("research-task-title").fill("浏览器回归任务")
+            page.get_by_role("button", name="保存", exact=True).last.click()
+            page.get_by_text("浏览器回归任务", exact=True).wait_for(state="visible", timeout=15_000)
+            page.get_by_test_id("research-task-status").first.click()
+            page.get_by_text("已完成", exact=True).last.click()
+            page.wait_for_timeout(500)
+
             page.get_by_role("tab", name="智能检索").click()
             page.get_by_test_id("research-query").wait_for(state="visible")
             search_submit = page.get_by_test_id("research-search-submit")
