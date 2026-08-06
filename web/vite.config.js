@@ -13,6 +13,8 @@ export default defineConfig(({ mode }) => {
       }
     },
     server: {
+      // Compose browser regression reaches Vite through the service hostname.
+      allowedHosts: ['web-dev', 'localhost'],
       proxy: {
         '^/api': {
           target: env.VITE_API_URL || 'http://api:5050',

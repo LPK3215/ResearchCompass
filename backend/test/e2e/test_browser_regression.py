@@ -31,14 +31,17 @@ def _required_environment() -> tuple[str, str, str]:
 def _assert_loaded(page, path: str) -> None:
     page.goto(path, wait_until="domcontentloaded")
     page.wait_for_load_state("networkidle")
-    assert page.locator("body").inner_text(timeout=15).strip()
+    assert page.locator("body").inner_text(timeout=15_000).strip()
 
 
 def test_critical_research_workflow_in_real_browser():
     base_url, username, password = _required_environment()
     with playwright.sync_playwright() as runtime:
         try:
-            browser = runtime.chromium.launch(headless=True)
+            browser = runtime.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage"],
+            )
         except Exception as exc:  # noqa: BLE001
             pytest.skip(f"Chromium is not installed or cannot start: {type(exc).__name__}")
         context = browser.new_context(base_url=base_url)
@@ -61,7 +64,8 @@ def test_critical_research_workflow_in_real_browser():
 
             # The project page must expose the project workflow entry point.
             page.goto("/research", wait_until="domcontentloaded")
-            assert page.get_by_text("研究项目", exact=False).count() > 0
+            project_heading = page.get_by_text("研究项目", exact=False).first
+            project_heading.wait_for(state="visible", timeout=15_000)
 
             # Critical controls must be rendered and usable before any write action.
             page.get_by_test_id("create-research-project").wait_for(state="visible")
@@ -72,16 +76,28 @@ def test_critical_research_workflow_in_real_browser():
 
             # Registration validation is exercised without creating an account.
             page.goto("/register", wait_until="domcontentloaded")
-            page.get_by_placeholder("2-20 个字符,中英文/数字/下划线").fill("x")
-            page.get_by_placeholder("至少 8 位").fill("short")
-            page.get_by_placeholder("再次输入密码").fill("short")
-            page.get_by_role("button", name="注册").click()
+            page.wait_for_load_state("networkidle")
+            page.get_by_text("创建你的账号", exact=False).wait_for(state="visible", timeout=15_000)
+            registration_inputs = page.locator("input")
+            registration_inputs.nth(0).fill("x")
+            registration_inputs.nth(1).fill("short")
+            registration_inputs.nth(2).fill("short")
+            page.locator('input[type="checkbox"]').check()
+            page.locator("button").filter(has_text="注").last.click()
             assert page.get_by_text("用户名仅支持", exact=False).count() > 0 or page.get_by_text("密码至少", exact=False).count() > 0
 
             # Browser-side API calls verify the same authenticated session can
             # reach notification and research endpoints used by the UI.
-            notifications = page.request.get(f"{base_url}/api/notifications?limit=1")
-            assert notifications.ok, notifications.text()
+            notifications = page.evaluate(
+                """async () => {
+                    const token = localStorage.getItem('user_token');
+                    const response = await fetch('/api/notifications?limit=1', {
+                        headers: {Authorization: `Bearer ${token}`},
+                    });
+                    return {ok: response.ok, body: await response.text()};
+                }"""
+            )
+            assert notifications["ok"], notifications["body"]
         finally:
             context.close()
             browser.close()
