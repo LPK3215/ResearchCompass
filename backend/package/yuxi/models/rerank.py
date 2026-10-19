@@ -1,4 +1,5 @@
 import asyncio
+import os
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Sequence
 from typing import Any
@@ -8,6 +9,22 @@ import numpy as np
 
 from yuxi.models.providers.cache import model_cache
 from yuxi.utils import get_docker_safe_url, logger
+
+DEFAULT_RERANK_TIMEOUT_SECONDS = 30.0
+
+
+def get_rerank_timeout_seconds() -> float:
+    """重排请求超时秒数，可用 RERANK_TIMEOUT_SECONDS 覆盖，适配本地 CPU 推理等慢速后端。"""
+    raw = os.getenv("RERANK_TIMEOUT_SECONDS", "").strip()
+    if not raw:
+        return DEFAULT_RERANK_TIMEOUT_SECONDS
+    try:
+        value = float(raw)
+    except ValueError:
+        return DEFAULT_RERANK_TIMEOUT_SECONDS
+    if value <= 0:
+        return DEFAULT_RERANK_TIMEOUT_SECONDS
+    return value
 
 
 def sigmoid(x):
@@ -21,7 +38,7 @@ class BaseReranker(ABC):
         self.api_key = api_key
         self.headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
         self.session: aiohttp.ClientSession | None = None
-        self.timeout = aiohttp.ClientTimeout(total=30)
+        self.timeout = aiohttp.ClientTimeout(total=get_rerank_timeout_seconds())
         self.parameters: dict[str, Any] = dict(kwargs.get("parameters", {}))
 
     async def _ensure_session(self) -> None:
