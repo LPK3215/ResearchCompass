@@ -203,6 +203,7 @@ async def _generate_benchmark_item_once(
     generation_mode: str,
     graph_expand_top_k: int,
     chunks_by_id: dict[str, dict[str, Any]],
+    rng: random.Random,
 ) -> dict[str, Any] | None:
     if generation_mode == "graph_enhanced":
         graph_anchor_chunks = [
@@ -210,7 +211,7 @@ async def _generate_benchmark_item_once(
         ]
         if not graph_anchor_chunks:
             raise ValueError("No graph indexed chunks with entities found in knowledge base")
-        anchor_chunk = graph_anchor_chunks[random.randrange(len(graph_anchor_chunks))]
+        anchor_chunk = graph_anchor_chunks[rng.randrange(len(graph_anchor_chunks))]
         ctx_chunks = await select_graph_enhanced_chunks(
             kb_id=kb_id,
             anchor_chunk=anchor_chunk,
@@ -221,7 +222,7 @@ async def _generate_benchmark_item_once(
         if ctx_chunks is None:
             return None
     else:
-        anchor_chunk = all_chunks[random.randrange(len(all_chunks))]
+        anchor_chunk = all_chunks[rng.randrange(len(all_chunks))]
         neighbor_chunks = await select_neighbor_chunks_by_kb_query(
             kb_instance=kb_instance,
             kb_id=kb_id,
@@ -263,6 +264,8 @@ async def iter_generated_benchmark_items(
     concurrency_count: int = DEFAULT_BENCHMARK_GENERATION_CONCURRENCY,
     generation_mode: str = "vector",
     graph_expand_top_k: int = DEFAULT_GRAPH_EXPAND_TOP_K,
+    seed: int | str | None = None,
+    deduplicate: bool = False,
     progress_cb: Callable[[int, str], Any] | None = None,
     cancel_cb: Callable[[], Any] | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
@@ -294,6 +297,8 @@ async def iter_generated_benchmark_items(
     actual_worker_count = min(worker_count, max(count, 1), max_attempts)
     generated = 0
     results: list[tuple[int, dict[str, Any]]] = []
+    seen_queries: set[str] = set()
+    rng = random.Random(seed)
     state_lock = asyncio.Lock()
     queue: asyncio.Queue[int] = asyncio.Queue()
 
@@ -322,12 +327,20 @@ async def iter_generated_benchmark_items(
                     generation_mode=generation_mode,
                     graph_expand_top_k=graph_expand_top_k,
                     chunks_by_id=chunks_by_id,
+                    rng=rng,
                 )
                 if item is None:
+                    continue
+                query_key = " ".join(str(item.get("query") or "").casefold().split())
+                if not query_key:
                     continue
                 progress = None
                 message = None
                 async with state_lock:
+                    if deduplicate and query_key in seen_queries:
+                        continue
+                    if deduplicate:
+                        seen_queries.add(query_key)
                     if generated >= count:
                         continue
                     generated += 1

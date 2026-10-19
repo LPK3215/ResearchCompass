@@ -25,7 +25,7 @@ def build_answer_prompt(query: str, retrieved_chunks: list[dict[str, Any]], max_
         if content:
             context_docs.append(f"文档 {idx + 1}:\n{content}")
 
-    context_text = "\\n\\n".join(context_docs)
+    context_text = "\n\n".join(context_docs)
     return (
         f"基于以下上下文信息，请回答用户的问题。\n\n"
         f"上下文信息：{context_text}\n\n"
@@ -143,7 +143,26 @@ def aggregate_metrics(
         scores = [m.get("score", 0) for m in answer_metrics_list]
         overall_metrics["answer_correctness"] = sum(scores) / len(scores) if scores else 0.0
 
-    overall_score = EvaluationMetricsCalculator.calculate_overall_score(retrieval_metrics_list, answer_metrics_list)
+    answer_coverage = (
+        min(1.0, len(answer_metrics_list) / len(retrieval_metrics_list))
+        if retrieval_metrics_list
+        else (1.0 if answer_metrics_list else 0.0)
+    )
+    complete_answer_coverage = bool(answer_metrics_list) and (
+        not retrieval_metrics_list or len(answer_metrics_list) >= len(retrieval_metrics_list)
+    )
+    if complete_answer_coverage:
+        overall_metric = "answer_correctness"
+        overall_score = EvaluationMetricsCalculator.calculate_overall_score(retrieval_metrics_list, answer_metrics_list)
+    elif retrieval_metrics_list:
+        overall_metric = "recall@10"
+        overall_score = EvaluationMetricsCalculator.calculate_overall_score(retrieval_metrics_list, [])
+    else:
+        overall_metric = None
+        overall_score = None
+
+    overall_metrics["overall_metric"] = overall_metric
+    overall_metrics["answer_coverage"] = answer_coverage
     if include_overall_score:
         overall_metrics["overall_score"] = overall_score
 

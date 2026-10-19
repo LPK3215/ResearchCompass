@@ -8,11 +8,15 @@ from fastapi import HTTPException
 from yuxi.services import research_search_service
 
 
-def test_search_mode_validation_preserves_strict_default():
-    assert research_search_service._normalize_search_mode(None) == research_search_service.STRICT_HYBRID_GRAPH_MODE
+def test_search_mode_validation_keeps_local_hybrid_default_and_strict_opt_in():
+    assert research_search_service._normalize_search_mode(None) == research_search_service.LOCAL_HYBRID_MODE
     assert (
         research_search_service._normalize_search_mode(research_search_service.LOCAL_HYBRID_MODE)
         == research_search_service.LOCAL_HYBRID_MODE
+    )
+    assert (
+        research_search_service._normalize_search_mode(research_search_service.STRICT_HYBRID_GRAPH_MODE)
+        == research_search_service.STRICT_HYBRID_GRAPH_MODE
     )
     with pytest.raises(research_search_service.ResearchSearchError) as exc_info:
         research_search_service._normalize_search_mode("automatic_fallback")

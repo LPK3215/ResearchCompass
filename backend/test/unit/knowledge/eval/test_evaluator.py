@@ -32,6 +32,7 @@ def test_build_answer_prompt_uses_first_five_non_empty_chunks():
     assert "内容0" in prompt
     assert "内容4" in prompt
     assert "内容5" not in prompt
+    assert "\\n\\n" not in prompt
 
 
 def test_aggregate_metrics_matches_service_output_shape():
@@ -44,7 +45,22 @@ def test_aggregate_metrics_matches_service_output_shape():
     assert metrics["recall@1"] == 0.5
     assert metrics["f1@1"] == 0.5
     assert metrics["answer_correctness"] == 0.5
+    assert metrics["overall_metric"] == "answer_correctness"
+    assert metrics["answer_coverage"] == 1.0
     assert metrics["overall_score"] == overall_score
+
+
+def test_aggregate_metrics_falls_back_to_recall_when_answer_coverage_incomplete():
+    metrics, overall_score = aggregate_metrics(
+        [{"recall@10": 1.0}, {"recall@10": 0.0}],
+        [{"score": 1.0}],
+        include_overall_score=True,
+    )
+
+    assert metrics["overall_metric"] == "recall@10"
+    assert metrics["answer_coverage"] == 0.5
+    assert metrics["overall_score"] == 0.5
+    assert overall_score == 0.5
 
 
 @pytest.mark.asyncio

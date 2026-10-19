@@ -27,6 +27,7 @@ from yuxi.utils.datetime_utils import format_utc_datetime, utc_now_naive
 
 EXPERIMENT_VARIANT_LIMIT = 8
 _EXPERIMENT_METRIC_ORDER = ("overall_score", "answer_correctness", "recall@10", "f1@10", "recall@5", "f1@5")
+SAMPLE_SIZE_WARNING = "count < 30: results are preliminary and must not be reported as stable effect estimates"
 
 
 class EvaluationTaskError(PublicTaskError):
@@ -643,6 +644,7 @@ class EvaluationService:
                 "generation_mode": generation_mode,
                 "graph_expand_top_k": graph_expand_top_k,
             },
+            "sample_warning": SAMPLE_SIZE_WARNING if count < 30 else None,
         }
         await self.eval_repo.create_dataset(
             {
@@ -722,6 +724,7 @@ class EvaluationService:
                 "generation_mode": generation_mode,
                 "graph_expand_top_k": graph_expand_top_k,
             },
+            "sample_warning": SAMPLE_SIZE_WARNING if count < 30 else None,
         }
         try:
             await self._ensure_creator_can_write(str(payload.get("created_by") or ""), {str(kb_id or "")})
@@ -807,6 +810,8 @@ class EvaluationService:
                     concurrency_count=concurrency_count,
                     generation_mode=generation_mode,
                     graph_expand_top_k=graph_expand_top_k,
+                    seed=dataset_id,
+                    deduplicate=True,
                     progress_cb=report_progress,
                     cancel_cb=ensure_generation_can_continue,
                 ):
@@ -1385,9 +1390,9 @@ class EvaluationService:
             document_gold_by_item_id = await self._build_dataset_document_gold(
                 await self.eval_repo.list_all_dataset_items(variant.dataset_id)
             )
+        judge_model_spec = (experiment.shared_config or {}).get("judge_llm")
         judge_llm = None
         if dataset.has_gold_answers and has_pending_items:
-            judge_model_spec = (experiment.shared_config or {}).get("judge_llm")
             if not judge_model_spec:
                 raise ValueError("外部基线含答案指标时必须固定 Judge 模型")
             judge_llm = select_model(model_spec=judge_model_spec)
@@ -1487,6 +1492,12 @@ class EvaluationService:
             answer_metrics_list,
             include_overall_score=True,
         )
+        metrics["judge_model"] = judge_model_spec
+        metrics["judge_same_as_answer"] = bool(
+            judge_model_spec
+            and (variant.retrieval_config or {}).get("answer_llm")
+            and judge_model_spec == (variant.retrieval_config or {}).get("answer_llm")
+        )
         await self.eval_repo.update_run(
             run_id,
             {
@@ -1511,10 +1522,12 @@ class EvaluationService:
         if baseline.overall_score is not None:
             baseline_metrics["overall_score"] = baseline.overall_score
         serialized_variants = []
+        baseline_overall_metric = baseline_metrics.get("overall_metric")
         for item in variants:
             metrics = {**(item.metrics or {})}
             if item.overall_score is not None:
                 metrics["overall_score"] = item.overall_score
+            variant_overall_metric = metrics.get("overall_metric")
             serialized_variants.append(
                 {
                     "variant_id": item.variant_id,
@@ -1526,8 +1539,14 @@ class EvaluationService:
                     "provenance": item.provenance or {},
                     "retrieval_config": item.retrieval_config or {},
                     "metrics": metrics,
+                    "overall_metric": variant_overall_metric,
+                    "answer_coverage": metrics.get("answer_coverage"),
                     "metric_deltas": {
-                        key: _metric_delta(metrics.get(key), baseline_metrics.get(key))
+                        key: (
+                            _metric_delta(metrics.get(key), baseline_metrics.get(key))
+                            if key != "overall_score" or variant_overall_metric == baseline_overall_metric
+                            else None
+                        )
                         for key in _EXPERIMENT_METRIC_ORDER
                         if key in metrics or key in baseline_metrics
                     },
@@ -1681,6 +1700,7 @@ class EvaluationService:
                 raise EvaluationTaskError("knowledge_base_not_found", "评估知识库不存在")
 
             judge_llm = None
+            judge_model_spec = None
             if dataset_row.has_gold_answers:
                 judge_model_spec = retrieval_config.get("judge_llm") or retrieval_config.get("answer_llm")
                 if judge_model_spec:
@@ -1788,6 +1808,12 @@ class EvaluationService:
             await context.set_progress(95, "计算最终指标")
             overall_metrics, overall_score = aggregate_metrics(
                 all_retrieval_metrics, all_answer_metrics, include_overall_score=True
+            )
+            overall_metrics["judge_model"] = judge_model_spec
+            overall_metrics["judge_same_as_answer"] = bool(
+                judge_model_spec
+                and retrieval_config.get("answer_llm")
+                and judge_model_spec == retrieval_config.get("answer_llm")
             )
             await update_run_db(
                 status="completed",
