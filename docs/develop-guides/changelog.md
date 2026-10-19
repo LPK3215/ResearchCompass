@@ -8,6 +8,8 @@
 
 ## v0.11.0 (current)
 
+- 论文资料库新增多格式导出：除原有 BibTeX 外，支持 Markdown 文献收藏、RIS（EndNote / Zotero / Mendeley 兼容）、CSV 与纯文本列表，统一入口为 `GET /api/research/databases/{kb_id}/papers/export/{export_format}`，沿用知识库访问权限校验，非法格式返回 422 结构化错误。BibTeX 复用既有转义与引用键生成，新旧接口输出一致；CSV 使用 UTF-8 BOM 并对公式样式单元格加前导单引号；Markdown 与 RIS 对换行字段做单行压缩。格式设计参考 LitScan 项目 `core/exporter.py`（MIT License），代码按本仓库论文模型重写，未新增第三方依赖。前端论文工具栏的单一 BibTeX 按钮改为导出下拉菜单。
+
 - 修复真实 Chromium 浏览器回归中 Ant Design 模态框按钮可访问名称包含空格导致的定位超时:项目、里程碑、任务与风险保存统一使用模态框主按钮选择器;在 Docker 运行的真实账号回归已通过。
 - 扩展真实 Chromium 回归的导出验收:通过研究项目界面点击“导出报告→CSV 数据”,等待实际浏览器下载并校验文件名扩展名,覆盖从用户操作到文件交付的完整路径。
 

@@ -66,6 +66,7 @@ from yuxi.services.research_evidence_service import (
     list_evidence_impacts,
     transition_evidence,
 )
+from yuxi.services.research_paper_export_service import EXPORT_FORMATS, export_papers_document
 from yuxi.services.research_paper_service import (
     add_paper_tag_view,
     export_papers_bibtex,
@@ -1756,6 +1757,36 @@ async def export_papers(
         with_utf8_bom(),
         media_type="text/plain; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="papers_{kb_id}.bib"'},
+    )
+
+
+@research.get("/databases/{kb_id}/papers/export/{export_format}")
+async def export_papers_document_route(
+    kb_id: str,
+    export_format: str,
+    paper_ids: str | None = Query(default=None, max_length=4000),
+    current_user: User = Depends(get_required_user),
+):
+    ids = [pid.strip() for pid in paper_ids.split(",") if pid.strip()] if paper_ids else None
+    try:
+        filename, content, media_type = await export_papers_document(
+            kb_id=kb_id,
+            current_user=current_user,
+            paper_ids=ids,
+            export_format=export_format,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "invalid_export_format",
+                "message": f"Export format must be one of: {', '.join(sorted(EXPORT_FORMATS))}",
+            },
+        ) from exc
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

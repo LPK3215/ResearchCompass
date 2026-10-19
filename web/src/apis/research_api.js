@@ -426,6 +426,14 @@ export const researchApi = {
     ).then((response) => response.blob())
   },
 
+  exportPapersDocument: (kbId, exportFormat = 'markdown', paperIds = null) => {
+    const query = buildQuery(paperIds ? { paper_ids: paperIds.join(',') } : {})
+    return apiRequest(
+      `/api/research/databases/${encodeURIComponent(kbId)}/papers/export/${encodeURIComponent(exportFormat)}${query ? `?${query}` : ''}`,
+      { method: 'GET' }, true, 'blob'
+    ).then((response) => response.blob())
+  },
+
   listUserTags: (kbId) =>
     apiGet(`/api/research/databases/${encodeURIComponent(kbId)}/papers/tags`),
 

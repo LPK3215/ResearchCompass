@@ -878,10 +878,22 @@
         <div class="toolbar-actions">
           <a-button type="primary" :disabled="!selectedKbId" @click="applyFilters">筛选</a-button>
           <a-button :disabled="!hasFilters" @click="resetFilters">重置</a-button>
-          <a-button :disabled="!selectedKbId || papers.length === 0" :loading="exportLoading" @click="exportAllBibtex">
-            <template #icon><Download :size="15" /></template>
-            导出 BibTeX
-          </a-button>
+          <a-dropdown :trigger="['click']">
+            <a-button :disabled="!selectedKbId || papers.length === 0" :loading="exportLoading">
+              <template #icon><Download :size="15" /></template>
+              导出文献
+              <ChevronDown :size="14" />
+            </a-button>
+            <template #overlay>
+              <a-menu @click="exportAllPapers">
+                <a-menu-item key="bibtex">BibTeX</a-menu-item>
+                <a-menu-item key="ris">RIS (EndNote / Zotero)</a-menu-item>
+                <a-menu-item key="markdown">Markdown 收藏</a-menu-item>
+                <a-menu-item key="csv">CSV 表格</a-menu-item>
+                <a-menu-item key="text">纯文本列表</a-menu-item>
+              </a-menu>
+            </template>
+          </a-dropdown>
         </div>
       </section>
 
@@ -1175,6 +1187,7 @@ import {
   AlertTriangle,
   BookOpenText,
   CalendarDays,
+  ChevronDown,
   ChevronRight,
   CircleStop,
   Database,
@@ -1366,6 +1379,14 @@ const sortOptions = [
   { value: 'title-asc', label: '标题 A-Z' },
   { value: 'created_at-desc', label: '最近添加' }
 ]
+
+const EXPORT_FILE_EXTENSIONS = {
+  bibtex: 'bib',
+  ris: 'ris',
+  markdown: 'md',
+  csv: 'csv',
+  text: 'txt'
+}
 const sortValue = computed({
   get: () => `${filters.sortBy}-${filters.sortOrder}`,
   set: (val) => {
@@ -2271,23 +2292,23 @@ const loadGraphRelations = async (graphPaperId) => {
   }
 }
 
-const exportAllBibtex = async () => {
+const exportAllPapers = async ({ key: exportFormat }) => {
   if (!selectedKbId.value || papers.value.length === 0) return
   const kbId = selectedKbId.value
   const requestGeneration = workspaceRequestGeneration
   exportLoading.value = true
   try {
-    const blob = await researchApi.exportPapersBibtex(kbId)
+    const blob = await researchApi.exportPapersDocument(kbId, exportFormat)
     if (requestGeneration !== workspaceRequestGeneration || kbId !== selectedKbId.value) return
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `papers_${kbId}.bib`
+    a.download = `papers_${kbId}.${EXPORT_FILE_EXTENSIONS[exportFormat] || 'txt'}`
     a.click()
     URL.revokeObjectURL(url)
   } catch (error) {
     if (requestGeneration !== workspaceRequestGeneration) return
-    message.error(error.message || 'BibTeX 导出失败')
+    message.error(error.message || '文献导出失败')
   } finally {
     if (requestGeneration === workspaceRequestGeneration) exportLoading.value = false
   }
