@@ -23,6 +23,18 @@ def test_search_mode_validation_keeps_local_hybrid_default_and_strict_opt_in():
     assert exc_info.value.error_type == "invalid_retrieval_config"
 
 
+def test_resolve_chat_model_prefers_override_then_kb_then_system_default(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(research_search_service.config, "default_model", "deepseek:deepseek-chat")
+    resolve = research_search_service._resolve_chat_model
+
+    assert resolve(override="deepseek:deepseek-reasoner", kb_llm_model_spec="deepseek:deepseek-chat") == (
+        "deepseek:deepseek-reasoner"
+    )
+    assert resolve(override=None, kb_llm_model_spec="deepseek:deepseek-chat") == "deepseek:deepseek-chat"
+    assert resolve(override="", kb_llm_model_spec="  ") == "deepseek:deepseek-chat"
+    assert resolve(override=None, kb_llm_model_spec=None) == "deepseek:deepseek-chat"
+
+
 def test_embedding_failure_detection_only_follows_exception_chain():
     assert research_search_service._is_embedding_failure(ValueError("Embedding request failed"))
     assert research_search_service._is_embedding_failure(

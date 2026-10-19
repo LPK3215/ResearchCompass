@@ -109,6 +109,13 @@ def _parse_rewrite(content: str) -> dict[str, Any]:
     }
 
 
+def _resolve_chat_model(*, override: str | None, kb_llm_model_spec: str | None) -> str:
+    """科研检索聊天模型解析：请求参数 > 知识库配置 > 系统默认模型，与综述链路保持一致。"""
+    override = (override or "").strip()
+    kb_llm_model_spec = (kb_llm_model_spec or "").strip()
+    return override or kb_llm_model_spec or (config.default_model or "").strip()
+
+
 def _public_model_config(chat_model: str, reranker_model: str) -> dict[str, str]:
     chat_info = model_cache.get_model_info(chat_model)
     reranker_info = model_cache.get_model_info(reranker_model)
@@ -402,7 +409,7 @@ async def search_papers(
     if (kb.kb_type or "milvus").lower() != "milvus":
         raise ResearchSearchError("unsupported_knowledge_base", "科研检索只支持 Milvus 学术知识库")
 
-    chat_model = (chat_model or kb.llm_model_spec or "").strip()
+    chat_model = _resolve_chat_model(override=chat_model, kb_llm_model_spec=kb.llm_model_spec)
     reranker_model = (reranker_model or config.reranker or "").strip()
     run_id = uuid.uuid4().hex
     run_repo = ResearchSearchRunRepository()
