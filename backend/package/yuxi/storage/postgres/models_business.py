@@ -19,6 +19,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import relationship
 from yuxi.storage.minio.client import normalize_public_minio_url
+from yuxi.storage.postgres.column_types import UTCDateTime
 from yuxi.utils.datetime_utils import format_utc_datetime, utc_now_naive
 
 Base = declarative_base()
@@ -750,8 +751,8 @@ class UserNotification(Base):
     resource_type = Column(String(64))
     resource_id = Column(String(128))
     idempotency_key = Column(String(255), nullable=False)
-    read_at = Column(DateTime(timezone=True))
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive, nullable=False)
+    read_at = Column(UTCDateTime)
+    created_at = Column(UTCDateTime, default=utc_now_naive, nullable=False)
 
 
 class APIKey(Base):

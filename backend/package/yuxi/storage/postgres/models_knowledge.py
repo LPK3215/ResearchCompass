@@ -7,7 +7,6 @@ from sqlalchemy import (
     CheckConstraint,
     Column,
     Date,
-    DateTime,
     Float,
     ForeignKey,
     Index,
@@ -17,6 +16,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB
+from yuxi.storage.postgres.column_types import UTCDateTime
 from yuxi.storage.postgres.models_business import Base
 from yuxi.utils.datetime_utils import utc_now_naive
 
@@ -44,8 +44,8 @@ class KnowledgeBase(Base):
     mindmap_metadata = Column(JSON_VALUE)
     sample_questions = Column(JSON_VALUE)
     created_by = Column(String(64))
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
-    updated_at = Column(DateTime(timezone=True), default=utc_now_naive, onupdate=utc_now_naive)
+    created_at = Column(UTCDateTime, default=utc_now_naive)
+    updated_at = Column(UTCDateTime, default=utc_now_naive, onupdate=utc_now_naive)
 
 
 class KnowledgeFile(Base):
@@ -75,8 +75,8 @@ class KnowledgeFile(Base):
     error_message = Column(Text)
     created_by = Column(String(64))
     updated_by = Column(String(64))
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
-    updated_at = Column(DateTime(timezone=True), default=utc_now_naive, onupdate=utc_now_naive)
+    created_at = Column(UTCDateTime, default=utc_now_naive)
+    updated_at = Column(UTCDateTime, default=utc_now_naive, onupdate=utc_now_naive)
 
 
 class KnowledgeChunk(Base):
@@ -105,8 +105,8 @@ class KnowledgeChunk(Base):
     tags = Column(JSON_VALUE)
     chunk_metadata = Column(JSON_VALUE)
     extraction_result = Column(JSON_VALUE)
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
-    updated_at = Column(DateTime(timezone=True), default=utc_now_naive, onupdate=utc_now_naive)
+    created_at = Column(UTCDateTime, default=utc_now_naive)
+    updated_at = Column(UTCDateTime, default=utc_now_naive, onupdate=utc_now_naive)
 
 
 class AcademicPaper(Base):
@@ -139,8 +139,8 @@ class AcademicPaper(Base):
     metadata_error = Column(Text)
     metadata_revision = Column(Integer, nullable=False, default=1)
     indexed_revision = Column(Integer, nullable=False, default=0)
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
-    updated_at = Column(DateTime(timezone=True), default=utc_now_naive, onupdate=utc_now_naive)
+    created_at = Column(UTCDateTime, default=utc_now_naive)
+    updated_at = Column(UTCDateTime, default=utc_now_naive, onupdate=utc_now_naive)
 
 
 class ResearchProject(Base):
@@ -165,10 +165,10 @@ class ResearchProject(Base):
     next_action = Column(Text)
     tags = Column(JSON_VALUE, nullable=False, default=list)
     target_date = Column(Date)
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
-    updated_at = Column(DateTime(timezone=True), default=utc_now_naive, onupdate=utc_now_naive)
-    completed_at = Column(DateTime(timezone=True))
-    archived_at = Column(DateTime(timezone=True))
+    created_at = Column(UTCDateTime, default=utc_now_naive)
+    updated_at = Column(UTCDateTime, default=utc_now_naive, onupdate=utc_now_naive)
+    completed_at = Column(UTCDateTime)
+    archived_at = Column(UTCDateTime)
 
 
 class ResearchProjectRisk(Base):
@@ -178,13 +178,18 @@ class ResearchProjectRisk(Base):
     __table_args__ = (
         UniqueConstraint("risk_id", name="uq_research_project_risks_id"),
         CheckConstraint("severity IN ('low', 'medium', 'high', 'critical')", name="ck_research_project_risks_severity"),
-        CheckConstraint("status IN ('open', 'mitigating', 'accepted', 'resolved', 'closed')", name="ck_research_project_risks_status"),
+        CheckConstraint(
+            "status IN ('open', 'mitigating', 'accepted', 'resolved', 'closed')",
+            name="ck_research_project_risks_status",
+        ),
         Index("ix_research_project_risks_project_status", "project_id", "status"),
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     risk_id = Column(String(64), nullable=False, unique=True, index=True)
-    project_id = Column(String(64), ForeignKey("research_projects.project_id", ondelete="CASCADE"), nullable=False, index=True)
+    project_id = Column(
+        String(64), ForeignKey("research_projects.project_id", ondelete="CASCADE"), nullable=False, index=True
+    )
     title = Column(String(255), nullable=False)
     description = Column(Text, nullable=False)
     severity = Column(String(16), nullable=False, default="medium", index=True)
@@ -193,9 +198,9 @@ class ResearchProjectRisk(Base):
     mitigation = Column(Text, nullable=False, default="")
     due_date = Column(Date)
     created_by = Column(String(64), nullable=False)
-    resolved_at = Column(DateTime(timezone=True))
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
-    updated_at = Column(DateTime(timezone=True), default=utc_now_naive, onupdate=utc_now_naive)
+    resolved_at = Column(UTCDateTime)
+    created_at = Column(UTCDateTime, default=utc_now_naive)
+    updated_at = Column(UTCDateTime, default=utc_now_naive, onupdate=utc_now_naive)
 
 
 class ResearchProjectRiskActivity(Base):
@@ -206,15 +211,19 @@ class ResearchProjectRiskActivity(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     activity_id = Column(String(64), nullable=False, unique=True, index=True)
-    risk_id = Column(String(64), ForeignKey("research_project_risks.risk_id", ondelete="CASCADE"), nullable=False, index=True)
-    project_id = Column(String(64), ForeignKey("research_projects.project_id", ondelete="CASCADE"), nullable=False, index=True)
+    risk_id = Column(
+        String(64), ForeignKey("research_project_risks.risk_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    project_id = Column(
+        String(64), ForeignKey("research_projects.project_id", ondelete="CASCADE"), nullable=False, index=True
+    )
     operator_uid = Column(String(64), nullable=False)
     activity_type = Column(String(32), nullable=False)
     from_status = Column(String(16))
     to_status = Column(String(16))
     changes = Column(JSON_VALUE, nullable=False, default=dict)
     precondition = Column(JSON_VALUE, nullable=False, default=dict)
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
+    created_at = Column(UTCDateTime, default=utc_now_naive)
 
 
 class ResearchProjectAsset(Base):
@@ -247,8 +256,8 @@ class ResearchProjectAsset(Base):
     status_snapshot = Column(String(32))
     metadata_snapshot = Column(JSON_VALUE, nullable=False, default=dict)
     notes = Column(Text)
-    added_at = Column(DateTime(timezone=True), default=utc_now_naive)
-    updated_at = Column(DateTime(timezone=True), default=utc_now_naive, onupdate=utc_now_naive)
+    added_at = Column(UTCDateTime, default=utc_now_naive)
+    updated_at = Column(UTCDateTime, default=utc_now_naive, onupdate=utc_now_naive)
 
 
 class ResearchProjectMilestone(Base):
@@ -275,9 +284,9 @@ class ResearchProjectMilestone(Base):
     status = Column(String(32), nullable=False, default="planned", index=True)
     target_date = Column(Date)
     sort_order = Column(Integer, nullable=False, default=0)
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
-    updated_at = Column(DateTime(timezone=True), default=utc_now_naive, onupdate=utc_now_naive)
-    completed_at = Column(DateTime(timezone=True))
+    created_at = Column(UTCDateTime, default=utc_now_naive)
+    updated_at = Column(UTCDateTime, default=utc_now_naive, onupdate=utc_now_naive)
+    completed_at = Column(UTCDateTime)
 
 
 class ResearchProjectTask(Base):
@@ -314,9 +323,9 @@ class ResearchProjectTask(Base):
     priority = Column(String(32), nullable=False, default="medium", index=True)
     due_date = Column(Date)
     sort_order = Column(Integer, nullable=False, default=0)
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
-    updated_at = Column(DateTime(timezone=True), default=utc_now_naive, onupdate=utc_now_naive)
-    completed_at = Column(DateTime(timezone=True))
+    created_at = Column(UTCDateTime, default=utc_now_naive)
+    updated_at = Column(UTCDateTime, default=utc_now_naive, onupdate=utc_now_naive)
+    completed_at = Column(UTCDateTime)
 
 
 class ResearchProjectTaskDependency(Base):
@@ -342,7 +351,7 @@ class ResearchProjectTaskDependency(Base):
         String(64), ForeignKey("research_project_tasks.task_id", ondelete="CASCADE"), nullable=False
     )
     created_by = Column(String(64), nullable=False)
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
+    created_at = Column(UTCDateTime, default=utc_now_naive)
 
 
 class ResearchProjectPlanAssetLink(Base):
@@ -388,7 +397,7 @@ class ResearchProjectPlanAssetLink(Base):
         ForeignKey("research_project_tasks.task_id", ondelete="CASCADE"),
         index=True,
     )
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
+    created_at = Column(UTCDateTime, default=utc_now_naive)
 
 
 class ResearchProjectActivity(Base):
@@ -417,7 +426,7 @@ class ResearchProjectActivity(Base):
     from_status = Column(String(32))
     to_status = Column(String(32))
     precondition = Column(JSON_VALUE, nullable=False, default=dict)
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
+    created_at = Column(UTCDateTime, default=utc_now_naive)
 
 
 class ResearchEvidence(Base):
@@ -427,7 +436,9 @@ class ResearchEvidence(Base):
     __table_args__ = (
         UniqueConstraint("evidence_id", name="uq_research_evidence_id"),
         UniqueConstraint("kb_id", "source_chunk_id", name="uq_research_evidence_source"),
-        CheckConstraint("status IN ('unverified', 'verified', 'invalid', 'archived')", name="ck_research_evidence_status"),
+        CheckConstraint(
+            "status IN ('unverified', 'verified', 'invalid', 'archived')", name="ck_research_evidence_status"
+        ),
         Index("ix_research_evidence_kb_status", "kb_id", "status"),
     )
 
@@ -440,11 +451,11 @@ class ResearchEvidence(Base):
     invalid_reason = Column(Text)
     created_by = Column(String(64), nullable=False)
     verified_by = Column(String(64))
-    verified_at = Column(DateTime(timezone=True))
+    verified_at = Column(UTCDateTime)
     archived_by = Column(String(64))
-    archived_at = Column(DateTime(timezone=True))
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
-    updated_at = Column(DateTime(timezone=True), default=utc_now_naive, onupdate=utc_now_naive)
+    archived_at = Column(UTCDateTime)
+    created_at = Column(UTCDateTime, default=utc_now_naive)
+    updated_at = Column(UTCDateTime, default=utc_now_naive, onupdate=utc_now_naive)
 
 
 class ResearchEvidenceActivity(Base):
@@ -462,7 +473,7 @@ class ResearchEvidenceActivity(Base):
     from_status = Column(String(32), nullable=False)
     to_status = Column(String(32), nullable=False)
     reason = Column(Text)
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive, nullable=False)
+    created_at = Column(UTCDateTime, default=utc_now_naive, nullable=False)
 
 
 class ResearchEvidenceCitation(Base):
@@ -474,9 +485,11 @@ class ResearchEvidenceCitation(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     citation_id = Column(String(64), nullable=False, unique=True, index=True)
     evidence_id = Column(String(64), ForeignKey("research_evidence.evidence_id", ondelete="RESTRICT"), nullable=False)
-    synthesis_run_id = Column(String(64), ForeignKey("research_synthesis_runs.run_id", ondelete="CASCADE"), nullable=False)
+    synthesis_run_id = Column(
+        String(64), ForeignKey("research_synthesis_runs.run_id", ondelete="CASCADE"), nullable=False
+    )
     cited_by = Column(String(64), nullable=False)
-    cited_at = Column(DateTime(timezone=True), default=utc_now_naive)
+    cited_at = Column(UTCDateTime, default=utc_now_naive)
 
 
 class ResearchSearchRun(Base):
@@ -491,7 +504,9 @@ class ResearchSearchRun(Base):
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    parent_run_id = Column(String(64), ForeignKey("research_search_runs.run_id", ondelete="SET NULL"), nullable=True, index=True)
+    parent_run_id = Column(
+        String(64), ForeignKey("research_search_runs.run_id", ondelete="SET NULL"), nullable=True, index=True
+    )
     run_id = Column(String(64), nullable=False, unique=True, index=True)
     kb_id = Column(String(80), ForeignKey("knowledge_bases.kb_id", ondelete="CASCADE"), nullable=False, index=True)
     uid = Column(String(64), nullable=False, index=True)
@@ -510,9 +525,9 @@ class ResearchSearchRun(Base):
     retryable = Column(Boolean, nullable=False, default=False)
     retry_count = Column(Integer, nullable=False, default=0)
     dependency = Column(String(32))
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
-    started_at = Column(DateTime(timezone=True), default=utc_now_naive)
-    completed_at = Column(DateTime(timezone=True))
+    created_at = Column(UTCDateTime, default=utc_now_naive)
+    started_at = Column(UTCDateTime, default=utc_now_naive)
+    completed_at = Column(UTCDateTime)
 
 
 class ResearchSynthesisRun(Base):
@@ -551,9 +566,9 @@ class ResearchSynthesisRun(Base):
     retryable = Column(Boolean, nullable=False, default=False)
     retry_count = Column(Integer, nullable=False, default=0)
     dependency = Column(String(32))
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
-    started_at = Column(DateTime(timezone=True))
-    completed_at = Column(DateTime(timezone=True))
+    created_at = Column(UTCDateTime, default=utc_now_naive)
+    started_at = Column(UTCDateTime)
+    completed_at = Column(UTCDateTime)
 
 
 class AcademicPaperAnalysisRun(Base):
@@ -581,9 +596,9 @@ class AcademicPaperAnalysisRun(Base):
     result = Column(JSON_VALUE)
     error_type = Column(String(128))
     error_message = Column(Text)
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
-    started_at = Column(DateTime(timezone=True))
-    completed_at = Column(DateTime(timezone=True))
+    created_at = Column(UTCDateTime, default=utc_now_naive)
+    started_at = Column(UTCDateTime)
+    completed_at = Column(UTCDateTime)
 
 
 class AcademicPaperAnalysisEvaluation(Base):
@@ -608,9 +623,9 @@ class AcademicPaperAnalysisEvaluation(Base):
     task_id = Column(String(64))
     error_message = Column(Text)
     created_by = Column(String(64), nullable=False)
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
-    started_at = Column(DateTime(timezone=True))
-    completed_at = Column(DateTime(timezone=True))
+    created_at = Column(UTCDateTime, default=utc_now_naive)
+    started_at = Column(UTCDateTime)
+    completed_at = Column(UTCDateTime)
 
 
 class AcademicPaperAnalysisEvaluationItem(Base):
@@ -640,8 +655,8 @@ class AcademicPaperAnalysisEvaluationItem(Base):
     blind_assignment = Column(JSON_VALUE, nullable=False)
     status = Column(String(32), nullable=False, default="pending", index=True)
     error_message = Column(Text)
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
-    completed_at = Column(DateTime(timezone=True))
+    created_at = Column(UTCDateTime, default=utc_now_naive)
+    completed_at = Column(UTCDateTime)
 
 
 class AcademicPaperAnalysisEvaluationScore(Base):
@@ -671,8 +686,8 @@ class AcademicPaperAnalysisEvaluationScore(Base):
     scorer_uid = Column(String(64), nullable=False, index=True)
     blind_scores = Column(JSON_VALUE, nullable=False)
     notes = Column(Text)
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
-    submitted_at = Column(DateTime(timezone=True), default=utc_now_naive, onupdate=utc_now_naive)
+    created_at = Column(UTCDateTime, default=utc_now_naive)
+    submitted_at = Column(UTCDateTime, default=utc_now_naive, onupdate=utc_now_naive)
 
 
 class ResearchUserStudy(Base):
@@ -692,8 +707,8 @@ class ResearchUserStudy(Base):
     consent_text = Column(Text, nullable=False)
     status = Column(String(32), nullable=False, default="open", index=True)
     created_by = Column(String(64), nullable=False)
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
-    closed_at = Column(DateTime(timezone=True))
+    created_at = Column(UTCDateTime, default=utc_now_naive)
+    closed_at = Column(UTCDateTime)
 
 
 class ResearchUserStudyInvite(Base):
@@ -716,8 +731,8 @@ class ResearchUserStudyInvite(Base):
     )
     token_hash = Column(String(128), unique=True, nullable=False, index=True)
     status = Column(String(32), nullable=False, default="pending", index=True)
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
-    used_at = Column(DateTime(timezone=True))
+    created_at = Column(UTCDateTime, default=utc_now_naive)
+    used_at = Column(UTCDateTime)
 
 
 class ResearchUserStudyResponse(Base):
@@ -751,7 +766,7 @@ class ResearchUserStudyResponse(Base):
     overall_rating = Column(Integer, nullable=False)
     recommend_score = Column(Integer, nullable=False)
     feedback = Column(Text)
-    submitted_at = Column(DateTime(timezone=True), default=utc_now_naive)
+    submitted_at = Column(UTCDateTime, default=utc_now_naive)
 
 
 class AcademicGraphPaper(Base):
@@ -784,9 +799,9 @@ class AcademicGraphPaper(Base):
     open_access_url = Column(String(2048))
     is_library_paper = Column(Boolean, nullable=False, default=False)
     source = Column(String(64), nullable=False, default="semantic_scholar")
-    last_synced_at = Column(DateTime(timezone=True))
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
-    updated_at = Column(DateTime(timezone=True), default=utc_now_naive, onupdate=utc_now_naive)
+    last_synced_at = Column(UTCDateTime)
+    created_at = Column(UTCDateTime, default=utc_now_naive)
+    updated_at = Column(UTCDateTime, default=utc_now_naive, onupdate=utc_now_naive)
 
 
 class AcademicAuthor(Base):
@@ -805,8 +820,8 @@ class AcademicAuthor(Base):
     name = Column(String(512), nullable=False)
     normalized_name = Column(String(512), nullable=False)
     external_ids = Column(JSON_VALUE)
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
-    updated_at = Column(DateTime(timezone=True), default=utc_now_naive, onupdate=utc_now_naive)
+    created_at = Column(UTCDateTime, default=utc_now_naive)
+    updated_at = Column(UTCDateTime, default=utc_now_naive, onupdate=utc_now_naive)
 
 
 class AcademicTopic(Base):
@@ -823,8 +838,8 @@ class AcademicTopic(Base):
     normalized_name = Column(String(512), nullable=False)
     category = Column(String(128))
     source = Column(String(64), nullable=False, default="semantic_scholar")
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
-    updated_at = Column(DateTime(timezone=True), default=utc_now_naive, onupdate=utc_now_naive)
+    created_at = Column(UTCDateTime, default=utc_now_naive)
+    updated_at = Column(UTCDateTime, default=utc_now_naive, onupdate=utc_now_naive)
 
 
 class AcademicGraphPaperAuthor(Base):
@@ -877,9 +892,9 @@ class AcademicCitation(Base):
     intents = Column(JSON_VALUE)
     is_influential = Column(Boolean, default=False)
     source = Column(String(64), nullable=False, default="semantic_scholar")
-    last_synced_at = Column(DateTime(timezone=True))
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
-    updated_at = Column(DateTime(timezone=True), default=utc_now_naive, onupdate=utc_now_naive)
+    last_synced_at = Column(UTCDateTime)
+    created_at = Column(UTCDateTime, default=utc_now_naive)
+    updated_at = Column(UTCDateTime, default=utc_now_naive, onupdate=utc_now_naive)
 
 
 class AcademicGraphSyncRun(Base):
@@ -905,9 +920,9 @@ class AcademicGraphSyncRun(Base):
     conflict_count = Column(Integer, nullable=False, default=0)
     error_type = Column(String(128))
     error_message = Column(Text)
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
-    started_at = Column(DateTime(timezone=True))
-    completed_at = Column(DateTime(timezone=True))
+    created_at = Column(UTCDateTime, default=utc_now_naive)
+    started_at = Column(UTCDateTime)
+    completed_at = Column(UTCDateTime)
 
 
 class AcademicMetadataConflict(Base):
@@ -931,7 +946,7 @@ class AcademicMetadataConflict(Base):
     remote_value = Column(JSON_VALUE)
     message = Column(Text, nullable=False)
     resolution_status = Column(String(32), nullable=False, default="unresolved")
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
+    created_at = Column(UTCDateTime, default=utc_now_naive)
 
 
 class AcademicPaperTag(Base):
@@ -948,7 +963,7 @@ class AcademicPaperTag(Base):
     paper_id = Column(String(64), nullable=False, index=True)
     uid = Column(String(64), nullable=False, index=True)
     tag = Column(String(64), nullable=False)
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
+    created_at = Column(UTCDateTime, default=utc_now_naive)
 
 
 class KnowledgeGraphEntity(Base):
@@ -968,8 +983,8 @@ class KnowledgeGraphEntity(Base):
     label = Column(String(128), nullable=False)
     name = Column(String(512), nullable=False)
     attributes = Column(JSON_VALUE)
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
-    updated_at = Column(DateTime(timezone=True), default=utc_now_naive, onupdate=utc_now_naive)
+    created_at = Column(UTCDateTime, default=utc_now_naive)
+    updated_at = Column(UTCDateTime, default=utc_now_naive, onupdate=utc_now_naive)
 
 
 class KnowledgeGraphEntityMention(Base):
@@ -988,7 +1003,7 @@ class KnowledgeGraphEntityMention(Base):
     kb_id = Column(String(80), ForeignKey("knowledge_bases.kb_id", ondelete="CASCADE"), nullable=False)
     file_id = Column(String(64), ForeignKey("knowledge_files.file_id", ondelete="CASCADE"), nullable=False)
     chunk_id = Column(String(128), ForeignKey("knowledge_chunks.chunk_id", ondelete="CASCADE"), nullable=False)
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
+    created_at = Column(UTCDateTime, default=utc_now_naive)
 
 
 class KnowledgeGraphTriple(Base):
@@ -1011,8 +1026,8 @@ class KnowledgeGraphTriple(Base):
     )
     relation_type = Column(String(256), nullable=False)
     content = Column(Text, nullable=False)
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
-    updated_at = Column(DateTime(timezone=True), default=utc_now_naive, onupdate=utc_now_naive)
+    created_at = Column(UTCDateTime, default=utc_now_naive)
+    updated_at = Column(UTCDateTime, default=utc_now_naive, onupdate=utc_now_naive)
 
 
 class KnowledgeGraphTripleMention(Base):
@@ -1033,7 +1048,7 @@ class KnowledgeGraphTripleMention(Base):
     chunk_id = Column(String(128), ForeignKey("knowledge_chunks.chunk_id", ondelete="CASCADE"), nullable=False)
     text = Column(Text)
     extractor_type = Column(String(128))
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
+    created_at = Column(UTCDateTime, default=utc_now_naive)
 
 
 class EvaluationDataset(Base):
@@ -1052,8 +1067,8 @@ class EvaluationDataset(Base):
     has_gold_answers = Column(Boolean, default=False)
     build_metadata = Column(JSON_VALUE)
     created_by = Column(String(64))
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
-    updated_at = Column(DateTime(timezone=True), default=utc_now_naive, onupdate=utc_now_naive)
+    created_at = Column(UTCDateTime, default=utc_now_naive)
+    updated_at = Column(UTCDateTime, default=utc_now_naive, onupdate=utc_now_naive)
 
 
 class EvaluationDatasetItem(Base):
@@ -1079,7 +1094,7 @@ class EvaluationDatasetItem(Base):
     query_text = Column(Text, nullable=False)
     gold_chunk_ids = Column(JSON_VALUE)
     gold_answer = Column(Text)
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
+    created_at = Column(UTCDateTime, default=utc_now_naive)
 
 
 class EvaluationRun(Base):
@@ -1105,8 +1120,8 @@ class EvaluationRun(Base):
     overall_score = Column(Float)
     total_items = Column(Integer, default=0)
     completed_items = Column(Integer, default=0)
-    started_at = Column(DateTime(timezone=True), default=utc_now_naive, index=True)
-    completed_at = Column(DateTime(timezone=True))
+    started_at = Column(UTCDateTime, default=utc_now_naive, index=True)
+    completed_at = Column(UTCDateTime)
     created_by = Column(String(64))
 
 
@@ -1137,9 +1152,9 @@ class EvaluationExperiment(Base):
     task_id = Column(String(64))
     error_message = Column(Text)
     created_by = Column(String(64))
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive, index=True)
-    started_at = Column(DateTime(timezone=True))
-    completed_at = Column(DateTime(timezone=True))
+    created_at = Column(UTCDateTime, default=utc_now_naive, index=True)
+    started_at = Column(UTCDateTime)
+    completed_at = Column(UTCDateTime)
 
 
 class EvaluationExperimentVariant(Base):
@@ -1177,8 +1192,8 @@ class EvaluationExperimentVariant(Base):
     metrics = Column(JSON_VALUE)
     overall_score = Column(Float)
     error_message = Column(Text)
-    started_at = Column(DateTime(timezone=True))
-    completed_at = Column(DateTime(timezone=True))
+    started_at = Column(UTCDateTime)
+    completed_at = Column(UTCDateTime)
 
 
 class EvaluationRunItem(Base):
@@ -1208,4 +1223,4 @@ class EvaluationRunItem(Base):
     generated_answer = Column(Text)
     retrieved_chunks = Column(JSON_VALUE)
     metrics = Column(JSON_VALUE)
-    created_at = Column(DateTime(timezone=True), default=utc_now_naive)
+    created_at = Column(UTCDateTime, default=utc_now_naive)
