@@ -49,11 +49,11 @@ class Config(BaseModel):
         description="快速响应模型",
     )
     embed_model: str = Field(
-        default="siliconflow-cn:BAAI/bge-m3",
+        default="local-embedding:paraphrase-multilingual-MiniLM-L12-v2",
         description="默认 Embedding 模型",
     )
     reranker: str = Field(
-        default="siliconflow-cn:BAAI/bge-reranker-v2-m3",
+        default="local-embedding:BAAI/bge-reranker-base",
         description="默认 Re-Ranker 模型",
     )
     content_guard_llm_model: str = Field(

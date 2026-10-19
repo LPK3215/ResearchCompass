@@ -223,4 +223,30 @@ BUILTIN_PROVIDERS: list[dict[str, Any]] = [
         "embedding_models_endpoint": "https://api.siliconflow.com/v1/models?sub_type=embedding",
         "rerank_models_endpoint": "https://api.siliconflow.com/v1/models?sub_type=reranker",
     },
+    {
+        "provider_id": "local-embedding",
+        "display_name": "Local Embedding & Rerank",
+        "provider_type": "openai",
+        "base_url": "http://127.0.0.1:19100/v1/chat/completions",
+        "embedding_base_url": "http://127.0.0.1:19100/v1/embeddings",
+        "rerank_base_url": "http://127.0.0.1:19100/v1/rerank",
+        "api_key": "local",
+        "capabilities": ["embedding", "rerank"],
+        "enabled_models": [
+            {
+                "id": "paraphrase-multilingual-MiniLM-L12-v2",
+                "type": "embedding",
+                "source": "manual",
+                "display_name": "MiniLM-L12 multilingual (local)",
+                "dimension": 384,
+                "batch_size": 16,
+            },
+            {
+                "id": "BAAI/bge-reranker-base",
+                "type": "rerank",
+                "source": "manual",
+                "display_name": "bge-reranker-base (local)",
+            },
+        ],
+    },
 ]

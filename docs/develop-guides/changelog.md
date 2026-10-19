@@ -8,6 +8,9 @@
 
 ## v0.11.0 (current)
 
+- 接入本地向量与重排推理服务并切换系统默认模型:新增 OpenAI 兼容的本地推理服务(端口 19100,`paraphrase-multilingual-MiniLM-L12-v2` 384 维与 `BAAI/bge-reranker-base`),注册为内置供应商 `local-embedding` 并在引导时启用;系统默认 `embed_model` 与 `reranker` 切换为本地模型,界面建库、检索与综述不再依赖 SiliconFlow。重排请求超时支持 `RERANK_TIMEOUT_SECONDS` 覆盖(默认 30 秒),适配本地 CPU 推理处理大候选集。模型更换会改变向量维度,已有知识库需重建。
+- 修复科研检索聊天模型解析缺省回退:按请求参数、知识库配置、系统默认模型三级解析,与综述链路一致;空白配置视为未配置,避免知识库未填模型时整条检索链路不可用。补充单元测试。
+- 新增本地开发环境启动指南:覆盖共享数据容器、本地推理服务、前后端启动顺序、配置文件、健康检查与常见故障处理,见 `docs/develop-guides/local-dev-environment.md`。
 - 论文资料库新增多格式导出：除原有 BibTeX 外，支持 Markdown 文献收藏、RIS（EndNote / Zotero / Mendeley 兼容）、CSV 与纯文本列表，统一入口为 `GET /api/research/databases/{kb_id}/papers/export/{export_format}`，沿用知识库访问权限校验，非法格式返回 422 结构化错误。BibTeX 复用既有转义与引用键生成，新旧接口输出一致；CSV 使用 UTF-8 BOM 并对公式样式单元格加前导单引号；Markdown 与 RIS 对换行字段做单行压缩。格式设计参考 LitScan 项目 `core/exporter.py`（MIT License），代码按本仓库论文模型重写，未新增第三方依赖。前端论文工具栏的单一 BibTeX 按钮改为导出下拉菜单。
 
 - 修复真实 Chromium 浏览器回归中 Ant Design 模态框按钮可访问名称包含空格导致的定位超时:项目、里程碑、任务与风险保存统一使用模态框主按钮选择器;在 Docker 运行的真实账号回归已通过。
