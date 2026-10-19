@@ -779,6 +779,7 @@ _PROJECT_STATUS_MAP = {
     "plan_asset_link_not_found": 404,
     "plan_asset_target_not_found": 404,
     "invalid_project_status": 422,
+    "project_progress_managed_by_tasks": 422,
     "invalid_asset_type": 422,
     "invalid_milestone_status": 422,
     "invalid_task_status": 422,

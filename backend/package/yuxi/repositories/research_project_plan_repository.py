@@ -154,6 +154,8 @@ class ResearchProjectPlanRepository:
 
     async def create_milestone(self, project_id: str, values: dict[str, Any], *, operator_uid: str) -> ResearchProjectMilestone:
         async with pg_manager.get_async_session_context() as session:
+            # Lock the project before allocating sort_order so concurrent creates cannot read the same maximum.
+            await self._touch_project(session, project_id)
             max_order = await session.scalar(
                 select(func.max(ResearchProjectMilestone.sort_order)).where(
                     ResearchProjectMilestone.project_id == project_id
@@ -175,7 +177,6 @@ class ResearchProjectPlanRepository:
                     payload={"title": record.title, "status": record.status, "target_date": record.target_date},
                 )
             )
-            await self._touch_project(session, project_id)
             await session.flush()
             return record
 
@@ -301,8 +302,12 @@ class ResearchProjectPlanRepository:
     async def create_task(self, project_id: str, values: dict[str, Any], *, operator_uid: str) -> ResearchProjectTask | None:
         async with pg_manager.get_async_session_context() as session:
             milestone_id = values.get("milestone_id")
-            if milestone_id and not await self._locked_milestone(session, project_id, milestone_id):
-                return None
+            if milestone_id:
+                if not await self._locked_milestone(session, project_id, milestone_id):
+                    return None
+            else:
+                # Unmilestoned tasks have no row to lock, so serialize order allocation on the project row.
+                await self._touch_project(session, project_id)
             group_filter = ResearchProjectTask.milestone_id == milestone_id
             if milestone_id is None:
                 group_filter = ResearchProjectTask.milestone_id.is_(None)
@@ -367,9 +372,15 @@ class ResearchProjectPlanRepository:
             previous_status = str(record.status)
             old_milestone_id = str(record.milestone_id) if record.milestone_id else None
             new_milestone_id = values.get("milestone_id", old_milestone_id)
-            if new_milestone_id and not await self._locked_milestone(session, project_id, new_milestone_id):
-                return None
+            # Lock both affected milestones in a stable order so concurrent cross-moves cannot deadlock.
+            for milestone_id in sorted({old_milestone_id, new_milestone_id} - {None}):
+                if not await self._locked_milestone(session, project_id, milestone_id):
+                    return None
             if new_milestone_id != old_milestone_id:
+                if new_milestone_id is None:
+                    # Lock in milestone -> project order to match create_task; the project row serializes
+                    # sort_order allocation because an empty target group has no task rows to lock.
+                    await self._touch_project(session, project_id)
                 group_filter = ResearchProjectTask.milestone_id == new_milestone_id
                 if new_milestone_id is None:
                     group_filter = ResearchProjectTask.milestone_id.is_(None)

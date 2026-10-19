@@ -218,12 +218,14 @@ async def test_import_queues_before_external_dependency_calls(monkeypatch):
     async def get_support(kb_id):
         return None, True
 
-    async def fail_enqueue(**kwargs):
-        return SimpleNamespace(id="task-1")
+    async def unique_enqueue(**kwargs):
+        assert kwargs["payload_match"] == {"kb_id": "kb-1", "identifier": "remote-1"}
+        assert kwargs["statuses"] == {"pending", "running"}
+        return SimpleNamespace(id="task-1"), True
 
     monkeypatch.setattr(academic_paper_import_service, "_ensure_access", allow_access)
     monkeypatch.setattr(academic_paper_import_service.knowledge_base, "get_database_document_support", get_support)
-    monkeypatch.setattr(academic_paper_import_service.tasker, "enqueue", fail_enqueue)
+    monkeypatch.setattr(academic_paper_import_service.tasker, "enqueue_unique_by_payload", unique_enqueue)
 
     result = await academic_paper_import_service.import_external_paper(
         identifier="remote-1", kb_id="kb-1", current_user=SimpleNamespace(uid="admin-1")

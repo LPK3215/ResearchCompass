@@ -116,6 +116,36 @@ async def test_update_project_applies_lifecycle_timestamps(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_update_project_rejects_manual_progress_when_tasks_exist(monkeypatch):
+    class PlanRepository:
+        async def get_plan_records(self, project_id):
+            return [], [SimpleNamespace(task_id="task-1", status="todo", milestone_id=None)], []
+
+    class FakeRepository:
+        async def get(self, project_id, *, uid):
+            return _project()
+
+        async def update(self, *args, **kwargs):
+            raise AssertionError("progress must be rejected before persistence")
+
+    async def allow_access(current_user, kb_id):
+        return None
+
+    monkeypatch.setattr(research_project_service, "ResearchProjectPlanRepository", PlanRepository)
+    monkeypatch.setattr(research_project_service, "ResearchProjectRepository", lambda: FakeRepository())
+    monkeypatch.setattr(research_project_service, "_ensure_access", allow_access)
+
+    with pytest.raises(research_project_service.ResearchProjectError) as exc_info:
+        await research_project_service.update_research_project(
+            project_id="project-1",
+            current_user=_user(),
+            values={"progress": 75},
+        )
+
+    assert exc_info.value.error_type == "project_progress_managed_by_tasks"
+
+
+@pytest.mark.asyncio
 async def test_completed_project_can_be_archived(monkeypatch):
     project = _project(status="completed")
 

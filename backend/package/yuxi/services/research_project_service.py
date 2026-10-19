@@ -273,8 +273,11 @@ async def update_research_project(
     activity_type = "project_status_changed" if status != project.status else "project_updated"
     plan_repository = ResearchProjectPlanRepository()
     milestones, tasks, _ = await plan_repository.get_plan_records(project_id)
-    if tasks:
-        values.pop("progress", None)
+    if tasks and values.get("progress") is not None and status != "completed":
+        raise ResearchProjectError(
+            "project_progress_managed_by_tasks",
+            "Project progress follows task completion; update task status instead",
+        )
     if status == "completed" and "progress" in values:
         values["progress"] = 100
     if status != project.status:

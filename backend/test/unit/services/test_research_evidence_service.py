@@ -108,8 +108,9 @@ async def test_archived_evidence_cannot_transition_back_to_verified(monkeypatch)
     )
     session = _Session(row)
 
-    async def allow_access(current_user, kb_id):
+    async def allow_access(current_user, kb_id, *, write=False):
         assert kb_id == "kb-1"
+        assert write is True
 
     monkeypatch.setattr(research_evidence_service, "_ensure_access", allow_access)
     monkeypatch.setattr(
@@ -140,8 +141,9 @@ async def test_evidence_lifecycle_records_operator_timestamps_and_reasons(monkey
     )
     session = _ActivitySession(row, [])
 
-    async def allow_access(current_user, kb_id):
+    async def allow_access(current_user, kb_id, *, write=False):
         assert kb_id == "kb-1"
+        assert write is True
 
     monkeypatch.setattr(research_evidence_service, "_ensure_access", allow_access)
     monkeypatch.setattr(

@@ -64,6 +64,30 @@ def _is_embedding_failure(exc: BaseException) -> bool:
     return False
 
 
+_TRANSIENT_FAILURE_MARKERS = (
+    (
+        "external_dependency",
+        ("timeout", "timed out", "connection", "rate limit", "ratelimit", "overloaded", "service unavailable"),
+    ),
+    ("vector_store", ("milvus", "vector", "embedding")),
+    ("model", ("model", "llm", "inference")),
+)
+
+
+def _classify_search_failure(exc: BaseException) -> tuple[bool, str | None]:
+    """Only transient dependency failures are retryable; deterministic errors are not."""
+    current: BaseException | None = exc
+    while current is not None:
+        evidence = f"{type(current).__module__}.{type(current).__name__} {current}".casefold()
+        if isinstance(current, (TimeoutError, ConnectionError)):
+            return True, "external_dependency"
+        for dependency, markers in _TRANSIENT_FAILURE_MARKERS:
+            if any(marker in evidence for marker in markers):
+                return True, dependency
+        current = current.__cause__ or current.__context__
+    return False, None
+
+
 def _parse_rewrite(content: str) -> dict[str, Any]:
     value = content.strip()
     value = re.sub(r"^```(?:json)?\s*|\s*```$", "", value, flags=re.IGNORECASE | re.DOTALL).strip()
@@ -566,7 +590,7 @@ async def search_papers(
     except Exception as exc:
         failure_type = "strict_research_failure" if citation_graph_enabled else "local_research_failure"
         failure_message = "科研严格图谱检索执行失败" if citation_graph_enabled else "科研本地混合检索执行失败"
-        dependency = "vector_store" if not citation_graph_enabled else "retrieval"
+        retryable, dependency = _classify_search_failure(exc)
         await run_repo.update(
             run_id,
             {
@@ -574,7 +598,7 @@ async def search_papers(
                 "stage_timings": timings,
                 "error_type": failure_type,
                 "error_message": failure_message,
-                "retryable": True,
+                "retryable": retryable,
                 "dependency": dependency,
                 "completed_at": utc_now_naive(),
             },

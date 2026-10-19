@@ -2130,9 +2130,9 @@ const importExternalPaperItem = async (paper) => {
   externalImportingId.value = paper.paper_id
   externalImportError.value = ''
   try {
-    const result = await researchApi.importExternalPaper(kbId, paper.paper_id)
+    await researchApi.importExternalPaper(kbId, paper.paper_id)
     if (requestGeneration !== workspaceRequestGeneration || kbId !== selectedKbId.value) return
-    message.success(`已提交“${result.title}”导入任务`)
+    message.success(`已提交“${paper.title || paper.paper_id}”导入任务`)
     externalImportOpen.value = false
     externalPapers.value = []
     externalImportQuery.value = ''

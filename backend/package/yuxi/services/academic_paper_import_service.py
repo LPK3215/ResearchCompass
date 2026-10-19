@@ -364,7 +364,7 @@ async def import_external_paper(*, identifier: str, kb_id: str, current_user: Us
     if not support_info[1]:
         raise AcademicPaperImportError("unsupported_knowledge_base", "当前知识库不支持论文文件导入")
     try:
-        task = await tasker.enqueue(
+        task, _ = await tasker.enqueue_unique_by_payload(
             name=f"导入学术论文 ({identifier[:220]})",
             task_type="academic_paper_import",
             payload={
@@ -373,6 +373,8 @@ async def import_external_paper(*, identifier: str, kb_id: str, current_user: Us
                 "operator_id": str(current_user.uid),
                 "uid": str(current_user.uid),
             },
+            payload_match={"kb_id": kb_id, "identifier": identifier},
+            statuses={"pending", "running"},
             coroutine=_resume_external_paper_import_task,
         )
     except Exception as exc:

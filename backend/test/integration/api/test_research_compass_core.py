@@ -1186,9 +1186,17 @@ async def _exercise_research_project_api(
         )
         assert isolated_response.status_code == 404
 
+    progress_response = await test_client.patch(
+        f"/api/research/projects/{project_id}",
+        json={"progress": 75},
+        headers=admin_headers,
+    )
+    assert progress_response.status_code == 422, progress_response.text
+    assert progress_response.json()["detail"]["error"] == "project_progress_managed_by_tasks"
+
     update_response = await test_client.patch(
         f"/api/research/projects/{project_id}",
-        json={"progress": 75, "next_action": "Validate the linked synthesis", "tags": ["evidence", "validated"]},
+        json={"next_action": "Validate the linked synthesis", "tags": ["evidence", "validated"]},
         headers=admin_headers,
     )
     assert update_response.status_code == 200, update_response.text
@@ -1284,7 +1292,7 @@ async def _exercise_research_project_api(
 
     reactivate_response = await test_client.patch(
         f"/api/research/projects/{project_id}",
-        json={"status": "active", "progress": 80},
+        json={"status": "active"},
         headers=admin_headers,
     )
     assert reactivate_response.status_code == 200, reactivate_response.text

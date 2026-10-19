@@ -66,7 +66,7 @@ async def transition_evidence(*, evidence_id: str, status: str, reason: str | No
         )
         if row is None:
             raise HTTPException(status_code=404, detail="证据不存在")
-        await _ensure_access(current_user, str(row.kb_id))
+        await _ensure_access(current_user, str(row.kb_id), write=True)
         if status not in ALLOWED_TRANSITIONS.get(str(row.status), set()):
             raise HTTPException(status_code=409, detail=f"证据状态不能从 {row.status} 转换为 {status}")
         previous_status = str(row.status)

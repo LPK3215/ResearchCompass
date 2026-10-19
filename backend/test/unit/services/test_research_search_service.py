@@ -30,6 +30,19 @@ def test_embedding_failure_detection_only_follows_exception_chain():
     ) is False
 
 
+def test_search_failure_classification_keeps_only_transient_dependencies_retryable():
+    assert research_search_service._classify_search_failure(TimeoutError("slow")) == (True, "external_dependency")
+    assert research_search_service._classify_search_failure(
+        RuntimeError("Milvus search returned an invalid collection state")
+    ) == (True, "vector_store")
+    assert research_search_service._classify_search_failure(
+        RuntimeError("invalid result schema")
+    ) == (False, None)
+    nested = RuntimeError("retrieval failed")
+    nested.__cause__ = RuntimeError("rate limit exceeded")
+    assert research_search_service._classify_search_failure(nested) == (True, "external_dependency")
+
+
 @pytest.mark.asyncio
 async def test_retry_search_run_rejects_non_retryable_failure(monkeypatch):
     class FakeRepository:
@@ -377,6 +390,8 @@ async def test_unexpected_search_failure_does_not_persist_provider_error_details
 
     assert exc_info.value.error_type == "local_research_failure"
     failed_run = run_updates[-1]
+    assert failed_run["retryable"] is False
+    assert failed_run["dependency"] is None
     assert failed_run["error_type"] == "local_research_failure"
     assert failed_run["error_message"] == "科研本地混合检索执行失败"
     assert "secret-api-key" not in str(run_updates)
