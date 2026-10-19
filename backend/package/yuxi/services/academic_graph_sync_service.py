@@ -265,6 +265,28 @@ async def _run_sync(
             raise AcademicGraphSyncError("paper_not_found", "部分待同步论文不存在于当前知识库")
         if not papers:
             raise AcademicGraphSyncError("paper_not_found", "当前知识库没有可同步论文")
+        synced_paper_ids = await repo.list_synced_library_paper_ids(kb_id=kb_id)
+        pending_papers = [paper for paper in papers if str(paper.paper_id) not in synced_paper_ids]
+        if not pending_papers:
+            processed_paper_ids.update(str(paper.paper_id) for paper in papers)
+            counts["processed_papers"] = len(processed_paper_ids)
+            graph_counts = await repo.counts(kb_id)
+            counts.update(
+                {
+                    "graph_papers": graph_counts["papers"],
+                    "citations": graph_counts["citations"],
+                    "authors": graph_counts["authors"],
+                    "topics": graph_counts["topics"],
+                    "status": "success",
+                    "completed_at": utc_now_naive(),
+                }
+            )
+            await _persist_sync_checkpoint(repo, run_id, counts, processed_paper_ids)
+            await context.set_progress(100, "所选论文均已同步至引用图谱，跳过重复同步")
+            result = {k: v for k, v in counts.items() if k != "completed_at"}
+            await context.set_result({"run_id": run_id, **result})
+            return {"run_id": run_id, **counts}
+        papers = pending_papers
         for index, local_paper in enumerate(papers, start=1):
             if local_paper.paper_id in processed_paper_ids:
                 continue

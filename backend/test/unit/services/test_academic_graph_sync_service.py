@@ -89,6 +89,7 @@ async def test_graph_sync_reuses_persisted_paper_checkpoint(monkeypatch):
     updates = []
     citation_batches = []
     projected_citations = []
+    synced_paper_ids: set[str] = set()
 
     class FakeGraphRepository:
         async def get_sync_run(self, run_id):
@@ -106,6 +107,9 @@ async def test_graph_sync_reuses_persisted_paper_checkpoint(monkeypatch):
 
         async def counts(self, kb_id):
             return {"papers": 3, "citations": 2, "authors": 5, "topics": 6}
+
+        async def list_synced_library_paper_ids(self, *, kb_id):
+            return synced_paper_ids
 
         async def upsert_citations(self, records):
             citation_batches.append(records)
@@ -178,6 +182,73 @@ async def test_graph_sync_reuses_persisted_paper_checkpoint(monkeypatch):
     assert len(citation_batches) == 1
     assert len(citation_batches[0]) == 2
     assert len(projected_citations) == 2
+
+
+@pytest.mark.asyncio
+async def test_graph_sync_skips_papers_already_in_graph(monkeypatch):
+    resolved_papers = []
+    updates = []
+    synced_paper_ids = {"paper-1", "paper-2"}
+
+    class FakeGraphRepository:
+        async def get_sync_run(self, run_id):
+            return SimpleNamespace(
+                processed_paper_ids=[],
+                graph_papers=2,
+                citations=1,
+                authors=3,
+                topics=4,
+                conflict_count=0,
+            )
+
+        async def update_sync_run(self, run_id, values):
+            updates.append(values)
+
+        async def counts(self, kb_id):
+            return {"papers": 3, "citations": 2, "authors": 5, "topics": 6}
+
+        async def list_synced_library_paper_ids(self, *, kb_id):
+            return synced_paper_ids
+
+    class FakePaperRepository:
+        async def list_for_graph_sync(self, *, kb_id, paper_ids):
+            return [
+                SimpleNamespace(id=1, paper_id="paper-1", title="Done", external_ids={}),
+                SimpleNamespace(id=2, paper_id="paper-2", title="Also done", external_ids={}),
+            ]
+
+    class Context:
+        cancellation_reason = None
+
+        async def raise_if_cancelled(self):
+            return None
+
+        async def set_progress(self, *args):
+            return None
+
+        async def set_result(self, result):
+            return None
+
+    async def allow_owner(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(academic_graph_sync_service, "AcademicGraphRepository", FakeGraphRepository)
+    monkeypatch.setattr(academic_graph_sync_service, "AcademicPaperRepository", FakePaperRepository)
+    monkeypatch.setattr(academic_graph_sync_service, "_ensure_graph_sync_owner_can_write", allow_owner)
+
+    result = await academic_graph_sync_service._run_sync(
+        Context(),
+        run_id="run-1",
+        kb_id="kb-1",
+        paper_ids=["paper-1", "paper-2"],
+        citation_limit=5,
+        reference_limit=5,
+    )
+
+    assert resolved_papers == []
+    assert result["processed_papers"] == 2
+    assert result["status"] == "success"
+    assert updates[-1]["status"] == "success"
 
 
 @pytest.mark.asyncio

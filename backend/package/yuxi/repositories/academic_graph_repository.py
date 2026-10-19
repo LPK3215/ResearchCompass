@@ -282,6 +282,20 @@ class AcademicGraphRepository:
             )
             return list(result.scalars().all()), total
 
+    async def list_synced_library_paper_ids(self, *, kb_id: str) -> set[str]:
+        """返回当前知识库中已建立图谱节点的论文 paper_id 集合，用于同步任务跳过重复同步。"""
+        async with pg_manager.get_async_session_context() as session:
+            result = await session.execute(
+                select(AcademicPaper.paper_id)
+                .join(AcademicGraphPaper, AcademicGraphPaper.academic_paper_id == AcademicPaper.id)
+                .where(
+                    AcademicGraphPaper.kb_id == kb_id,
+                    AcademicPaper.kb_id == kb_id,
+                    AcademicGraphPaper.academic_paper_id.is_not(None),
+                )
+            )
+            return {str(row) for row in result.scalars().all()}
+
     async def resolve_seed_papers(self, *, kb_id: str, paper_scores: dict[str, float]) -> dict[str, float]:
         if not paper_scores:
             return {}
