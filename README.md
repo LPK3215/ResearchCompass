@@ -1,17 +1,61 @@
 # ResearchCompass 科研罗盘
 
-ResearchCompass 是我面向学术文献检索、分析和研究证据管理设计并实现的科研智能体平台。本系统在开源智能体框架 Yuxi 之上，针对科研领域二次开发，实现了学术语义分块、混合检索、论文引用图谱、多 Agent 分析、证据综述、消融实验和匿名用户评测等科研业务能力；Yuxi 提供多租户知识库、智能体运行态与工具体系等通用底座，本仓库在此基础上聚焦科研场景的流程、工具与价值设计。
+> 面向学术文献的科研智能体平台：把论文变成可检索、可核查的私有文献库，再把「找证据 → 读论文 → 写综述 → 立课题 → 出报告」串成一条可追溯的流水线。
+>
+> **它不替你想观点，它负责让你写的每一句话都能指回一篇真实论文的某一段。**
 
-## 核心能力
+[文档站](https://lpk3215.github.io/ResearchCompass/) · [English](README.en.md) · [版本变更记录](docs/develop-guides/changelog.md)
 
-- 对话式研究 Copilot：完整模式登录后直接进入 ResearchCompass，AI 研究助手自动获得当前知识库、研究项目、工作区和选中对象上下文，并通过我设计的受权限与审批约束的领域工具执行项目规划、论文检索、证据综述和成果归集；所有结果继续写回结构化工作台。Lite 模式不加载研究依赖，默认进入通用助手。
-- 学术语义分块：我针对论文结构按 Abstract、Introduction、Method、Experiments、Conclusion 等章节组织内容，并保留页码、字符区间及公式表格元数据。
-- 研究项目执行中心：以真实课题为单位管理有序里程碑、任务、优先级、截止日期和阻塞状态，由执行项自动计算进度与健康风险；统一归集并关联论文、检索、证据综述、分析与实验成果，支持 Markdown/DOCX 项目报告和完整活动审计。
-- 双模式科研检索：本地混合模式组合向量、BM25 和重排序；严格图谱模式进一步使用论文引用图谱和 PPR 扩展，图谱不可用时明确失败。检索结果会持久化到个人历史，可恢复、置顶、删除、按原配置重跑并继续生成证据综述。
-- 多 Agent 论文分析：在 Yuxi 的 LangGraph 智能体运行态之上，我编排了结构化提取、创新点识别、方法论分析和研究空白发现四个阶段。
-- 可核查证据：检索结果、分析报告和证据综述均关联真实论文分块，支持回到 PDF 原文定位。
-- 可复现实验：固定数据集、模型配置和语料指纹，对比分块、检索与分析策略，不根据缺失样本推断效果。
-- 用户研究：提供一次性匿名邀请、SUS 问卷、结果聚合和 CSV 导出。
+## 它能干什么
+
+| 场景 | 你得到的不是"一段回答"，而是 | 入口 |
+| --- | --- | --- |
+| **私有文献库** | 按 Abstract/Method/Experiments 等学术章节切分、带页码与字符区间的论文知识库 | 知识与工具管理 → 知识库 |
+| **可追溯检索** | 论文 + 章节 + 原文片段 + 四路检索分数，点开回到 PDF 原文 | 科研罗盘 → 智能检索 |
+| **证据约束综述** | 主题综述、核心结论、证据矛盾、研究局限、研究空白，外加"未支持结论"清单 | 科研罗盘 → 证据综述 |
+| **论文分析** | 单 Agent 结构化提取，或四阶段多 Agent 拆解（创新点 / 方法学 / 空白） | 论文库 → 论文分析 |
+| **课题执行中心** | 里程碑、任务、成果归集、风险登记、确定性进度与项目报告 | 科研罗盘 → 研究项目 |
+| **研究地图** | 引用图谱（含两跳关系）、发表趋势与关键词演进、机会分与判断依据 | 科研罗盘 → 引用图谱 / 趋势 / 机会 |
+| **AI 研究助手** | 带知识库与项目上下文、可调用领域工具、敏感操作先审批的对话式执行 | 科研罗盘右侧面板 / 科研助手页 |
+| **可复现实验** | RAG 评估、检索消融、单/多 Agent A/B 盲评、SUS 匿名用户评测 | 知识库详情 / 科研罗盘 → 分析对比、用户评测 |
+
+## 一条完整链路（写作视角）
+
+```
+建库 → 传 PDF → 读论文 → 检索找证据 → 综述（校验 → 生成 → 导出）
+        ↓                                   ↓
+     研究趋势 / 研究机会                研究项目（里程碑 / 任务 / 成果）
+                                            ↓
+                                       导出报告 → 论文各章节
+                                            ↓
+                                  评测 / 消融 / 盲评 / 用户评测
+```
+
+每一步点哪里、产出什么、怎么判断做对了，见 **《[从选题到成稿](./docs/intro/research-workflow.md)》**；只想快速了解能干什么，见 **《[能力全景](./docs/intro/capabilities.md)》**。
+
+## 30 分钟上手
+
+1. 建一个 Milvus 知识库（嵌入模型用本地 `local-embedding`），上传 5～10 篇你熟悉的论文，分块策略选 **Academic Paper**。
+2. 在「智能检索」里问一个你已知答案的问题，核对返回的证据是否对得上原文。
+3. 用「证据综述」生成一份小综述：失败于证据校验时点「一键录入并验证」再「重新生成」。
+4. 建一个研究项目，把上面的检索与综述归集进去，导出 Markdown 报告。
+
+## 文档地图
+
+| 我想了解 | 看这份文档 |
+| --- | --- |
+| 这套系统到底能干什么 | [能力全景](docs/intro/capabilities.md) |
+| 怎么用它从选题做到成稿 | [从选题到成稿](docs/intro/research-workflow.md) |
+| 功能规则细节（项目/检索/综述/评测） | [科研罗盘 ResearchCompass](docs/intro/research-compass.md) |
+| 装起来、跑起来 | [快速开始](docs/intro/quick-start.md) · [生产部署](docs/advanced/deployment.md) |
+| 本地开发、worker、排障 | [本地开发环境](docs/develop-guides/local-dev-environment.md) |
+| 模型与 API Key 怎么配 | [模型配置](docs/intro/model-config.md) · [API Key 外部集成](docs/advanced/api-key-integration.md) |
+| 知识库、图谱、评估底层 | [知识库与知识图谱](docs/intro/knowledge-base.md) · [知识库评估](docs/intro/evaluation.md) |
+| 智能体 / 工具 / MCP / Skills | [智能体开发](docs/agents/agents-config.md) 分组 |
+| 改了什么、为什么这么改 | [版本变更记录](docs/develop-guides/changelog.md) · [规划与决策](docs/project/规划与决策.md) |
+| 代码边界与运行链路 | [ARCHITECTURE.md](ARCHITECTURE.md) |
+
+> 仓库根目录只保留入口文件（README、LICENSE、AGENTS、架构与部署编排）；立项方案、决策记录、实现跟踪表与验收记录统一归档在 [docs/project](docs/project/README.md)，不随文档站发布。
 
 ## 技术架构
 
@@ -23,7 +67,7 @@ ResearchCompass 是我面向学术文献检索、分析和研究证据管理设�
 | 存储 | PostgreSQL、Redis、MinIO |
 | 部署 | Docker Compose |
 
-完整代码边界和运行链路见 [ARCHITECTURE.md](ARCHITECTURE.md)，ResearchCompass 使用说明见 [docs/intro/research-compass.md](docs/intro/research-compass.md)。
+ResearchCompass 在开源智能体框架 [Yuxi](https://github.com/xerrors/Yuxi) 之上二次开发：Yuxi 提供多租户知识库、智能体运行态、沙盒与中间件等通用底座，本仓库实现学术语义分块、论文引用图谱、证据综述、项目执行中心与实验评测等科研业务。完整代码边界与运行链路见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
 ## 快速开始
 
@@ -61,13 +105,13 @@ docker compose -f docker-compose.prod.yml up -d --build
 
 ## 验证
 
-项目开发和测试统一在 Docker 容器中执行：
-
 ```powershell
 .\scripts\release_check.ps1
 ```
 
-该脚本冷构建开发与生产镜像（含完整/Lite 两种前端）、检查两级 Python 锁文件、Copilot 新增文件格式及全仓 Ruff 规则，运行后端单元、集成和 E2E 测试，并完成前端单测、ESLint、生产构建及 VitePress 文档构建。依赖真实论文及 Semantic Scholar 的实验结果仍需按 [功能实现跟踪表.md](功能实现跟踪表.md) 完成人工验收。
+该脚本冷构建开发与生产镜像（含完整/Lite 两种前端）、检查两级 Python 锁文件、Copilot 新增文件格式及全仓 Ruff 规则，运行后端单元、集成和 E2E 测试，并完成前端单测、ESLint、生产构建及 VitePress 文档构建。
+
+最近一次验收：**A–I 九组共 90 项浏览器全功能验证全部通过，未解决项 0**，含 6 条修复记录，见 [验证记录-2026-10-20](docs/project/验证记录-2026-10-20.md)。
 
 ## 项目来源与致谢
 

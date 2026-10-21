@@ -24,7 +24,19 @@
 
 ResearchCompass is an LLM-powered research workspace that I designed and implemented on top of the open-source Yuxi agent framework, with research-specific domain extensions. Its conversational Copilot carries the active knowledge base, research project, workspace, and selected-object context into every run, then uses the permission-checked domain tools I built for research workflows to plan work, search papers, produce evidence syntheses, and organize results. Projects, plans, evidence, and deliverables remain structured and auditable instead of living only in chat history. Yuxi contributes the general agent runtime, multi-tenant knowledge base, sandbox, and middleware; this repository focuses on the scientific research workflow, domain tools, and evidence management.
 
-Navigation: [ResearchCompass](https://lpk3215.github.io/ResearchCompass/intro/research-compass) ｜ [Quick Start](https://lpk3215.github.io/ResearchCompass/intro/quick-start) ｜ [Roadmap](https://lpk3215.github.io/ResearchCompass/develop-guides/roadmap); for the latest updates, see the [changelog](https://lpk3215.github.io/ResearchCompass/develop-guides/changelog).
+Navigation: [What it does](https://lpk3215.github.io/ResearchCompass/intro/capabilities) ｜ [How to use it](https://lpk3215.github.io/ResearchCompass/intro/research-workflow) ｜ [ResearchCompass](https://lpk3215.github.io/ResearchCompass/intro/research-compass) ｜ [Quick Start](https://lpk3215.github.io/ResearchCompass/intro/quick-start) ｜ [Roadmap](https://lpk3215.github.io/ResearchCompass/develop-guides/roadmap); for the latest updates, see the [changelog](https://lpk3215.github.io/ResearchCompass/develop-guides/changelog).
+
+**In one line:** it does not invent your arguments — it makes every sentence you write trace back to a specific passage of a real paper.
+
+| You want to… | What you actually get | Where |
+| --- | --- | --- |
+| Build a private literature library | Papers chunked by academic sections (Abstract / Method / Experiments…), with page numbers and character ranges | Knowledge → Knowledge base |
+| Find traceable evidence | Paper + section + original passage + four retrieval scores, openable at the exact PDF location | Research Compass → Smart search |
+| Write an evidence-bound review | Topic synthesis, key claims, contradictions, limitations, gaps — plus an explicit “unsupported claims” list | Research Compass → Evidence synthesis |
+| Understand a single paper | One-pass structured extraction, or a four-stage multi-agent breakdown | Paper library → Paper analysis |
+| Run a real research project | Milestones, tasks, asset links, risks, deterministic progress and exportable reports | Research Compass → Research projects |
+| See the research landscape | Citation graph with two-hop relations, publication trends, opportunity scores with reasons | Research Compass → Graph / Trends / Opportunities |
+| Prove it works | RAG evaluation, retrieval ablations, single-vs-multi-agent blind review, anonymous SUS studies | Knowledge base detail / Research Compass |
 
 ## Core Features
 
@@ -35,6 +47,20 @@ Navigation: [ResearchCompass](https://lpk3215.github.io/ResearchCompass/intro/re
 - 🕸️ **Knowledge graph** — Build, visualize, and retrieve entity-relation graphs inside Milvus knowledge bases, then fuse graph hits with chunk retrieval for agent reasoning.
 - 🏢 **Multi-tenancy & permissions** — User / department-level access control, unified model provider configuration, and API Key authentication for external system integration.
 - ⚙️ **Platform & engineering** — Vue + FastAPI architecture, ready-to-run Docker Compose deployment, dark mode, a lightweight LITE startup mode, and production-grade orchestration.
+
+## Where to read what
+
+| I want to know | Read this |
+| --- | --- |
+| What the system can actually do | [Capabilities overview](https://lpk3215.github.io/ResearchCompass/intro/capabilities) |
+| How to go from a topic to a paper draft | [From topic to draft](https://lpk3215.github.io/ResearchCompass/intro/research-workflow) |
+| Functional rules (projects, retrieval, synthesis, evaluation) | [ResearchCompass](https://lpk3215.github.io/ResearchCompass/intro/research-compass) |
+| Install and run | [Quick start](https://lpk3215.github.io/ResearchCompass/intro/quick-start) · [Production deployment](https://lpk3215.github.io/ResearchCompass/advanced/deployment) |
+| Local development and troubleshooting | [Local dev environment](https://lpk3215.github.io/ResearchCompass/develop-guides/local-dev-environment) |
+| Code boundaries and runtime paths | [ARCHITECTURE.md](ARCHITECTURE.md) |
+| What changed and why | [Changelog](https://lpk3215.github.io/ResearchCompass/develop-guides/changelog) · `docs/project/规划与决策.md` |
+
+> Process documents (proposal, decision log, implementation tracker, acceptance records) are archived under `docs/project/` and excluded from the published site.
 
 ## Tech Stack
 

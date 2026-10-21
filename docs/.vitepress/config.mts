@@ -8,6 +8,8 @@ export default defineConfig({
   title: 'ResearchCompass',
   description: '基于开源智能体框架 Yuxi 二次开发的科研智能体平台',
   base: '/ResearchCompass/',
+  // 内部项目档案（立项方案/决策/跟踪表/验收记录）只保留在仓库内，不发布到文档站
+  srcExclude: ['project/**'],
   ignoreDeadLinks: [
     /localhost/,
     /CONTRIBUTING$/,
@@ -23,6 +25,8 @@ export default defineConfig({
     // https://vitepress.dev/reference/default-theme-config
     logo: "/favicon.svg",
     nav: [
+      { text: '能干什么', link: '/intro/capabilities' },
+      { text: '怎么用', link: '/intro/research-workflow' },
       { text: '科研罗盘', link: '/intro/research-compass' },
       { text: '快速开始', link: '/intro/quick-start' },
       { text: '智能体开发', link: '/agents/agents-config' }
@@ -32,6 +36,8 @@ export default defineConfig({
       {
         text: '简介',
         items: [
+          { text: '能力全景', link: '/intro/capabilities' },
+          { text: '从选题到成稿', link: '/intro/research-workflow' },
           { text: '科研罗盘', link: '/intro/research-compass' },
           { text: 'AI 研究助手', link: '/intro/research-compass#ai-研究助手' },
           { text: '项目简介', link: '/intro/project-overview' },

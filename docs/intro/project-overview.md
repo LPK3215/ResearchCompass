@@ -73,6 +73,8 @@ ResearchCompass 与 Yuxi 通用底座适用于以下场景：
 
 ## 下一步
 
+- 先看能干什么：[能力全景](./capabilities.md)
+- 再看怎么用：[从选题到成稿](./research-workflow.md)
 - 快速开始：阅读 [快速开始指南](./quick-start.md)
 - 模型配置：阅读 [模型配置](./model-config.md)
 - 知识库使用：阅读 [知识库与知识图谱](./knowledge-base.md)

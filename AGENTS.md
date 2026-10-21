@@ -5,6 +5,20 @@ ResearchCompass（科研罗盘）是本仓库作者在开源智能体框架 Yuxi
 
 架构代码地图见 [ARCHITECTURE.md](ARCHITECTURE.md)。修改不熟悉的模块前，先阅读其中的后端、前端、运行链路和架构不变量说明，再用符号搜索定位具体实现；该文档只维护相对稳定的系统边界，不替代细节文档或源码注释。
 
+## 文档地图
+
+| 想了解 | 位置 |
+| --- | --- |
+| 系统能干什么（面向使用者） | `docs/intro/capabilities.md` |
+| 从选题到成稿的完整操作流程 | `docs/intro/research-workflow.md` |
+| 功能规则细节 | `docs/intro/`（`research-compass.md` 为主） |
+| 部署、配置、智能体开发 | `docs/advanced/`、`docs/agents/` |
+| 开发规范、测试、变更记录 | `docs/develop-guides/` |
+| 过程性归档（方案/决策/跟踪表/验收记录） | `docs/project/`（不发布到文档站） |
+| 需求与设计笔记 | `docs/vibe/` |
+
+新增面向用户的正式文档时，需同步更新 `docs/.vitepress/config.mts` 的导航与侧边栏；过程性文档统一放 `docs/project/`，不要堆在仓库根目录。
+
 ## 开发准则
 
 Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
