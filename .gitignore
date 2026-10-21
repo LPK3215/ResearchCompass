@@ -69,6 +69,8 @@ cache
 *.local/*
 
 *.pdf
+# 演示数据（体验验证版本）需要随仓库分发，PDF 原文必须入库
+!demo_data/**/*.pdf
 src/data
 */package-lock.json
 web/package-lock.json

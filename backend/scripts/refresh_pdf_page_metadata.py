@@ -34,7 +34,7 @@ def load_project_env() -> None:
     load_dotenv(APP_ROOT / ".env", override=False)
     load_dotenv(APP_ROOT.parent / ".env", override=False)
     if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stdout.reconfigure(errors="replace")
 
 
 def _page_metadata(metadata: dict[str, Any] | None) -> dict[str, Any]:
@@ -48,7 +48,6 @@ def _source_path(file_row: Any) -> str | None:
 
 async def refresh(*, kb_id: str | None, dry_run: bool) -> int:
     from sqlalchemy import select
-
     from yuxi.knowledge.chunking.pdf_locator import attach_pdf_page_ranges
     from yuxi.repositories.knowledge_chunk_repository import KnowledgeChunkRepository
     from yuxi.storage.postgres.manager import pg_manager

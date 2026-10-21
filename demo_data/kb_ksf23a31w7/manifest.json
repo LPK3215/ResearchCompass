@@ -1,0 +1,261 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-22T00:51:36",
+  "source_kb": {
+    "kb_id": "kb_ksf23a31w7",
+    "name": "ResearchCompass 演示备选库",
+    "description": "用于演示知识库切换与多库并行检索场景",
+    "kb_type": "milvus",
+    "embedding_model_spec": "local-embedding:paraphrase-multilingual-MiniLM-L12-v2",
+    "llm_model_spec": null,
+    "query_params": {
+      "options": {
+        "bm25_top_k": 50,
+        "bm25_weight": 0.3,
+        "final_top_k": 10,
+        "graph_top_k": 20,
+        "ppr_damping": 0.85,
+        "search_mode": "vector",
+        "graph_weight": 1.0,
+        "recall_top_k": 50,
+        "use_reranker": false,
+        "vector_weight": 0.7,
+        "reranker_model": "",
+        "graph_max_nodes": 10000,
+        "include_distances": true,
+        "graph_entity_top_k": 10,
+        "graph_triple_top_k": 10,
+        "use_graph_retrieval": false,
+        "similarity_threshold": 0.0,
+        "bm25_drop_ratio_search": 0.0
+      }
+    },
+    "mindmap": null
+  },
+  "papers": [
+    {
+      "paper_id": "ref_17648632ae466c48991718ed",
+      "source_row_id": 24,
+      "title": "ReAct: Synergizing Reasoning and Acting in Language Models",
+      "abstract": "While large language models (LLMs) have demonstrated impressive capabilities across tasks in language understanding and interactive decision making, their abilities for reasoning (e.g. chain-of-thought prompting) and acting (e.g. action plan generation) have primarily been studied as separate topics. In this paper, we explore the use of LLMs to generate both reasoning traces and task-specific actions in an interleaved manner, allowing for greater synergy between the two: reasoning traces help the model induce, track, and update action plans as well as handle exceptions, while actions allow it to interface with external sources, such as knowledge bases or environments, to gather additional information. We apply our approach, named ReAct, to a diverse set of language and decision making tasks and demonstrate its effectiveness over state-of-the-art baselines, as well as improved human interpretability and trustworthiness over methods without reasoning or acting components. Concretely, on question answering (HotpotQA) and fact verification (Fever), ReAct overcomes issues of hallucination and error propagation prevalent in chain-of-thought reasoning by interacting with a simple Wikipedia API, and generates human-like task-solving trajectories that are more interpretable than baselines without reasoning traces. On two interactive decision making benchmarks (ALFWorld and WebShop), ReAct outperforms imitation and reinforcement learning methods by an absolute success rate of 34% and 10% respectively, while being prompted with only one or two in-context examples. Project site with code: https://react-lm.github.io",
+      "authors": [
+        "Shunyu Yao",
+        "Jeffrey Zhao",
+        "Dian Yu",
+        "Nan Du",
+        "I. Shafran",
+        "Karthik Narasimhan",
+        "Yuan Cao"
+      ],
+      "publication_year": 2022,
+      "venue": "International Conference on Learning Representations",
+      "doi": "10.48550/arxiv.2210.03629",
+      "keywords": [
+        "Computer Science"
+      ],
+      "language": "en",
+      "external_ids": {
+        "DBLP": "conf/iclr/YaoZYDSN023",
+        "ArXiv": "2210.03629",
+        "CorpusId": "252762395",
+        "SemanticScholar": "99832586d55f540f603637e458a292406a0ed75d"
+      },
+      "citation_count": 12840,
+      "metadata_source": "semantic_scholar",
+      "metadata_status": "extracted",
+      "metadata_revision": 1,
+      "indexed_revision": 0,
+      "source_file_name": "ReAct Synergizing Reasoning and Acting in Language Models-99832586d55f.pdf",
+      "pdf_file": "papers/react-synergizing-reasoning-and-acting-in-language-models.pdf",
+      "pdf_sha256": "f285b0971ae4a790e402fb93966bed3adde2cf0a04977d08b2b40d6ab0cace69",
+      "pdf_bytes": 633805,
+      "pdf_object": "knowledgebases/kb_ksf23a31w7/upload/ReAct Synergizing Reasoning and Acting in Language Models-99832586d55f-25a5fe7f52.pdf"
+    },
+    {
+      "paper_id": "ref_28a760ef248842682741adbf",
+      "source_row_id": 18,
+      "title": "Smoke Acceptance Reference",
+      "abstract": null,
+      "authors": [
+        "Tester Smoke"
+      ],
+      "publication_year": 2026,
+      "venue": null,
+      "doi": "10.9999/smoke.acceptance.ref",
+      "keywords": [],
+      "language": null,
+      "external_ids": {
+        "DOI": "10.9999/smoke.acceptance.ref"
+      },
+      "citation_count": null,
+      "metadata_source": "reference_file",
+      "metadata_status": "extracted",
+      "metadata_revision": 1,
+      "indexed_revision": 0,
+      "source_file_name": null
+    },
+    {
+      "paper_id": "ref_e2b471171902239340a229da",
+      "source_row_id": 29,
+      "title": "Deep Residual Learning for Image Recognition",
+      "abstract": null,
+      "authors": [
+        "Kaiming He",
+        "Xiangyu Zhang",
+        "Shaoqing Ren",
+        "Jian Sun"
+      ],
+      "publication_year": 2016,
+      "venue": "2016 IEEE Conference on Computer Vision and Pattern Recognition (CVPR)",
+      "doi": "10.1109/cvpr.2016.90",
+      "keywords": [],
+      "language": null,
+      "external_ids": {
+        "DOI": "10.1109/cvpr.2016.90"
+      },
+      "citation_count": 178269,
+      "metadata_source": "reference_file",
+      "metadata_status": "extracted",
+      "metadata_revision": 1,
+      "indexed_revision": 0,
+      "source_file_name": null
+    },
+    {
+      "paper_id": "s2_1b6e810ce0afd0dd093f789d2b2742d047e316d5",
+      "source_row_id": 23,
+      "title": "Chain of Thought Prompting Elicits Reasoning in Large Language Models",
+      "abstract": "We explore how generating a chain of thought -- a series of intermediate reasoning steps -- significantly improves the ability of large language models to perform complex reasoning. In particular, we show how such reasoning abilities emerge naturally in sufficiently large language models via a simple method called chain of thought prompting, where a few chain of thought demonstrations are provided as exemplars in prompting. Experiments on three large language models show that chain of thought prompting improves performance on a range of arithmetic, commonsense, and symbolic reasoning tasks. The empirical gains can be striking. For instance, prompting a 540B-parameter language model with just eight chain of thought exemplars achieves state of the art accuracy on the GSM8K benchmark of math word problems, surpassing even finetuned GPT-3 with a verifier.",
+      "authors": [
+        "Jason Wei",
+        "Xue-Zhi Wang",
+        "Dale Schuurmans",
+        "Maarten Bosma",
+        "Ed H. Chi",
+        "F. Xia",
+        "Quoc V. Le",
+        "Denny Zhou"
+      ],
+      "publication_year": 2022,
+      "venue": "Neural Information Processing Systems",
+      "doi": "10.52202/068431-1800",
+      "keywords": [
+        "Computer Science"
+      ],
+      "language": "en",
+      "external_ids": {
+        "DOI": "10.52202/068431-1800",
+        "DBLP": "conf/nips/Wei0SBIXCLZ22",
+        "ArXiv": "2201.11903",
+        "CorpusId": "246411621",
+        "SemanticScholar": "1b6e810ce0afd0dd093f789d2b2742d047e316d5"
+      },
+      "citation_count": 23068,
+      "metadata_source": "semantic_scholar",
+      "metadata_status": "extracted",
+      "metadata_revision": 1,
+      "indexed_revision": 1,
+      "source_file_name": "Chain of Thought Prompting Elicits Reasoning in Large Language Models-1b6e810ce0af.pdf",
+      "pdf_file": "papers/chain-of-thought-prompting-elicits-reasoning-in-large-language-models.pdf",
+      "pdf_sha256": "7d9f878c23b460e4566aa4ec9201b1abfb3b8faefb2b1356e411cb90fef72a12",
+      "pdf_bytes": 891773,
+      "pdf_object": "knowledgebases/kb_ksf23a31w7/upload/Chain of Thought Prompting Elicits Reasoning in Large Language Models-1b6e810ce0af-f83dbc5998.pdf"
+    },
+    {
+      "paper_id": "s2_204e3073870fae3d05bcbc2f6a8e263d9b72e776",
+      "source_row_id": 20,
+      "title": "Attention is All you Need",
+      "abstract": "The dominant sequence transduction models are based on complex recurrent or convolutional neural networks in an encoder-decoder configuration. The best performing models also connect the encoder and decoder through an attention mechanism. We propose a new simple network architecture, the Transformer, based solely on attention mechanisms, dispensing with recurrence and convolutions entirely. Experiments on two machine translation tasks show these models to be superior in quality while being more parallelizable and requiring significantly less time to train. Our model achieves 28.4 BLEU on the WMT 2014 English-to-German translation task, improving over the existing best results, including ensembles by over 2 BLEU. On the WMT 2014 English-to-French translation task, our model establishes a new single-model state-of-the-art BLEU score of 41.8 after training for 3.5 days on eight GPUs, a small fraction of the training costs of the best models from the literature. We show that the Transformer generalizes well to other tasks by applying it successfully to English constituency parsing both with large and limited training data.",
+      "authors": [
+        "Ashish Vaswani",
+        "Noam Shazeer",
+        "N. Parmar",
+        "J. Uszkoreit",
+        "Llion Jones",
+        "Aidan N. Gomez",
+        "Lukasz Kaiser",
+        "I. Polosukhin"
+      ],
+      "publication_year": 2017,
+      "venue": "Neural Information Processing Systems",
+      "doi": null,
+      "keywords": [
+        "Computer Science"
+      ],
+      "language": "en",
+      "external_ids": {
+        "MAG": "2626778328",
+        "DBLP": "journals/corr/VaswaniSPUJGKP17",
+        "ArXiv": "1706.03762",
+        "CorpusId": "13756489",
+        "SemanticScholar": "204e3073870fae3d05bcbc2f6a8e263d9b72e776"
+      },
+      "citation_count": 197614,
+      "metadata_source": "semantic_scholar",
+      "metadata_status": "extracted",
+      "metadata_revision": 1,
+      "indexed_revision": 1,
+      "source_file_name": "Attention is All you Need-204e3073870f.pdf",
+      "pdf_file": "papers/attention-is-all-you-need.pdf",
+      "pdf_sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697",
+      "pdf_bytes": 2215244,
+      "pdf_object": "knowledgebases/kb_ksf23a31w7/upload/Attention is All you Need-204e3073870f-25e609fbe7.pdf"
+    },
+    {
+      "paper_id": "s2_df2b0e26d0599ce3e70df8a9da02e51594e0e992",
+      "source_row_id": 21,
+      "title": "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
+      "abstract": "We introduce a new language representation model called BERT, which stands for Bidirectional Encoder Representations from Transformers. Unlike recent language representation models (Peters et al., 2018a; Radford et al., 2018), BERT is designed to pre-train deep bidirectional representations from unlabeled text by jointly conditioning on both left and right context in all layers. As a result, the pre-trained BERT model can be fine-tuned with just one additional output layer to create state-of-the-art models for a wide range of tasks, such as question answering and language inference, without substantial task-specific architecture modifications. BERT is conceptually simple and empirically powerful. It obtains new state-of-the-art results on eleven natural language processing tasks, including pushing the GLUE score to 80.5 (7.7 point absolute improvement), MultiNLI accuracy to 86.7% (4.6% absolute improvement), SQuAD v1.1 question answering Test F1 to 93.2 (1.5 point absolute improvement) and SQuAD v2.0 Test F1 to 83.1 (5.1 point absolute improvement).",
+      "authors": [
+        "J. Devlin",
+        "Ming-Wei Chang",
+        "Kenton Lee",
+        "K. Toutanova"
+      ],
+      "publication_year": 2019,
+      "venue": "North American Chapter of the Association for Computational Linguistics",
+      "doi": "10.18653/v1/n19-1423",
+      "keywords": [
+        "Computer Science"
+      ],
+      "language": "en",
+      "external_ids": {
+        "ACL": "N19-1423",
+        "DOI": "10.18653/v1/N19-1423",
+        "MAG": "2951055169",
+        "DBLP": "journals/corr/abs-1810-04805",
+        "ArXiv": "1810.04805",
+        "CorpusId": "52967399",
+        "SemanticScholar": "df2b0e26d0599ce3e70df8a9da02e51594e0e992"
+      },
+      "citation_count": 122990,
+      "metadata_source": "semantic_scholar",
+      "metadata_status": "extracted",
+      "metadata_revision": 1,
+      "indexed_revision": 1,
+      "source_file_name": "BERT Pre-training of Deep Bidirectional Transformers for Language Understanding-df2b0e26d059.pdf",
+      "pdf_file": "papers/bert-pre-training-of-deep-bidirectional-transformers-for-language-understanding.pdf",
+      "pdf_sha256": "5692a5514787a8c6727b4ff3b726a3385798bc68e12138d1d4af83947e2acf6e",
+      "pdf_bytes": 775166,
+      "pdf_object": "knowledgebases/kb_ksf23a31w7/upload/BERT Pre-training of Deep Bidirectional Transformers for Language Understanding-df2b0e26d059-1f99ea99ac.pdf"
+    }
+  ],
+  "counts": {
+    "papers": 6,
+    "papers_with_pdf": 4,
+    "chunks": 139,
+    "research_paper_notes": 0,
+    "academic_paper_screenings": 0,
+    "academic_paper_tags": 0,
+    "research_search_runs": 1,
+    "research_synthesis_runs": 0,
+    "academic_paper_analysis_runs": 0,
+    "evaluation_datasets": 0,
+    "evaluation_dataset_items": 0,
+    "evaluation_runs": 0,
+    "evaluation_experiments": 0,
+    "evaluation_experiment_variants": 0,
+    "research_user_studies": 0,
+    "research_projects": 0,
+    "research_evidence": 0
+  }
+}
