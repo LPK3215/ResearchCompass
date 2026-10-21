@@ -1153,6 +1153,21 @@ async def find_duplicate_papers(*, kb_id: str, current_user: User) -> dict[str, 
                 "count": len(items),
                 "recommended_paper_id": str(getattr(keep, "paper_id", "")),
                 "recommendation": "仅建议保留含 DOI 且年份最早的条目；是否合并需人工确认，不自动处理",
+                "merge_preview": {
+                    "keep": {
+                        "paper_id": str(getattr(keep, "paper_id", "")),
+                        "title": str(getattr(keep, "title", "") or ""),
+                    },
+                    "move": [
+                        {
+                            "paper_id": str(getattr(item, "paper_id", "")),
+                            "title": str(getattr(item, "title", "") or ""),
+                        }
+                        for item in items
+                        if str(getattr(item, "paper_id", "")) != str(getattr(keep, "paper_id", ""))
+                    ],
+                    "executed": False,
+                },
                 "papers": [
                     {
                         "paper_id": str(getattr(item, "paper_id", "")),
