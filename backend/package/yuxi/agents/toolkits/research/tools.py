@@ -218,7 +218,9 @@ class ExportProjectReportInput(BaseModel):
 
 
 class ExportPapersInput(BaseModel):
-    format: Literal["bibtex", "markdown", "ris", "csv"] = Field(default="bibtex", description="导出格式")
+    format: Literal["bibtex", "markdown", "ris", "csv", "text", "gb7714", "apa", "ieee"] = Field(
+        default="bibtex", description="导出格式，gb7714/apa/ieee 为期刊引文样式"
+    )
     paper_ids: list[str] = Field(default_factory=list, max_length=200, description="为空表示导出当前知识库全部论文")
 
 

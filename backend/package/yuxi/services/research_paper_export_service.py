@@ -27,7 +27,11 @@ EXPORT_FORMATS = {
     "ris": {"ext": "ris", "media_type": "application/x-research-info-systems; charset=utf-8"},
     "csv": {"ext": "csv", "media_type": "text/csv; charset=utf-8"},
     "text": {"ext": "txt", "media_type": "text/plain; charset=utf-8"},
+    "gb7714": {"ext": "txt", "media_type": "text/plain; charset=utf-8"},
+    "apa": {"ext": "txt", "media_type": "text/plain; charset=utf-8"},
+    "ieee": {"ext": "txt", "media_type": "text/plain; charset=utf-8"},
 }
+CITATION_STYLES = {"gb7714", "apa", "ieee"}
 
 CSV_FIELDS = (
     "title",
@@ -76,6 +80,8 @@ def render_papers(papers: list[Any], export_format: str) -> bytes:
         return render_papers_csv(papers)
     if export_format == "text":
         return render_papers_text(papers).encode("utf-8")
+    if export_format in CITATION_STYLES:
+        return render_papers_citation(papers, export_format).encode("utf-8")
     raise ValueError(f"unsupported export format: {export_format}")
 
 
@@ -245,10 +251,92 @@ def _csv_cell(value: Any) -> str:
     return text
 
 
+def _citation_authors_gb7714(names: list[str]) -> str:
+    if not names:
+        return "佚名"
+    if len(names) > 3:
+        return ", ".join(names[:3]) + ", 等"
+    return ", ".join(names)
+
+
+def _citation_authors_apa(names: list[str]) -> str:
+    if not names:
+        return ""
+    if len(names) == 1:
+        return names[0]
+    if len(names) <= 20:
+        return ", ".join(names[:-1]) + ", & " + names[-1]
+    return ", ".join(names[:19]) + ", ... " + names[-1]
+
+
+def _citation_authors_ieee(names: list[str]) -> str:
+    if not names:
+        return ""
+    if len(names) == 1:
+        return names[0]
+    if len(names) == 2:
+        return f"{names[0]} and {names[1]}"
+    return ", ".join(names[:-1]) + ", and " + names[-1]
+
+
+def render_papers_citation(papers: list[Any], style: str) -> str:
+    """Render a reference list in GB/T 7714, APA or IEEE style from stored metadata.
+
+    作者按原文姓名输出，不做姓名缩写或机构信息推断；缺失字段直接省略，不补造数据。
+    """
+    lines: list[str] = []
+    for index, paper in enumerate(papers, start=1):
+        names = _author_list(paper.authors)
+        title = _single_line(paper.title) or "Untitled"
+        venue = _single_line(paper.venue)
+        year = paper.publication_year
+        doi = _single_line(paper.doi)
+        if style == "gb7714":
+            marker = "[J]" if venue else "[Z]"
+            segments = [f"{_citation_authors_gb7714(names)}.", f"{title}{marker}."]
+            if venue and year:
+                segments.append(f"{venue}, {year}.")
+            elif venue:
+                segments.append(f"{venue}.")
+            elif year:
+                segments.append(f"{year}.")
+            if doi:
+                segments.append(f"DOI: {doi}.")
+            lines.append(f"[{index}] " + " ".join(segments))
+        elif style == "apa":
+            segments = []
+            if names:
+                authors = _citation_authors_apa(names)
+                segments.append(f"{authors} ({year})." if year else f"{authors}.")
+            elif year:
+                segments.append(f"({year}).")
+            segments.append(f"{title}.")
+            if venue:
+                segments.append(f"{venue}.")
+            if doi:
+                segments.append(f"https://doi.org/{doi}")
+            lines.append(" ".join(segments))
+        else:
+            segments = [f"[{index}]"]
+            if names:
+                segments.append(f"{_citation_authors_ieee(names)},")
+            segments.append(f'"{title},"')
+            if venue:
+                segments.append(f"{venue},")
+            if year:
+                segments.append(f"{year}.")
+            if doi:
+                segments.append(f"doi: {doi}.")
+            lines.append(" ".join(segments))
+    return "\n".join(lines)
+
+
 __all__ = [
+    "CITATION_STYLES",
     "EXPORT_FORMATS",
     "export_papers_document",
     "render_papers",
+    "render_papers_citation",
     "render_papers_csv",
     "render_papers_markdown",
     "render_papers_ris",

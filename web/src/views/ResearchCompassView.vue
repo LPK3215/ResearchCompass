@@ -901,6 +901,10 @@
                 <a-menu-item key="csv">CSV 表格</a-menu-item>
                 <a-menu-item key="text">纯文本列表</a-menu-item>
                 <a-menu-divider />
+                <a-menu-item key="gb7714">参考文献（GB/T 7714）</a-menu-item>
+                <a-menu-item key="apa">参考文献（APA）</a-menu-item>
+                <a-menu-item key="ieee">参考文献（IEEE）</a-menu-item>
+                <a-menu-divider />
                 <a-menu-item key="cards-markdown">文献卡片（Markdown）</a-menu-item>
                 <a-menu-item key="cards-json">文献卡片（JSON）</a-menu-item>
                 <a-menu-item key="pack-markdown">组会汇报包（Markdown）</a-menu-item>
@@ -1408,7 +1412,10 @@ const EXPORT_FILE_EXTENSIONS = {
   ris: 'ris',
   markdown: 'md',
   csv: 'csv',
-  text: 'txt'
+  text: 'txt',
+  gb7714: 'txt',
+  apa: 'txt',
+  ieee: 'txt'
 }
 const sortValue = computed({
   get: () => `${filters.sortBy}-${filters.sortOrder}`,
