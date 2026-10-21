@@ -182,14 +182,29 @@ class PostgresManager(metaclass=SingletonMeta):
             "ALTER TABLE IF EXISTS research_project_activities ADD COLUMN IF NOT EXISTS operator_uid VARCHAR(64)",
             "ALTER TABLE IF EXISTS research_project_activities ADD COLUMN IF NOT EXISTS from_status VARCHAR(32)",
             "ALTER TABLE IF EXISTS research_project_activities ADD COLUMN IF NOT EXISTS to_status VARCHAR(32)",
-            "ALTER TABLE IF EXISTS research_project_activities ADD COLUMN IF NOT EXISTS precondition JSONB NOT NULL DEFAULT '{}'::jsonb",
-            "ALTER TABLE IF EXISTS research_synthesis_runs ADD COLUMN IF NOT EXISTS retryable BOOLEAN NOT NULL DEFAULT FALSE",
-            "ALTER TABLE IF EXISTS research_synthesis_runs ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0",
+            (
+                "ALTER TABLE IF EXISTS research_project_activities "
+                "ADD COLUMN IF NOT EXISTS precondition JSONB NOT NULL DEFAULT '{}'::jsonb"
+            ),
+            (
+                "ALTER TABLE IF EXISTS research_synthesis_runs "
+                "ADD COLUMN IF NOT EXISTS retryable BOOLEAN NOT NULL DEFAULT FALSE"
+            ),
+            (
+                "ALTER TABLE IF EXISTS research_synthesis_runs "
+                "ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0"
+            ),
             "ALTER TABLE IF EXISTS research_synthesis_runs ADD COLUMN IF NOT EXISTS dependency VARCHAR(32)",
-            "ALTER TABLE IF EXISTS research_search_runs ADD COLUMN IF NOT EXISTS retryable BOOLEAN NOT NULL DEFAULT FALSE",
+            (
+                "ALTER TABLE IF EXISTS research_search_runs "
+                "ADD COLUMN IF NOT EXISTS retryable BOOLEAN NOT NULL DEFAULT FALSE"
+            ),
             "ALTER TABLE IF EXISTS research_search_runs ADD COLUMN IF NOT EXISTS dependency VARCHAR(32)",
             "ALTER TABLE IF EXISTS research_search_runs ADD COLUMN IF NOT EXISTS parent_run_id VARCHAR(64)",
-            "ALTER TABLE IF EXISTS research_search_runs ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0",
+            (
+                "ALTER TABLE IF EXISTS research_search_runs "
+                "ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0"
+            ),
             "ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS retryable BOOLEAN NOT NULL DEFAULT FALSE",
             "ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS dependency VARCHAR(64)",
             "ALTER TABLE IF EXISTS tasks ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0",
@@ -205,7 +220,10 @@ class PostgresManager(metaclass=SingletonMeta):
                 CONSTRAINT uq_research_project_task_dependency_pair UNIQUE(project_id, task_id, depends_on_task_id),
                 CONSTRAINT ck_research_project_task_dependency_not_self CHECK(task_id <> depends_on_task_id)
             )""",
-            "CREATE INDEX IF NOT EXISTS ix_research_project_task_dependencies_project_task ON research_project_task_dependencies (project_id, task_id)",
+            (
+                "CREATE INDEX IF NOT EXISTS ix_research_project_task_dependencies_project_task "
+                "ON research_project_task_dependencies (project_id, task_id)"
+            ),
             """CREATE TABLE IF NOT EXISTS research_project_risks (
                 id SERIAL PRIMARY KEY,
                 risk_id VARCHAR(64) UNIQUE NOT NULL,
@@ -222,9 +240,13 @@ class PostgresManager(metaclass=SingletonMeta):
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 CONSTRAINT ck_research_project_risks_severity CHECK (severity IN ('low', 'medium', 'high', 'critical')),
-                CONSTRAINT ck_research_project_risks_status CHECK (status IN ('open', 'mitigating', 'accepted', 'resolved', 'closed'))
+                CONSTRAINT ck_research_project_risks_status
+                    CHECK (status IN ('open', 'mitigating', 'accepted', 'resolved', 'closed'))
             )""",
-            "CREATE INDEX IF NOT EXISTS ix_research_project_risks_project_status ON research_project_risks (project_id, status)",
+            (
+                "CREATE INDEX IF NOT EXISTS ix_research_project_risks_project_status "
+                "ON research_project_risks (project_id, status)"
+            ),
             "CREATE INDEX IF NOT EXISTS ix_research_project_risks_owner ON research_project_risks (owner_uid)",
             """CREATE TABLE IF NOT EXISTS research_project_risk_activities (
                 id SERIAL PRIMARY KEY,
@@ -239,7 +261,10 @@ class PostgresManager(metaclass=SingletonMeta):
                 precondition JSONB NOT NULL DEFAULT '{}'::jsonb,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )""",
-            "CREATE INDEX IF NOT EXISTS ix_research_project_risk_activities_risk_created ON research_project_risk_activities (risk_id, created_at)",
+            (
+                "CREATE INDEX IF NOT EXISTS ix_research_project_risk_activities_risk_created "
+                "ON research_project_risk_activities (risk_id, created_at)"
+            ),
             """CREATE TABLE IF NOT EXISTS user_notifications (
                 id SERIAL PRIMARY KEY, notification_id VARCHAR(64) UNIQUE NOT NULL,
                 recipient_uid VARCHAR(64) NOT NULL, notification_type VARCHAR(64) NOT NULL,
@@ -253,7 +278,8 @@ class PostgresManager(metaclass=SingletonMeta):
                 source_chunk_id VARCHAR(128) NOT NULL, content_snapshot TEXT NOT NULL,
                 status VARCHAR(32) NOT NULL DEFAULT 'unverified', invalid_reason TEXT,
                 created_by VARCHAR(64) NOT NULL, verified_by VARCHAR(64), verified_at TIMESTAMPTZ,
-                archived_by VARCHAR(64), archived_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW(),
+                archived_by VARCHAR(64), archived_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW(),
                 CONSTRAINT uq_research_evidence_source UNIQUE(kb_id, source_chunk_id)
             )""",
             """CREATE TABLE IF NOT EXISTS research_evidence_citations (
@@ -301,7 +327,10 @@ class PostgresManager(metaclass=SingletonMeta):
             END $$
             """,
             "CREATE INDEX IF NOT EXISTS ix_research_evidence_kb_status ON research_evidence (kb_id, status)",
-            "CREATE INDEX IF NOT EXISTS ix_research_evidence_activities_evidence_created ON research_evidence_activities (evidence_id, created_at)",
+            (
+                "CREATE INDEX IF NOT EXISTS ix_research_evidence_activities_evidence_created "
+                "ON research_evidence_activities (evidence_id, created_at)"
+            ),
             "ALTER TABLE IF EXISTS knowledge_bases ADD COLUMN IF NOT EXISTS embedding_model_spec VARCHAR(512)",
             "ALTER TABLE IF EXISTS knowledge_bases ADD COLUMN IF NOT EXISTS llm_model_spec VARCHAR(512)",
             "ALTER TABLE IF EXISTS knowledge_bases DROP COLUMN IF EXISTS embed_info",
@@ -1182,7 +1211,10 @@ class PostgresManager(metaclass=SingletonMeta):
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )""",
-            "CREATE INDEX IF NOT EXISTS ix_research_paper_notes_kb_paper_created ON research_paper_notes (kb_id, paper_id, created_at)",
+            (
+                "CREATE INDEX IF NOT EXISTS ix_research_paper_notes_kb_paper_created "
+                "ON research_paper_notes (kb_id, paper_id, created_at)"
+            ),
             "CREATE INDEX IF NOT EXISTS ix_research_paper_notes_kb_uid ON research_paper_notes (kb_id, uid)",
         ]
         async with self.async_engine.begin() as conn:

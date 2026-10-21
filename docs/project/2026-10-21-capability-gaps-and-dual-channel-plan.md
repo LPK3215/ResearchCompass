@@ -169,7 +169,7 @@
 - 后端全量：`pytest test/unit` **1649 项通过、5 项跳过**（4 个 Windows 符号链接测试 + 1 个 MinerU 不可用），0 失败
 - 后端相关套件：笔记 8、参考文献导入 13、图谱 8、tasker 18、改密 7、筛选 6、论文对话 5、翻译 6、导入工具 35、导入服务 9、汇报包渲染 2、上下文提示词 3、路由顺序 1，全部通过
 - 工具守卫：`python scripts/check_research_tool_parity.py` → `defined=97 enabled=97 parity ok`
-- 静态检查：本轮改动文件 `ruff check` 通过；`manager.py` 既有 12 处 E501 长行不在本次修复范围，未顺手修改
+- 静态检查：本轮改动文件 `ruff check` 通过；`manager.py` 12 处既有 E501 已修复为 0；仓库其他文件仍有 29 处既有 E501，未在本轮结果范围，列为待选项
 
 ### 4.3 真实数据验证
 
