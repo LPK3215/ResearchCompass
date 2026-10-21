@@ -6,8 +6,8 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi.exceptions import RequestValidationError
-from pydantic import ValidationError
 from psycopg_pool import AsyncConnectionPool
+from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine

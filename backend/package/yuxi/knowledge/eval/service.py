@@ -24,7 +24,6 @@ from yuxi.services.task_service import PublicTaskError, TaskContext, tasker
 from yuxi.utils import logger
 from yuxi.utils.datetime_utils import format_utc_datetime, utc_now_naive
 
-
 EXPERIMENT_VARIANT_LIMIT = 8
 _EXPERIMENT_METRIC_ORDER = ("overall_score", "answer_correctness", "recall@10", "f1@10", "recall@5", "f1@5")
 SAMPLE_SIZE_WARNING = "count < 30: results are preliminary and must not be reported as stable effect estimates"

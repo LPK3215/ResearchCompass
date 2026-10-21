@@ -15,13 +15,134 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from server.utils.auth_middleware import get_db, get_required_user
-from server.utils.client_ip import extract_client_ip
+from yuxi.services.academic_graph_sync_service import (
+    AcademicGraphSyncError,
+    enqueue_academic_graph_sync,
+    export_academic_graph,
+    get_academic_graph_network,
+    get_academic_graph_relations,
+    get_academic_graph_sync_run,
+    list_academic_graph_conflicts,
+)
+from yuxi.services.academic_opportunity_service import AcademicOpportunityError, get_academic_opportunities
+from yuxi.services.academic_paper_analysis_evaluation_service import (
+    AcademicPaperAnalysisEvaluationError,
+    AcademicPaperAnalysisEvaluationService,
+)
+from yuxi.services.academic_paper_analysis_service import (
+    AcademicPaperAnalysisError,
+    enqueue_paper_analysis,
+    get_latest_paper_analysis,
+    get_paper_analysis_run,
+)
+from yuxi.services.academic_paper_import_service import (
+    AcademicPaperImportError,
+    import_external_paper,
+    search_external_papers,
+)
+from yuxi.services.academic_trend_service import AcademicTrendError, get_academic_trends
+from yuxi.services.research_citation_snowball_service import (
+    ResearchCitationSnowballError,
+    import_related_papers,
+    list_related_papers,
+)
 from yuxi.services.research_copilot_service import (
     ResearchCopilotError,
     ResearchCopilotScope,
     ensure_research_copilot_thread,
+)
+from yuxi.services.research_deliverable_service import (
+    ResearchDeliverableError,
+    build_topic_list,
+    create_tasks_from_topics,
+    export_comparison_matrix,
+    export_kb_bundle,
+    export_kb_manifest,
+    export_pack,
+    export_paper_analysis_markdown,
+    export_paper_cards,
+    export_research_data,
+    find_cross_library_duplicates,
+    find_duplicate_papers,
+    generate_citation_insight,
+    generate_paper_brief,
+    generate_presentation_pack,
+    generate_structure_diagram,
+    list_archived_papers,
+    merge_duplicate_group,
+    render_brief_markdown,
+    restore_archived_papers,
+    validate_kb_manifest,
+)
+from yuxi.services.research_evidence_service import (
+    create_evidence,
+    list_evidence,
+    list_evidence_activities,
+    list_evidence_citations,
+    list_evidence_impacts,
+    transition_evidence,
+)
+from yuxi.services.research_onboarding_service import get_onboarding_state
+from yuxi.services.research_paper_chat_service import (
+    ResearchPaperChatError,
+    ask_paper_question,
+)
+from yuxi.services.research_paper_export_service import EXPORT_FORMATS, export_papers_document
+from yuxi.services.research_paper_metadata_service import (
+    ResearchPaperMetadataError,
+    enrich_paper_metadata,
+)
+from yuxi.services.research_paper_note_service import (
+    ResearchPaperNoteError,
+    create_paper_note,
+    delete_paper_note,
+    export_paper_notes_markdown,
+    list_paper_notes,
+    update_paper_note,
+)
+from yuxi.services.research_paper_screening_service import (
+    ResearchScreeningError,
+    export_screening_csv,
+    get_paper_screening,
+    set_paper_screening,
+)
+from yuxi.services.research_paper_service import (
+    add_paper_tag_view,
+    export_papers_bibtex,
+    get_paper_evidence_view,
+    get_paper_view,
+    list_paper_chunks_view,
+    list_paper_tags_view,
+    list_papers_view,
+    list_user_tags_view,
+    remove_paper_tag_view,
+    update_paper_view,
+)
+from yuxi.services.research_paper_translation_service import (
+    ResearchPaperTranslationError,
+    translate_paper,
+)
+from yuxi.services.research_project_plan_service import (
+    create_project_milestone,
+    create_project_plan_asset_link,
+    create_project_task,
+    create_project_task_dependency,
+    delete_project_milestone,
+    delete_project_plan_asset_link,
+    delete_project_task,
+    delete_project_task_dependency,
+    get_research_project_plan,
+    reorder_project_milestones,
+    reorder_project_tasks,
+    update_project_milestone,
+    update_project_task,
+)
+from yuxi.services.research_project_report_service import export_research_project_report
+from yuxi.services.research_project_risk_service import (
+    create_project_risk,
+    list_project_risk_activities,
+    list_project_risks,
+    transition_project_risk,
 )
 from yuxi.services.research_project_service import (
     ResearchProjectError,
@@ -39,85 +160,10 @@ from yuxi.services.research_project_service import (
 from yuxi.services.research_project_template_service import (
     list_project_templates,
 )
-from yuxi.services.research_project_plan_service import (
-    create_project_milestone,
-    create_project_plan_asset_link,
-    create_project_task,
-    create_project_task_dependency,
-    delete_project_milestone,
-    delete_project_plan_asset_link,
-    delete_project_task,
-    delete_project_task_dependency,
-    get_research_project_plan,
-    reorder_project_milestones,
-    reorder_project_tasks,
-    update_project_milestone,
-    update_project_task,
-)
-from yuxi.services.research_project_risk_service import (
-    create_project_risk,
-    list_project_risks,
-    transition_project_risk,
-    list_project_risk_activities,
-)
-from yuxi.services.research_project_report_service import export_research_project_report
-from yuxi.services.research_evidence_service import (
-    create_evidence,
-    list_evidence,
-    list_evidence_activities,
-    list_evidence_citations,
-    list_evidence_impacts,
-    transition_evidence,
-)
-from yuxi.services.research_paper_export_service import EXPORT_FORMATS, export_papers_document
-from yuxi.services.research_paper_metadata_service import (
-    ResearchPaperMetadataError,
-    enrich_paper_metadata,
-)
-from yuxi.services.research_paper_service import (
-    add_paper_tag_view,
-    export_papers_bibtex,
-    get_paper_evidence_view,
-    get_paper_view,
-    list_paper_chunks_view,
-    list_paper_tags_view,
-    list_papers_view,
-    list_user_tags_view,
-    remove_paper_tag_view,
-    update_paper_view,
-)
-from yuxi.services.research_paper_screening_service import (
-    ResearchScreeningError,
-    export_screening_csv,
-    get_paper_screening,
-    set_paper_screening,
-)
 from yuxi.services.research_reference_import_service import (
     ResearchReferenceImportError,
     import_references,
 )
-from yuxi.services.research_paper_chat_service import (
-    ResearchPaperChatError,
-    ask_paper_question,
-)
-from yuxi.services.research_paper_translation_service import (
-    ResearchPaperTranslationError,
-    translate_paper,
-)
-from yuxi.services.research_citation_snowball_service import (
-    ResearchCitationSnowballError,
-    import_related_papers,
-    list_related_papers,
-)
-from yuxi.services.research_paper_note_service import (
-    ResearchPaperNoteError,
-    create_paper_note,
-    delete_paper_note,
-    export_paper_notes_markdown,
-    list_paper_notes,
-    update_paper_note,
-)
-from yuxi.services.research_onboarding_service import get_onboarding_state
 from yuxi.services.research_search_service import (
     DEFAULT_RESEARCH_SEARCH_MODE,
     LOCAL_HYBRID_MODE,
@@ -126,8 +172,8 @@ from yuxi.services.research_search_service import (
     delete_search_run,
     get_search_run,
     list_search_runs,
-    search_papers,
     retry_search_run,
+    search_papers,
     set_search_run_pinned,
 )
 from yuxi.services.research_synthesis_service import (
@@ -140,60 +186,14 @@ from yuxi.services.research_synthesis_service import (
     regenerate_research_synthesis,
     retry_research_synthesis,
 )
-from yuxi.services.academic_trend_service import AcademicTrendError, get_academic_trends
-from yuxi.services.academic_paper_analysis_service import (
-    AcademicPaperAnalysisError,
-    enqueue_paper_analysis,
-    get_latest_paper_analysis,
-    get_paper_analysis_run,
-)
-from yuxi.services.academic_graph_sync_service import (
-    AcademicGraphSyncError,
-    enqueue_academic_graph_sync,
-    export_academic_graph,
-    get_academic_graph_relations,
-    get_academic_graph_network,
-    get_academic_graph_sync_run,
-    list_academic_graph_conflicts,
-)
-from yuxi.services.academic_paper_import_service import (
-    AcademicPaperImportError,
-    import_external_paper,
-    search_external_papers,
-)
-from yuxi.services.academic_opportunity_service import AcademicOpportunityError, get_academic_opportunities
 from yuxi.services.research_user_study_service import (
     ResearchUserStudyError,
     ResearchUserStudyService,
 )
-from yuxi.services.research_deliverable_service import (
-    ResearchDeliverableError,
-    export_pack,
-    export_comparison_matrix,
-    export_paper_analysis_markdown,
-    export_paper_cards,
-    export_research_data,
-    generate_citation_insight,
-    generate_paper_brief,
-    generate_presentation_pack,
-    generate_structure_diagram,
-    build_topic_list,
-    create_tasks_from_topics,
-    export_kb_manifest,
-    export_kb_bundle,
-    find_cross_library_duplicates,
-    find_duplicate_papers,
-    list_archived_papers,
-    merge_duplicate_group,
-    restore_archived_papers,
-    render_brief_markdown,
-    validate_kb_manifest,
-)
-from yuxi.services.academic_paper_analysis_evaluation_service import (
-    AcademicPaperAnalysisEvaluationError,
-    AcademicPaperAnalysisEvaluationService,
-)
 from yuxi.storage.postgres.models_business import User
+
+from server.utils.auth_middleware import get_db, get_required_user
+from server.utils.client_ip import extract_client_ip
 
 research = APIRouter(prefix="/research", tags=["research"])
 

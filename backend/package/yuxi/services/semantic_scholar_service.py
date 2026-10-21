@@ -20,7 +20,6 @@ from urllib.parse import quote, urljoin, urlparse
 
 import httpx
 
-
 SEMANTIC_SCHOLAR_FIELDS = (
     "paperId,externalIds,title,abstract,year,venue,citationCount,referenceCount,"
     "influentialCitationCount,isOpenAccess,openAccessPdf,authors,fieldsOfStudy,s2FieldsOfStudy"

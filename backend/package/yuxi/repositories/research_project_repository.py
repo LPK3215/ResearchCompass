@@ -19,15 +19,14 @@ from yuxi.storage.postgres.models_knowledge import (
     AcademicPaper,
     AcademicPaperAnalysisRun,
     EvaluationExperiment,
+    ResearchEvidence,
     ResearchProject,
     ResearchProjectActivity,
     ResearchProjectAsset,
     ResearchProjectTask,
-    ResearchEvidence,
     ResearchSearchRun,
     ResearchSynthesisRun,
 )
-
 
 ASSET_TYPES = {"paper", "search_run", "synthesis_run", "analysis_run", "evaluation_experiment", "evidence"}
 

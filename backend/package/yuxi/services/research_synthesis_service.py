@@ -20,9 +20,8 @@ from typing import Any
 
 from docx import Document
 from fastapi import HTTPException
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy import delete, select
-
+from sqlalchemy.exc import IntegrityError
 from yuxi.config import config
 from yuxi.knowledge.chunking.ragflow_like.nlp import count_tokens
 from yuxi.models import select_model
@@ -35,9 +34,9 @@ from yuxi.repositories.user_repository import UserRepository
 from yuxi.services.research_paper_service import _ensure_access
 from yuxi.services.research_search_service import LOCAL_HYBRID_MODE, ResearchSearchError, search_papers
 from yuxi.services.task_service import PublicTaskError, TaskContext, tasker
+from yuxi.storage.postgres.manager import pg_manager
 from yuxi.storage.postgres.models_business import User
 from yuxi.storage.postgres.models_knowledge import ResearchEvidence, ResearchEvidenceCitation
-from yuxi.storage.postgres.manager import pg_manager
 from yuxi.utils.datetime_utils import utc_now_naive
 
 

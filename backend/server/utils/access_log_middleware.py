@@ -1,11 +1,12 @@
 """访问日志中间件 - 记录请求处理时间"""
 
-import time
 import logging
+import time
 from collections.abc import Callable
 
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
+
 from server.utils.client_ip import extract_client_ip
 
 # 创建专用的访问日志记录器

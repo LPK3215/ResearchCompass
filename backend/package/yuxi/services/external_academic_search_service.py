@@ -14,7 +14,6 @@ import re
 from typing import Any
 
 import httpx
-
 from yuxi.services.semantic_scholar_service import (
     SemanticScholarClient,
     SemanticScholarError,

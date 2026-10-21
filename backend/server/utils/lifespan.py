@@ -3,20 +3,20 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-
-from yuxi.services.task_service import tasker
-from server.utils.client_ip import validate_trusted_proxy_cidrs
+from yuxi import get_version
+from yuxi.agents.backends.sandbox import init_sandbox_provider, shutdown_sandbox_provider
 from yuxi.agents.mcp.service import ensure_builtin_mcp_servers_in_db
+from yuxi.config import config
+from yuxi.knowledge.parser.factory import DocumentProcessorFactory
+from yuxi.knowledge.runtime import knowledge_base
 from yuxi.models.providers.service import ensure_builtin_model_providers_in_db
 from yuxi.services.run_queue_service import close_queue_clients, get_redis_client
-from yuxi.storage.postgres.manager import pg_manager
+from yuxi.services.task_service import tasker
 from yuxi.storage.neo4j import close_shared_neo4j_connection
-from yuxi.knowledge.runtime import knowledge_base
-from yuxi.knowledge.parser.factory import DocumentProcessorFactory
+from yuxi.storage.postgres.manager import pg_manager
 from yuxi.utils import logger
-from yuxi.agents.backends.sandbox import init_sandbox_provider, shutdown_sandbox_provider
-from yuxi import get_version
-from yuxi.config import config
+
+from server.utils.client_ip import validate_trusted_proxy_cidrs
 
 
 def _lite_mode_enabled() -> bool:

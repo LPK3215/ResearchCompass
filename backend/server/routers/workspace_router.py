@@ -6,8 +6,6 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-
-from server.utils.auth_middleware import get_required_user
 from yuxi.knowledge.factory import KnowledgeBaseFactory
 from yuxi.knowledge.runtime import knowledge_base
 from yuxi.services.workspace_service import (
@@ -20,6 +18,8 @@ from yuxi.services.workspace_service import (
     write_workspace_file_content,
 )
 from yuxi.storage.postgres.models_business import User
+
+from server.utils.auth_middleware import get_required_user
 
 workspace = APIRouter(prefix="/workspace", tags=["workspace"])
 

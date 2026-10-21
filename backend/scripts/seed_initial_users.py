@@ -8,7 +8,6 @@ from typing import TypedDict
 from dotenv import load_dotenv
 from sqlalchemy import func, select
 
-
 APP_ROOT = Path(__file__).resolve().parents[1]
 for import_path in (APP_ROOT, APP_ROOT / "package"):
     import_path_str = str(import_path)
@@ -59,9 +58,9 @@ async def ensure_uninitialized(session) -> None:
 
 
 async def seed_initial_users() -> None:
-    from yuxi.utils.auth_utils import AuthUtils
     from yuxi.storage.postgres.manager import pg_manager
     from yuxi.storage.postgres.models_business import Department, User
+    from yuxi.utils.auth_utils import AuthUtils
     from yuxi.utils.datetime_utils import utc_now_naive
 
     try:

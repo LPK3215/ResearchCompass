@@ -25,8 +25,8 @@ from yuxi.agents.middlewares import (
     save_attachments_to_fs,
 )
 from yuxi.agents.middlewares.skills import SkillsMiddleware
-from yuxi.agents.toolkits.service import resolve_configured_runtime_tools
 from yuxi.agents.tool_approval import SENSITIVE_BACKEND_TOOLS, normalize_tool_approval_mode
+from yuxi.agents.toolkits.service import resolve_configured_runtime_tools
 
 _SUBAGENT_DISABLED_TOOLS = frozenset({"present_artifacts", "ask_user_question", "install_skill"})
 # 默认审批模式额外隐藏敏感 backend 工具，避免子智能体绕过主线程逐项审批。

@@ -14,11 +14,11 @@ from sqlalchemy import func, select
 
 from yuxi.storage.postgres.manager import pg_manager
 from yuxi.storage.postgres.models_knowledge import (
+    AcademicPaper,
     AcademicPaperAnalysisEvaluation,
     AcademicPaperAnalysisEvaluationItem,
     AcademicPaperAnalysisEvaluationScore,
     AcademicPaperAnalysisRun,
-    AcademicPaper,
 )
 from yuxi.utils.datetime_utils import utc_now_naive
 

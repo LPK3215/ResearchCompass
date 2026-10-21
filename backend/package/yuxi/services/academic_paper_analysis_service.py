@@ -26,8 +26,8 @@ from yuxi.repositories.academic_paper_analysis_repository import AcademicPaperAn
 from yuxi.repositories.academic_paper_repository import AcademicPaperRepository
 from yuxi.repositories.knowledge_chunk_repository import KnowledgeChunkRepository
 from yuxi.repositories.user_repository import UserRepository
-from yuxi.services.research_paper_service import _ensure_access, _serialize_paper
 from yuxi.services.academic_paper_analysis_workflow import build_analysis_workflow
+from yuxi.services.research_paper_service import _ensure_access, _serialize_paper
 from yuxi.services.task_service import PublicTaskError, TaskContext, tasker
 from yuxi.storage.postgres.models_business import User
 from yuxi.utils.datetime_utils import utc_now_naive

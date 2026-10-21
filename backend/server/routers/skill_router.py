@@ -10,8 +10,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Qu
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from server.utils.auth_middleware import get_admin_user, get_db, get_required_user
+from yuxi.agents.skills.remote_install import list_remote_skills, search_remote_skills
 from yuxi.agents.skills.service import (
     confirm_skill_install_draft,
     create_skill_node,
@@ -39,9 +38,10 @@ from yuxi.agents.skills.service import (
     update_skill_share_config,
     user_can_manage_skill,
 )
-from yuxi.agents.skills.remote_install import list_remote_skills, search_remote_skills
 from yuxi.storage.postgres.models_business import User
 from yuxi.utils.logging_config import logger
+
+from server.utils.auth_middleware import get_admin_user, get_db, get_required_user
 
 skills = APIRouter(prefix="/system/skills", tags=["skills"])
 user_skills = APIRouter(prefix="/skills", tags=["skills"])

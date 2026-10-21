@@ -9,19 +9,18 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 import asyncio
 import os
 import re
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import quote
 
 import httpx
-
 from yuxi.repositories.academic_paper_repository import AcademicPaperRepository
 from yuxi.services.research_paper_service import (
-    _ensure_access,
     _enqueue_paper_reindex,
+    _ensure_access,
     _serialize_paper,
 )
 from yuxi.services.semantic_scholar_service import (

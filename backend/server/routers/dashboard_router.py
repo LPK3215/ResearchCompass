@@ -13,8 +13,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import Integer, String, cast, distinct, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from server.utils.auth_middleware import get_db, get_superadmin_user
 from yuxi.repositories.agent_repository import AgentRepository
 from yuxi.repositories.conversation_repository import ConversationRepository
 from yuxi.storage.minio.client import normalize_public_minio_url
@@ -22,6 +20,7 @@ from yuxi.storage.postgres.models_business import User
 from yuxi.utils.datetime_utils import UTC, ensure_shanghai, shanghai_now, utc_now
 from yuxi.utils.logging_config import logger
 
+from server.utils.auth_middleware import get_db, get_superadmin_user
 
 dashboard = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 

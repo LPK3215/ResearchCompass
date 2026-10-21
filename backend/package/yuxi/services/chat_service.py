@@ -26,7 +26,7 @@ from yuxi.agents.base import _json_safe
 from yuxi.agents.buildin import agent_manager
 from yuxi.agents.context import build_agent_input_context, normalize_agent_context_config
 from yuxi.agents.state import AgentStatePayload
-from yuxi.repositories.agent_repository import AgentRepository, RESEARCH_COPILOT_AGENT_SLUG
+from yuxi.repositories.agent_repository import RESEARCH_COPILOT_AGENT_SLUG, AgentRepository
 from yuxi.repositories.agent_run_repository import AgentRunRepository
 from yuxi.repositories.conversation_repository import ConversationRepository
 from yuxi.repositories.subagent_thread_repository import SubagentThreadRepository

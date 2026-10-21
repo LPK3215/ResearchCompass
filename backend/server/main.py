@@ -19,13 +19,13 @@ from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+from yuxi.utils.logging_config import logger
 
 from server.routers import router
-from server.utils.client_ip import extract_client_ip
-from server.utils.lifespan import lifespan
-from server.utils.common_utils import setup_logging
 from server.utils.access_log_middleware import AccessLogMiddleware
-from yuxi.utils.logging_config import logger
+from server.utils.client_ip import extract_client_ip
+from server.utils.common_utils import setup_logging
+from server.utils.lifespan import lifespan
 
 # 设置日志配置
 setup_logging()

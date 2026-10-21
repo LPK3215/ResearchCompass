@@ -7,9 +7,9 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
-import re
 from typing import Any
 
 from yuxi.repositories.academic_paper_repository import AcademicPaperRepository

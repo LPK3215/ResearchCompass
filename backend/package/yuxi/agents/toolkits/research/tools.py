@@ -1012,11 +1012,11 @@ async def research_export_synthesis(
         ensure_thread_dirs,
         sandbox_outputs_dir,
     )
-    from yuxi.utils.paths import VIRTUAL_PATH_OUTPUTS
     from yuxi.services.research_synthesis_service import (
         export_research_synthesis,
         get_research_synthesis,
     )
+    from yuxi.utils.paths import VIRTUAL_PATH_OUTPUTS
 
     user = await _current_user(runtime)
     source = await _call(get_research_synthesis(run_id=run_id, current_user=user))

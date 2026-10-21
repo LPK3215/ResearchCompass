@@ -9,13 +9,13 @@ Semantic Scholar 客户端、对象存储、知识库运行时与任务调度由
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 import re
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import HTTPException
-
 from yuxi.knowledge.runtime import knowledge_base
+from yuxi.knowledge.utils import calculate_content_hash
 from yuxi.repositories.academic_paper_repository import AcademicPaperRepository
 from yuxi.repositories.knowledge_file_repository import KnowledgeFileRepository
 from yuxi.repositories.user_repository import UserRepository
@@ -34,8 +34,6 @@ from yuxi.services.task_service import PublicTaskError, TaskContext, tasker
 from yuxi.storage.minio.client import MinIOClient, get_minio_client
 from yuxi.storage.postgres.models_business import User
 from yuxi.utils import hashstr, logger
-from yuxi.knowledge.utils import calculate_content_hash
-
 
 EXTERNAL_PAPER_IMPORT_TIMEOUT_SECONDS = 15 * 60
 

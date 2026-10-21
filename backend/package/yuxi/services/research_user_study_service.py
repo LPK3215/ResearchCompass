@@ -23,7 +23,6 @@ from yuxi.services.run_queue_service import get_redis_client
 from yuxi.storage.postgres.models_business import User
 from yuxi.utils.datetime_utils import utc_now_naive
 
-
 TASK_SCORE_KEYS = ("search", "paper_analysis", "citation_traceability", "trend_insight")
 SUS_SCORE_KEYS = tuple(f"q{index}" for index in range(1, 11))
 DEFAULT_CONSENT_TEXT = (

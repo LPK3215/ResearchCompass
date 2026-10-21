@@ -10,7 +10,6 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-
 MILESTONE_STATUSES = {"planned", "active", "completed"}
 TASK_STATUSES = {"todo", "in_progress", "blocked", "done"}
 TASK_PRIORITIES = {"low", "medium", "high"}

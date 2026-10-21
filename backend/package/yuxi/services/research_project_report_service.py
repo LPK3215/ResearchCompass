@@ -13,7 +13,6 @@ from io import BytesIO, StringIO
 from typing import Any
 
 from docx import Document
-
 from yuxi.repositories.research_project_repository import ResearchProjectRepository
 from yuxi.services.research_project_plan_service import get_research_project_plan
 from yuxi.services.research_project_service import (
@@ -24,7 +23,6 @@ from yuxi.services.research_project_service import (
     serialize_project_asset,
 )
 from yuxi.storage.postgres.models_business import User
-
 
 STATUS_LABELS = {
     "active": "进行中",

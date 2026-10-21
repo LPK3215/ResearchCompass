@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from yuxi.knowledge.runtime import knowledge_base
 from yuxi.knowledge.base import KBNotFoundError
+from yuxi.knowledge.runtime import knowledge_base
 from yuxi.storage.postgres.models_business import User
 from yuxi.utils import logger
 

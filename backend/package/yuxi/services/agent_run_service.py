@@ -31,7 +31,7 @@ from yuxi.agents.buildin import agent_manager
 from yuxi.agents.models import resolve_chat_model_spec
 from yuxi.agents.tool_approval import DEFAULT_TOOL_APPROVAL_MODE, normalize_tool_approval_mode
 from yuxi.models.providers.cache import model_cache
-from yuxi.repositories.agent_repository import AgentRepository, RESEARCH_COPILOT_AGENT_SLUG
+from yuxi.repositories.agent_repository import RESEARCH_COPILOT_AGENT_SLUG, AgentRepository
 from yuxi.repositories.agent_run_repository import TERMINAL_RUN_STATUSES, AgentRunRepository
 from yuxi.repositories.conversation_repository import ConversationRepository
 from yuxi.services.input_message_service import (

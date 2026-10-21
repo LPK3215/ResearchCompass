@@ -10,6 +10,7 @@ from collections.abc import Awaitable, Callable, Iterable
 from contextvars import ContextVar
 from typing import Any
 
+from deepagents.backends.filesystem import FilesystemBackend
 from deepagents.middleware.summarization import (
     Command,
     ContextOverflowError,
@@ -17,7 +18,6 @@ from deepagents.middleware.summarization import (
     _aclip_overflow_tail,
     _clip_overflow_tail,
 )
-from deepagents.backends.filesystem import FilesystemBackend
 from langchain.agents.middleware.summarization import ContextSize
 from langchain.agents.middleware.types import ExtendedModelResponse, ModelRequest, ModelResponse
 from langchain.chat_models import BaseChatModel

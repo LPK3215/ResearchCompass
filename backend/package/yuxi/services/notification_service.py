@@ -5,7 +5,6 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import func, select, update
-
 from yuxi.storage.postgres.manager import pg_manager
 from yuxi.storage.postgres.models_business import UserNotification
 

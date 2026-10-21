@@ -8,16 +8,15 @@
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from collections import Counter
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-import re
 from typing import Any
-import unicodedata
 
 from fastapi import HTTPException
 from sqlalchemy import text
-
 from yuxi.knowledge.runtime import knowledge_base
 from yuxi.repositories.academic_paper_repository import AcademicPaperRepository
 from yuxi.repositories.knowledge_base_repository import KnowledgeBaseRepository

@@ -21,8 +21,8 @@ from yuxi.agents.middlewares import (
 )
 from yuxi.agents.middlewares.skills import SkillsMiddleware
 from yuxi.agents.middlewares.subagent_task import create_subagent_task_middleware
-from yuxi.agents.toolkits.service import resolve_configured_runtime_tools
 from yuxi.agents.tool_approval import create_tool_approval_middleware, normalize_tool_approval_mode
+from yuxi.agents.toolkits.service import resolve_configured_runtime_tools
 from yuxi.repositories.agent_repository import RESEARCH_COPILOT_AGENT_SLUG, RESEARCH_COPILOT_TOOL_SLUGS
 
 from .context import ChatBotContext

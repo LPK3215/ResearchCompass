@@ -927,7 +927,6 @@ def _render_graph_graphml(
 
 async def _latest_sync_snapshot(kb_id: str) -> str:
     from sqlalchemy import select
-
     from yuxi.storage.postgres.manager import pg_manager
     from yuxi.storage.postgres.models_knowledge import AcademicGraphSyncRun
 

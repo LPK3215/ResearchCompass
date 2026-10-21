@@ -15,16 +15,14 @@ from typing import Any
 
 from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
-
-from yuxi.repositories.research_project_repository import ASSET_TYPES, ResearchProjectRepository
 from yuxi.repositories.research_project_plan_repository import ResearchProjectPlanRepository
+from yuxi.repositories.research_project_repository import ASSET_TYPES, ResearchProjectRepository
+from yuxi.services.research_paper_service import _ensure_access
 from yuxi.services.research_project_plan_utils import build_project_plan_summary
 from yuxi.services.research_project_template_service import get_project_template
-from yuxi.services.research_paper_service import _ensure_access
 from yuxi.storage.postgres.models_business import User
 from yuxi.storage.postgres.models_knowledge import ResearchProject, ResearchProjectActivity, ResearchProjectAsset
 from yuxi.utils.datetime_utils import utc_now_naive
-
 
 PROJECT_STATUSES = {"active", "completed", "archived"}
 

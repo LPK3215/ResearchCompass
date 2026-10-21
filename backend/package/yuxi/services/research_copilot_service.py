@@ -13,8 +13,7 @@ from typing import Any, Literal
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from yuxi.repositories.agent_repository import AgentRepository, RESEARCH_COPILOT_AGENT_SLUG
+from yuxi.repositories.agent_repository import RESEARCH_COPILOT_AGENT_SLUG, AgentRepository
 from yuxi.repositories.conversation_repository import ConversationRepository
 from yuxi.repositories.knowledge_base_repository import KnowledgeBaseRepository
 from yuxi.services.research_paper_service import _ensure_access

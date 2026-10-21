@@ -2,7 +2,6 @@
 
 from sqlalchemy import DateTime
 from sqlalchemy.types import TypeDecorator
-
 from yuxi.utils.datetime_utils import UTC
 
 

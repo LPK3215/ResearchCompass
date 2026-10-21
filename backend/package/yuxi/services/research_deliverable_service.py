@@ -1117,8 +1117,8 @@ def render_topic_markdown(run_id: str, items: list[dict[str, str]], generated_at
 
 async def build_topic_list(*, run_id: str, current_user: User) -> dict[str, Any]:
     """从一次证据综述运行提取可追踪的选题清单。"""
-    from yuxi.utils.datetime_utils import utc_now_naive
     from yuxi.services.research_synthesis_service import get_research_synthesis
+    from yuxi.utils.datetime_utils import utc_now_naive
 
     run = await get_research_synthesis(run_id=run_id, current_user=current_user)
     if str(run.get("status")) != "success":

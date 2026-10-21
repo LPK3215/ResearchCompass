@@ -6,7 +6,6 @@ from datetime import UTC, datetime
 from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-
 from yuxi.repositories.knowledge_chunk_repository import KnowledgeChunkRepository
 from yuxi.services.research_paper_service import _ensure_access
 from yuxi.storage.postgres.manager import pg_manager
@@ -20,9 +19,8 @@ from yuxi.storage.postgres.models_knowledge import (
     ResearchProjectMilestone,
     ResearchProjectPlanAssetLink,
     ResearchProjectTask,
+    ResearchSynthesisRun,
 )
-from yuxi.storage.postgres.models_knowledge import ResearchSynthesisRun
-
 
 ALLOWED_TRANSITIONS = {
     "unverified": {"verified", "invalid", "archived"},

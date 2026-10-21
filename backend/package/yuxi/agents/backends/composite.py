@@ -9,8 +9,8 @@ from deepagents.backends.composite import (
     _strip_route_from_pattern,
 )
 from deepagents.backends.protocol import FileInfo, GlobResult
-from deepagents.middleware.filesystem import FilesystemMiddleware
 from deepagents.backends.state import StateBackend
+from deepagents.middleware.filesystem import FilesystemMiddleware
 
 from yuxi.agents.skills.service import normalize_string_list
 from yuxi.utils.paths import VIRTUAL_PATH_CONVERSATION_HISTORY, VIRTUAL_PATH_LARGE_TOOL_RESULTS, VIRTUAL_PATH_OUTPUTS

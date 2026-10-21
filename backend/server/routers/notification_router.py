@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query
-
 from yuxi.services.notification_service import list_notifications, mark_notification_read
 from yuxi.storage.postgres.models_business import User
+
 from server.utils.auth_middleware import get_required_user
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])

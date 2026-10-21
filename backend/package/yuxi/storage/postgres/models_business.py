@@ -16,8 +16,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.orm import declarative_base
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import declarative_base, relationship
 from yuxi.storage.minio.client import normalize_public_minio_url
 from yuxi.storage.postgres.column_types import UTCDateTime
 from yuxi.utils.datetime_utils import format_utc_datetime, utc_now_naive

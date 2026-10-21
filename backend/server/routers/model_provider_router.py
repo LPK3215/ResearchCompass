@@ -6,8 +6,6 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from server.utils.auth_middleware import get_admin_user, get_db, get_required_user
 from yuxi.models.providers.service import (
     check_credential_status,
     create_provider_config,
@@ -18,9 +16,11 @@ from yuxi.models.providers.service import (
     test_model_status_by_spec,
     update_provider_config,
 )
-from yuxi.storage.postgres.models_business import User
 from yuxi.storage.postgres.manager import pg_manager
+from yuxi.storage.postgres.models_business import User
 from yuxi.utils import logger
+
+from server.utils.auth_middleware import get_admin_user, get_db, get_required_user
 
 model_providers = APIRouter(prefix="/system/model-providers", tags=["model-providers"])
 

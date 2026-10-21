@@ -7,9 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from yuxi.storage.postgres.manager import pg_manager
 from yuxi.storage.postgres.models_business import APIKey, User
-from yuxi.utils.datetime_utils import utc_now_naive
-
 from yuxi.utils.auth_utils import AuthUtils
+from yuxi.utils.datetime_utils import utc_now_naive
 
 # 定义OAuth2密码承载器，指定token URL
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token", auto_error=False)

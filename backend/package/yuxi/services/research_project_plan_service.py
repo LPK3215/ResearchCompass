@@ -13,7 +13,6 @@ from datetime import date
 from typing import Any
 
 from sqlalchemy.exc import IntegrityError
-
 from yuxi.repositories.research_project_plan_repository import (
     ResearchProjectPlanRepository,
     ResearchProjectPlanWriteConflict,

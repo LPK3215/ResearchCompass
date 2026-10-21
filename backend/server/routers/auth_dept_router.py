@@ -5,18 +5,19 @@
 
 import re
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy import delete as sqlalchemy_delete, select, func
+from sqlalchemy import delete as sqlalchemy_delete
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from yuxi.storage.postgres.models_business import APIKey, Department, User
 from yuxi.repositories.department_repository import DepartmentRepository
 from yuxi.repositories.user_repository import UserRepository
-from server.utils.auth_middleware import get_superadmin_user, get_admin_user, get_db
-from yuxi.utils.auth_utils import AuthUtils
 from yuxi.services.operation_log_service import log_operation
 from yuxi.services.user_identity_service import is_valid_phone_number
+from yuxi.storage.postgres.models_business import APIKey, Department, User
+from yuxi.utils.auth_utils import AuthUtils
+
+from server.utils.auth_middleware import get_admin_user, get_db, get_superadmin_user
 
 # 创建路由器
 department = APIRouter(prefix="/departments", tags=["department"])

@@ -33,7 +33,6 @@ from yuxi.services.task_service import PublicTaskError, TaskContext, tasker
 from yuxi.storage.postgres.models_business import User
 from yuxi.utils.datetime_utils import utc_now_naive
 
-
 RUBRIC_VERSION = "analysis-blind-v1"
 RUBRIC_DIMENSIONS = (
     "evidence_faithfulness",

@@ -10,22 +10,26 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from yuxi.agents.buildin import agent_manager
 from yuxi.agents.context import filter_config_by_role
 from yuxi.repositories.agent_repository import (
-    AgentRepository,
     RESEARCH_COPILOT_AGENT_SLUG,
     RESEARCH_COPILOT_TOOL_SLUGS,
+    AgentRepository,
     is_builtin_agent,
     user_can_access_agent,
     user_can_manage_agent,
 )
 from yuxi.services.agent_request_queue_service import (
     cancel_queued_request as cancel_queued_request_svc,
+)
+from yuxi.services.agent_request_queue_service import (
     continue_thread_queue,
     finalize_dispatch,
     finalize_intake,
-    get_request as get_request_svc,
     get_thread_queue_snapshot,
     intake_request,
     stream_request_events,
+)
+from yuxi.services.agent_request_queue_service import (
+    get_request as get_request_svc,
 )
 from yuxi.services.agent_run_service import (
     cancel_agent_run_view,

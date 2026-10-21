@@ -14,7 +14,6 @@ from sqlalchemy import func, select, update
 from yuxi.storage.postgres.manager import pg_manager
 from yuxi.storage.postgres.models_knowledge import ResearchSynthesisRun
 
-
 TERMINAL_SYNTHESIS_STATUSES = {"success", "failed", "cancelled"}
 
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 PROJECT_TEMPLATES: tuple[dict[str, Any], ...] = (
     {
         "template_id": "systematic-review",

@@ -7,8 +7,8 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
 import re
+from collections.abc import AsyncIterator
 from typing import Any
 
 from sqlalchemy import String, cast, delete, func, or_, select, update
