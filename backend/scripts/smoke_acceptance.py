@@ -262,11 +262,28 @@ async def main() -> int:
                     )
                     await run.check(
                         "auth",
+                        "old-token-rejected",
+                        "GET",
+                        "/api/auth/me",
+                        headers=user_headers,
+                        expect=401,
+                    )
+                    ok, response = await run.check(
+                        "auth",
                         "new-password-login",
                         "POST",
                         "/api/auth/token",
                         data={"username": temp_username, "password": temp_new_password},
                     )
+                    new_token = response.json().get("access_token") if ok and response is not None else ""
+                    if new_token:
+                        await run.check(
+                            "auth",
+                            "new-token-accepted",
+                            "GET",
+                            "/api/auth/me",
+                            headers={"Authorization": f"Bearer {new_token}"},
+                        )
                     await run.check(
                         "auth",
                         "old-password-rejected",

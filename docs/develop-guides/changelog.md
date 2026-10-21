@@ -6,10 +6,11 @@
 
 同一版本的多次功能更新时，应以功能为单位进行更新，比如之前添加了 A 功能的更新，在后续的更新中修复了因 A 功能引入的 bug，那么这个修复说明应该和 A 功能描述放在一起，而不是新增一条修复记录，功能更新同理。
 
-> 当前验收标签：v0.11.5（2026-10-21）。以下 v0.11.0 段落汇总本轮能力收口内容。
+> 当前验收标签：v0.11.6（2026-10-21）。以下 v0.11.0 段落汇总本轮能力收口内容。
 
 ## v0.11.0 (current)
 
+- 改密撤销旧会话：JWT 增加 `iat`，用户表增加 `password_changed_at`；自助改密、管理员重置和 OIDC 恢复账号都会拒绝改密前签发的 Token；前端改密后引导重新登录。冒烟新增旧 Token 401 / 新 Token 200 检查。
 - 重复论文检测改为 DOI 与归一化标题联合分组，修复“有 DOI 的元数据条目 + 同标题无 DOI 全文条目”漏检；跨库查重同步生效，新增回归测试。
 - 研究助手提示词补齐当前工作区与当前选中对象（论文、检索运行、证据综述、图谱节点等），明确“这篇 / 当前 / 它”的指代；真实运行验证能正确回答选中论文标题。
 - 前端幂等 GET/HEAD 请求在瞬时网络失败时自动重试一次（300ms），POST 等非幂等请求不重试；减少服务重启/网络抖动导致的初始化失败与控制台错误。
@@ -21,7 +22,7 @@
 - 修复外部论文导入任务默认 6 小时超时：导入任务改为 15 分钟，并把可恢复任务的超时写入任务 payload，服务重启后沿用原超时，避免解析卡住长时间占用任务队列。
 - 修复仅元数据论文仍可进入论文对话与筛选的问题：论文对话在检索前明确返回 `paper_chunk_missing`；已归档论文不能再写入筛选结论，避免产生不计入统计的无效记录。
 - 修复外部论文导入在 Semantic Scholar 的 `openAccessPdf` 指向落地页时直接失败的问题：有 arXiv ID 时优先使用 `arxiv.org/pdf/<id>.pdf` 直链，非 arXiv 论文仍使用原开放获取地址；已用 Attention 与 BERT 两篇真实导入验证。
-- 新增账户自助改密：账户设置页新增“安全设置”，`POST /api/auth/password` 校验当前密码并拒绝新旧相同，修改后旧密码立即失效；临时用户端到端验证通过。
+- 新增账户自助改密：账户设置页新增“安全设置”，`POST /api/auth/password` 校验当前密码并拒绝新旧相同，修改后旧密码与旧 Token 立即失效，需要重新登录；临时用户端到端验证通过。
 - 修复仅元数据论文仍显示“生成报告”入口：论文详情页禁用分析按钮并提示该论文仅含元数据。
 - 修复引用图谱导出与引用网络洞察的数据源不一致：两者原本读取 PostgreSQL 的图谱投影，而图谱视图读取 Neo4j，导致图上有 1636 个节点时导出/洞察仍返回 409 `graph_empty`。现统一复用 `AcademicGraphService.get_network` 的快照，导出 CSV/GraphML 与洞察报告与界面看到的是同一张图。
 - 新增可重复冒烟验收与固定语料：`backend/scripts/smoke_acceptance.py` 覆盖 17 个能力族（含 AI 工具真实运行）并输出 JSON/Markdown 报告；`scripts/eval/fixed_corpus.json` 提供 28 篇开放获取论文与 10 个金标准问题，配套批量导入脚本。
@@ -37,7 +38,7 @@
 - 修复多源检索丢失 arXiv 开放获取回退：Semantic Scholar 条目只读 `openAccessPdf`，导致仅有 arXiv 标识的论文被误判为“无公开 PDF”、导入按钮被禁用；现恢复 arXiv PDF 回退并补充单测。
 - 优化文献筛选页加载：计数改为 SQL 聚合、当前页只加载本页论文，避免每次翻页扫描全库论文与摘要。
 - 新增论文对照翻译（G-42）：论文详情页可按章节生成逐段中英对照，返回页码与章节定位，支持长文截断与未翻译片段显式标注；译文只在响应中返回，不写入数据库与证据库，避免把模型译文当成可引用证据。新增 `POST /api/research/databases/{kb_id}/papers/{paper_id}/translate` 与 `research_translate_paper`，界面与 AI 工具共用同一服务；单次最多 12 个片段。
-- 补充自助改密回归测试（G-44）：已有 `POST /api/auth/password` 与账户设置页密码表单，本次新增 4 项接口测试，覆盖旧密码错误、新旧密码相同、成功更新哈希与短密码 422，验证修改后旧密码立即失效。
+- 补充自助改密回归测试（G-44）：已有 `POST /api/auth/password` 与账户设置页密码表单，本次覆盖旧密码错误、新旧密码相同、成功更新哈希、短密码 422、旧 Token 401 与新 Token 200，验证修改后旧密码与旧 Token 均失效。
 - 新增跨库查重（只读）：`GET /api/research/duplicates/cross-library` 枚举当前用户可访问的 Milvus 知识库，按 DOI（优先）/归一化标题汇总跨库重复论文，只报告不合并；查重弹窗新增“跨库查重”入口，AI 侧新增 `research_find_cross_library_duplicates`。跨库合并需先确定保留库与原文、证据和项目资产的迁移策略，本轮不做。
 - 新增知识库迁移包（ZIP）：`GET /api/research/databases/{kb_id}/export-bundle` 打包 `manifest.json`、`papers.csv`、`files.csv`、`graph/citation_graph.csv` 与 README；图谱未同步时降级为说明行而不阻断导出；论文库“导出数据”菜单新增“知识库迁移包（ZIP）”，AI 侧新增 `research_export_kb_bundle`。包内不含原文二进制与向量，恢复后请用“校验清单”核对。
 - 接入本地向量与重排推理服务并切换系统默认模型:新增 OpenAI 兼容的本地推理服务(端口 19100,`paraphrase-multilingual-MiniLM-L12-v2` 384 维与 `BAAI/bge-reranker-base`),注册为内置供应商 `local-embedding` 并在引导时启用;系统默认 `embed_model` 与 `reranker` 切换为本地模型,界面建库、检索与综述不再依赖 SiliconFlow。重排请求超时支持 `RERANK_TIMEOUT_SECONDS` 覆盖(默认 30 秒),适配本地 CPU 推理处理大候选集。模型更换会改变向量维度,已有知识库需重建。

@@ -96,7 +96,8 @@ async def test_change_password_updates_hash_for_self_service(app_client):
     )
 
     assert response.status_code == 200, response.text
-    assert response.json()["message"] == "密码已更新"
+    assert response.json()["message"] == "密码已更新，请重新登录"
+    assert user.password_changed_at is not None
     await db.refresh(user)
     assert AuthUtils.verify_password(user.password_hash, NEW_PASSWORD)
     assert not AuthUtils.verify_password(user.password_hash, OLD_PASSWORD)

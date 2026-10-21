@@ -262,10 +262,14 @@ const savePassword = async () => {
   passwordSaving.value = true
   try {
     await userStore.changePassword(passwordDraft.current, passwordDraft.next)
-    message.success('密码已更新')
+    message.success('密码已更新，请使用新密码重新登录')
     passwordDraft.current = ''
     passwordDraft.next = ''
     passwordDraft.confirm = ''
+    userStore.logout()
+    setTimeout(() => {
+      window.location.href = '/login'
+    }, 800)
   } catch (error) {
     message.error(error.message || '修改密码失败')
   } finally {

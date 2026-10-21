@@ -712,6 +712,7 @@ async def restore_deleted_oidc_user(db, deleted_user: User, user_info: dict) -> 
     deleted_user.is_deleted = 0
     deleted_user.deleted_at = None
     deleted_user.last_login = utc_now_naive()
+    deleted_user.password_changed_at = utc_now_naive()
     deleted_user.phone_number = None
     deleted_user.avatar = None
 

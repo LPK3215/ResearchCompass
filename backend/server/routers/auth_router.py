@@ -594,9 +594,10 @@ async def change_password(
     if payload.current_password == payload.new_password:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="新密码不能与当前密码相同")
     current_user.password_hash = AuthUtils.hash_password(payload.new_password)
+    current_user.password_changed_at = utc_now_naive()
     await db.commit()
     await log_operation(db, current_user.id, "修改密码", "用户修改登录密码", request)
-    return {"message": "密码已更新"}
+    return {"message": "密码已更新，请重新登录"}
 
 
 # 路由：创建新用户（管理员权限）
@@ -841,6 +842,7 @@ async def update_user(
 
     if user_data.password is not None:
         user.password_hash = AuthUtils.hash_password(user_data.password)
+        user.password_changed_at = utc_now_naive()
         update_details.append("密码已更新")
 
     if user_data.role is not None:

@@ -1,4 +1,5 @@
 import hashlib
+from datetime import UTC, datetime
 
 from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -94,6 +95,25 @@ async def get_current_user(
     user = result.scalar_one_or_none()
     if user is None:
         raise credentials_exception
+    password_changed_at = getattr(user, "password_changed_at", None)
+    if password_changed_at is not None:
+        issued_at = payload.get("iat")
+        if not isinstance(issued_at, (int, float)):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="密码已修改，请重新登录",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        changed_at = password_changed_at
+        if changed_at.tzinfo is not None:
+            changed_at = changed_at.astimezone(UTC).replace(tzinfo=None)
+        issued_at_dt = datetime.fromtimestamp(float(issued_at), tz=UTC).replace(tzinfo=None)
+        if issued_at_dt < changed_at:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="密码已修改，请重新登录",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
     if user.is_login_locked():
         raise HTTPException(
             status_code=status.HTTP_423_LOCKED,
