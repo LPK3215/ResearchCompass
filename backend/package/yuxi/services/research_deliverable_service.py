@@ -1138,10 +1138,21 @@ async def find_duplicate_papers(*, kb_id: str, current_user: User) -> dict[str, 
     for key, items in groups.items():
         if len(items) < 2:
             continue
+        ranked = sorted(
+            items,
+            key=lambda item: (
+                bool(str(getattr(item, "doi", "") or "").strip()),
+                -int(getattr(item, "publication_year", 0) or 0),
+            ),
+            reverse=True,
+        )
+        keep = ranked[0]
         duplicates.append(
             {
                 "key": key,
                 "count": len(items),
+                "recommended_paper_id": str(getattr(keep, "paper_id", "")),
+                "recommendation": "仅建议保留含 DOI 且年份最早的条目；是否合并需人工确认，不自动处理",
                 "papers": [
                     {
                         "paper_id": str(getattr(item, "paper_id", "")),
