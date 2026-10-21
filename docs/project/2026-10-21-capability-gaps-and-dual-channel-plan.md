@@ -133,7 +133,7 @@
 | G-28 | 投稿辅助 | 选刊与格式检查缺失 | P3 | 待评估 | 期刊匹配、格式检查提示（外部数据依赖需评估） |
 | G-29 | 全文获取增强 | 非开放获取拿不到全文 | P3 | 待评估 | 支持机构代理或出版社链接跳转，遵守版权边界 |
 | G-33 | 论文笔记与批注缺失 | 阅读成果无法沉淀 | P3 | 待评估 | 支持论文级笔记与 PDF 高亮批注，可导出并关联证据 |
-| G-34 | 整库导出与迁移缺失 | 换机/备份只能靠数据库与数据卷 | P3 | 待评估 | 知识库可整体导出（元数据 + 文件清单 + 图谱快照）并可导入校验 |
+| G-34 | 整库导出与迁移缺失 | 换机/备份只能靠数据库与数据卷 | P3 | 部分完成（论文元数据 + 图谱统计清单；文件打包与导入校验待补） | 知识库可整体导出（元数据 + 文件清单 + 图谱快照）并可导入校验 |
 
 ### 5.4 P3 评估结论（2026-10-21）
 
@@ -188,6 +188,7 @@
 | 2026-10-21 | 状态核对：G-10 拆分完成项与待选项，G-15 转待决策 | G-10 核心链路（查询基准/发起评估/读结果/实验报告）已通，基准与消融创建工具列为待选项；G-15 守卫需新增单测，按编码规则第 9 条需用户授权 | 本文档 §5 | 是 |
 | 2026-10-21 | G-15 守卫落地（脚本式，不新增单测） | 新增 `backend/scripts/check_research_tool_parity.py`，比较工具定义与 research-copilot 启用清单；实跑 `defined=72 enabled=72 parity ok`，退出码 0；按编码规则第 9 条未写测试代码 | `backend/scripts/check_research_tool_parity.py` | 是（G-15 转已完成） |
 | 2026-10-21 | P3 首项：G-25 重复论文检测（只读部分） | 新增 `GET /databases/{kb_id}/duplicates` 与 `research_find_duplicate_papers` 工具：按 DOI（优先）或归一化标题分组，只报告不合并；工具总数 72 到 73；跨库扫描与合并策略待决策 | `backend/package/yuxi/services/research_deliverable_service.py`、`server/routers/research_router.py`、`toolkits/research/tools.py` | 是（G-25 标记部分完成） |
+| 2026-10-21 | P3 第 3 项：G-34 知识库迁移清单 | 新增 `GET /databases/{kb_id}/export-manifest` 与 `research_export_kb_manifest` 工具：输出论文元数据清单与图谱统计（不含原文/向量），并声明备份链路边界；工具总数 73 到 74；导入校验待补 | `backend/package/yuxi/services/research_deliverable_service.py`、`server/routers/research_router.py`、`toolkits/research/tools.py` | 是（G-34 标记部分完成） |
 
 ## 8. 明确不做与边界
 

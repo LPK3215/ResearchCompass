@@ -55,7 +55,10 @@ from yuxi.services.research_project_plan_service import (
     update_project_task,
 )
 from yuxi.services.research_project_risk_service import (
-    create_project_risk, list_project_risks, transition_project_risk, list_project_risk_activities,
+    create_project_risk,
+    list_project_risks,
+    transition_project_risk,
+    list_project_risk_activities,
 )
 from yuxi.services.research_project_report_service import export_research_project_report
 from yuxi.services.research_evidence_service import (
@@ -140,6 +143,7 @@ from yuxi.services.research_deliverable_service import (
     generate_structure_diagram,
     build_topic_list,
     create_tasks_from_topics,
+    export_kb_manifest,
     find_duplicate_papers,
     render_brief_markdown,
 )
@@ -162,7 +166,9 @@ class ResearchEvidenceTransitionRequest(BaseModel):
 
 
 @research.post("/databases/{kb_id}/evidence", status_code=201)
-async def create_research_evidence(kb_id: str, payload: ResearchEvidenceCreateRequest, current_user: User = Depends(get_required_user)):
+async def create_research_evidence(
+    kb_id: str, payload: ResearchEvidenceCreateRequest, current_user: User = Depends(get_required_user)
+):
     return await create_evidence(kb_id=kb_id, chunk_id=payload.chunk_id, current_user=current_user)
 
 
@@ -176,8 +182,12 @@ async def list_research_evidence(
 
 
 @research.post("/evidence/{evidence_id}/transition")
-async def transition_research_evidence(evidence_id: str, payload: ResearchEvidenceTransitionRequest, current_user: User = Depends(get_required_user)):
-    return await transition_evidence(evidence_id=evidence_id, status=payload.status, reason=payload.reason, current_user=current_user)
+async def transition_research_evidence(
+    evidence_id: str, payload: ResearchEvidenceTransitionRequest, current_user: User = Depends(get_required_user)
+):
+    return await transition_evidence(
+        evidence_id=evidence_id, status=payload.status, reason=payload.reason, current_user=current_user
+    )
 
 
 @research.get("/evidence/{evidence_id}/activities")
@@ -940,7 +950,9 @@ async def project_risks(project_id: str, current_user: User = Depends(get_requir
 
 
 @research.post("/projects/{project_id}/risks", status_code=201)
-async def create_project_risk_route(project_id: str, payload: CreateResearchProjectRiskRequest, current_user: User = Depends(get_required_user)):
+async def create_project_risk_route(
+    project_id: str, payload: CreateResearchProjectRiskRequest, current_user: User = Depends(get_required_user)
+):
     try:
         return await create_project_risk(project_id=project_id, current_user=current_user, **payload.model_dump())
     except ResearchProjectError as exc:
@@ -950,9 +962,16 @@ async def create_project_risk_route(project_id: str, payload: CreateResearchProj
 
 
 @research.post("/projects/{project_id}/risks/{risk_id}/transition")
-async def transition_project_risk_route(project_id: str, risk_id: str, payload: TransitionResearchProjectRiskRequest, current_user: User = Depends(get_required_user)):
+async def transition_project_risk_route(
+    project_id: str,
+    risk_id: str,
+    payload: TransitionResearchProjectRiskRequest,
+    current_user: User = Depends(get_required_user),
+):
     try:
-        return await transition_project_risk(project_id=project_id, risk_id=risk_id, current_user=current_user, **payload.model_dump())
+        return await transition_project_risk(
+            project_id=project_id, risk_id=risk_id, current_user=current_user, **payload.model_dump()
+        )
     except ResearchProjectError as exc:
         raise _to_http_error(exc, _PROJECT_STATUS_MAP) from exc
     except LookupError as exc:
@@ -964,7 +983,11 @@ async def transition_project_risk_route(project_id: str, risk_id: str, payload: 
 @research.get("/projects/{project_id}/risks/{risk_id}/activities")
 async def project_risk_activities(project_id: str, risk_id: str, current_user: User = Depends(get_required_user)):
     try:
-        return {"items": await list_project_risk_activities(project_id=project_id, risk_id=risk_id, current_user=current_user)}
+        return {
+            "items": await list_project_risk_activities(
+                project_id=project_id, risk_id=risk_id, current_user=current_user
+            )
+        }
     except ResearchProjectError as exc:
         raise _to_http_error(exc, _PROJECT_STATUS_MAP) from exc
 
@@ -1096,9 +1119,7 @@ async def create_task_dependency(
 
 
 @research.delete("/projects/{project_id}/task-dependencies/{dependency_id}", status_code=204)
-async def delete_task_dependency(
-    project_id: str, dependency_id: str, current_user: User = Depends(get_required_user)
-):
+async def delete_task_dependency(project_id: str, dependency_id: str, current_user: User = Depends(get_required_user)):
     try:
         await delete_project_task_dependency(
             project_id=project_id, dependency_id=dependency_id, current_user=current_user
@@ -2077,9 +2098,7 @@ async def export_paper_analysis_report(
 ):
     del format
     try:
-        filename, content, media_type = await export_paper_analysis_markdown(
-            run_id=run_id, current_user=current_user
-        )
+        filename, content, media_type = await export_paper_analysis_markdown(run_id=run_id, current_user=current_user)
     except ResearchDeliverableError as exc:
         raise _to_http_error(exc, _DELIVERABLE_STATUS_MAP) from exc
     except AcademicPaperAnalysisError as exc:
@@ -2299,3 +2318,24 @@ async def list_duplicate_papers(
         return await find_duplicate_papers(kb_id=kb_id, current_user=current_user)
     except ResearchDeliverableError as exc:
         raise _to_http_error(exc, _DELIVERABLE_STATUS_MAP) from exc
+
+
+@research.get("/databases/{kb_id}/export-manifest")
+async def export_research_kb_manifest(
+    kb_id: str,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        manifest = await export_kb_manifest(kb_id=kb_id, current_user=current_user)
+    except ResearchDeliverableError as exc:
+        raise _to_http_error(exc, _DELIVERABLE_STATUS_MAP) from exc
+    import json as _json
+
+    from yuxi.utils.datetime_utils import utc_now_naive
+
+    filename = f"research_manifest_{kb_id}_{utc_now_naive().strftime('%Y%m%d%H%M')}.json"
+    return Response(
+        content=_json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8"),
+        media_type="application/json; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

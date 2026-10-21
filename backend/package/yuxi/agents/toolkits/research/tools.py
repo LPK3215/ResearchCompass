@@ -2230,6 +2230,35 @@ async def research_find_duplicate_papers(dummy: str, runtime: ToolRuntime) -> di
     }
 
 
+@tool(
+    category="research",
+    tags=["科研", "导出", "迁移"],
+    display_name="导出知识库清单",
+    args_schema=EmptyInput,
+)
+async def research_export_kb_manifest(dummy: str, runtime: ToolRuntime) -> dict[str, Any]:
+    """导出当前知识库的迁移清单（论文元数据 + 图谱统计），不含原文与向量。"""
+    del dummy
+    import json
+
+    from yuxi.services.research_deliverable_service import export_kb_manifest
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    manifest = await _call(export_kb_manifest(kb_id=context["kb_id"], current_user=user))
+    filename = f"research_manifest_{context['kb_id']}.json"
+    artifact_path = await _write_artifact(
+        runtime, filename, json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8")
+    )
+    return {
+        "kb_id": context["kb_id"],
+        "paper_count": manifest["paper_count"],
+        "filename": filename,
+        "artifact_path": artifact_path,
+        "message": f"知识库清单已写入 {filename}，请调用 present_artifacts 工具展示该文件",
+    }
+
+
 RESEARCH_TOOLS = [
     research_get_context,
     research_list_projects,
@@ -2304,4 +2333,5 @@ RESEARCH_TOOLS = [
     research_export_synthesis_topics,
     research_create_tasks_from_topics,
     research_find_duplicate_papers,
+    research_export_kb_manifest,
 ]

@@ -1161,3 +1161,32 @@ async def find_duplicate_papers(*, kb_id: str, current_user: User) -> dict[str, 
         "duplicate_paper_count": sum(item["count"] for item in duplicates),
         "groups": duplicates,
     }
+
+
+async def export_kb_manifest(*, kb_id: str, current_user: User) -> dict[str, Any]:
+    """导出知识库迁移清单：论文元数据 + 图谱统计，不含原文与向量。"""
+    from yuxi.repositories.academic_graph_repository import AcademicGraphRepository
+
+    await _ensure_access(current_user, kb_id)
+    papers: list[dict[str, Any]] = []
+    async for batch in AcademicPaperRepository().iter_export_batches(kb_id=kb_id):
+        for paper in batch:
+            papers.append(
+                {
+                    "paper_id": str(getattr(paper, "paper_id", "")),
+                    "file_id": str(getattr(paper, "file_id", "") or ""),
+                    "title": str(getattr(paper, "title", "") or ""),
+                    "publication_year": getattr(paper, "publication_year", None),
+                    "doi": str(getattr(paper, "doi", "") or ""),
+                    "venue": str(getattr(paper, "venue", "") or ""),
+                }
+            )
+    graph_counts = await AcademicGraphRepository().counts(kb_id)
+    return {
+        "kb_id": kb_id,
+        "generated_at": utc_now_naive().strftime("%Y-%m-%d %H:%M"),
+        "paper_count": len(papers),
+        "papers": papers,
+        "graph_counts": graph_counts,
+        "note": "本清单只含元数据与图谱统计；原文文件、向量与图数据由备份链路（Postgres + docker volumes）负责。",
+    }
