@@ -192,7 +192,8 @@ async def create_project_milestone(
                 "status": status,
                 "target_date": target_date,
                 "completed_at": utc_now_naive() if status == "completed" else None,
-            }, operator_uid=str(current_user.uid),
+            },
+            operator_uid=str(current_user.uid),
         )
     )
     return serialize_milestone(record, [], [])
@@ -251,7 +252,11 @@ async def delete_project_milestone(*, project_id: str, milestone_id: str, curren
 async def reorder_project_milestones(*, project_id: str, current_user: User, milestone_ids: list[str]) -> None:
     project = await get_owned_project(project_id, current_user)
     ensure_project_writable(project)
-    if not await _execute_plan_write(ResearchProjectPlanRepository().reorder_milestones(project_id, milestone_ids, operator_uid=str(current_user.uid))):
+    if not await _execute_plan_write(
+        ResearchProjectPlanRepository().reorder_milestones(
+            project_id, milestone_ids, operator_uid=str(current_user.uid)
+        )
+    ):
         raise ResearchProjectError("invalid_milestone_order", "排序必须包含当前项目的全部里程碑且不能重复")
 
 
@@ -283,7 +288,8 @@ async def create_project_task(
                 "due_date": due_date,
                 "milestone_id": milestone_id,
                 "completed_at": utc_now_naive() if status == "done" else None,
-            }, operator_uid=str(current_user.uid),
+            },
+            operator_uid=str(current_user.uid),
         )
     )
     if record is None:
@@ -333,7 +339,12 @@ async def update_project_task(
 async def delete_project_task(*, project_id: str, task_id: str, current_user: User) -> None:
     project = await get_owned_project(project_id, current_user)
     ensure_project_writable(project)
-    if await _execute_plan_write(ResearchProjectPlanRepository().delete_task(project_id, task_id, operator_uid=str(current_user.uid))) is None:
+    if (
+        await _execute_plan_write(
+            ResearchProjectPlanRepository().delete_task(project_id, task_id, operator_uid=str(current_user.uid))
+        )
+        is None
+    ):
         raise ResearchProjectError("task_not_found", "任务不存在")
 
 
@@ -362,9 +373,7 @@ async def create_project_task_dependency(
         pending.extend(graph.get(node, set()))
     try:
         record = await _execute_plan_write(
-            repository.create_task_dependency(
-                project_id, task_id, depends_on_task_id, created_by=str(current_user.uid)
-            )
+            repository.create_task_dependency(project_id, task_id, depends_on_task_id, created_by=str(current_user.uid))
         )
     except IntegrityError as exc:
         raise ResearchProjectError("task_dependency_exists", "该任务依赖关系已存在") from exc
@@ -397,7 +406,9 @@ async def reorder_project_tasks(
     repository = ResearchProjectPlanRepository()
     if milestone_id and await repository.get_milestone(project_id, milestone_id) is None:
         raise ResearchProjectError("milestone_not_found", "里程碑不存在")
-    if not await _execute_plan_write(repository.reorder_tasks(project_id, milestone_id, task_ids, operator_uid=str(current_user.uid))):
+    if not await _execute_plan_write(
+        repository.reorder_tasks(project_id, milestone_id, task_ids, operator_uid=str(current_user.uid))
+    ):
         raise ResearchProjectError("invalid_task_order", "排序必须包含当前分组的全部任务且不能重复")
 
 
@@ -449,7 +460,12 @@ async def create_project_plan_asset_link(
 async def delete_project_plan_asset_link(*, project_id: str, link_id: str, current_user: User) -> None:
     project = await get_owned_project(project_id, current_user)
     ensure_project_writable(project)
-    if await _execute_plan_write(ResearchProjectPlanRepository().delete_asset_link(project_id, link_id, operator_uid=str(current_user.uid))) is None:
+    if (
+        await _execute_plan_write(
+            ResearchProjectPlanRepository().delete_asset_link(project_id, link_id, operator_uid=str(current_user.uid))
+        )
+        is None
+    ):
         raise ResearchProjectError("plan_asset_link_not_found", "成果关联不存在")
 
 

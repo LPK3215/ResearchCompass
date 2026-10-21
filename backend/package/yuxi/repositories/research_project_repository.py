@@ -66,7 +66,11 @@ class ResearchProjectRepository:
         record = ResearchProject(**values)
         async with pg_manager.get_async_session_context() as session:
             session.add(record)
-            session.add(build_project_activity(record.project_id, "project_created", operator_uid=str(record.uid), payload={"title": record.title}))
+            session.add(
+                build_project_activity(
+                    record.project_id, "project_created", operator_uid=str(record.uid), payload={"title": record.title}
+                )
+            )
             await session.flush()
         return record
 
@@ -214,7 +218,9 @@ class ResearchProjectRepository:
             )
             return list(result.scalars().all()), int(total or 0)
 
-    async def add_assets(self, project_id: str, assets: list[dict[str, Any]], *, operator_uid: str) -> list[ResearchProjectAsset]:
+    async def add_assets(
+        self, project_id: str, assets: list[dict[str, Any]], *, operator_uid: str
+    ) -> list[ResearchProjectAsset]:
         records = [ResearchProjectAsset(asset_id=uuid.uuid4().hex, project_id=project_id, **asset) for asset in assets]
         async with pg_manager.get_async_session_context() as session:
             session.add_all(records)

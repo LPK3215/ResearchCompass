@@ -17,7 +17,6 @@ from deepagents.middleware.summarization import (
     _aclip_overflow_tail,
     _clip_overflow_tail,
 )
-from deepagents.backends.state import StateBackend
 from deepagents.backends.filesystem import FilesystemBackend
 from langchain.agents.middleware.summarization import ContextSize
 from langchain.agents.middleware.types import ExtendedModelResponse, ModelRequest, ModelResponse
@@ -587,11 +586,6 @@ class YuxiSummarizationMiddleware(SummarizationMiddleware):
         handler: Callable[[ModelRequest], ModelResponse],
     ) -> ModelResponse | ExtendedModelResponse:
         effective_messages = self._get_effective_messages(request)
-        initial_tokens = self._count_request_tokens(
-            effective_messages,
-            system_message=request.system_message,
-            tools=request.tools,
-        )
         truncated_messages, _ = self._truncate_args(
             effective_messages,
             request.system_message,
@@ -683,11 +677,6 @@ class YuxiSummarizationMiddleware(SummarizationMiddleware):
         handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
     ) -> ModelResponse | ExtendedModelResponse:
         effective_messages = self._get_effective_messages(request)
-        initial_tokens = self._count_request_tokens(
-            effective_messages,
-            system_message=request.system_message,
-            tools=request.tools,
-        )
         truncated_messages, _ = self._truncate_args(
             effective_messages,
             request.system_message,

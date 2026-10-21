@@ -96,7 +96,6 @@ async def export_research_project_report(
 
 def render_project_markdown(report: dict[str, Any]) -> str:
     project = report["project"]
-    project_id = str(project.get("project_id") or "project")
     plan = report["plan"]
     progress_source = "任务自动计算" if project["progress_source"] == "tasks" else "手动维护"
     lines = [

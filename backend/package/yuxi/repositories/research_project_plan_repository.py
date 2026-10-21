@@ -78,10 +78,12 @@ class ResearchProjectPlanRepository:
     ) -> ResearchProjectTaskDependency | None:
         async with pg_manager.get_async_session_context() as session:
             record = await session.scalar(
-                select(ResearchProjectTaskDependency).where(
+                select(ResearchProjectTaskDependency)
+                .where(
                     ResearchProjectTaskDependency.project_id == project_id,
                     ResearchProjectTaskDependency.dependency_id == dependency_id,
-                ).with_for_update()
+                )
+                .with_for_update()
             )
             if record is None:
                 return None
@@ -152,7 +154,9 @@ class ResearchProjectPlanRepository:
                 tasks[str(task.project_id)].append(task)
         return milestones, tasks
 
-    async def create_milestone(self, project_id: str, values: dict[str, Any], *, operator_uid: str) -> ResearchProjectMilestone:
+    async def create_milestone(
+        self, project_id: str, values: dict[str, Any], *, operator_uid: str
+    ) -> ResearchProjectMilestone:
         async with pg_manager.get_async_session_context() as session:
             # Lock the project before allocating sort_order so concurrent creates cannot read the same maximum.
             await self._touch_project(session, project_id)
@@ -244,7 +248,9 @@ class ResearchProjectPlanRepository:
             await session.flush()
             return record, 0
 
-    async def delete_milestone(self, project_id: str, milestone_id: str, *, operator_uid: str) -> tuple[ResearchProjectMilestone | None, int]:
+    async def delete_milestone(
+        self, project_id: str, milestone_id: str, *, operator_uid: str
+    ) -> tuple[ResearchProjectMilestone | None, int]:
         async with pg_manager.get_async_session_context() as session:
             record = await session.scalar(
                 select(ResearchProjectMilestone)
@@ -299,7 +305,9 @@ class ResearchProjectPlanRepository:
             await session.flush()
             return True
 
-    async def create_task(self, project_id: str, values: dict[str, Any], *, operator_uid: str) -> ResearchProjectTask | None:
+    async def create_task(
+        self, project_id: str, values: dict[str, Any], *, operator_uid: str
+    ) -> ResearchProjectTask | None:
         async with pg_manager.get_async_session_context() as session:
             milestone_id = values.get("milestone_id")
             if milestone_id:
@@ -445,7 +453,9 @@ class ResearchProjectPlanRepository:
             await self._touch_project(session, project_id, sync_progress=True)
             return record
 
-    async def reorder_tasks(self, project_id: str, milestone_id: str | None, task_ids: list[str], *, operator_uid: str) -> bool:
+    async def reorder_tasks(
+        self, project_id: str, milestone_id: str | None, task_ids: list[str], *, operator_uid: str
+    ) -> bool:
         async with pg_manager.get_async_session_context() as session:
             group_filter = ResearchProjectTask.milestone_id == milestone_id
             if milestone_id is None:
