@@ -43,6 +43,7 @@
         <template v-else-if="column.key === 'actions'">
           <a-space>
             <a @click="viewExperiment(record)">报告</a>
+            <a v-if="record.status === 'completed'" @click="exportExperimentResult(record)">导出</a>
             <a-popconfirm
               :title="record.status === 'running' || record.status === 'queued' ? '运行中的实验不能删除' : '删除实验及其对比报告？'"
               :disabled="record.status === 'running' || record.status === 'queued'"
@@ -214,6 +215,7 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { FileDown, FileUp, FlaskConical, ListChecks, Plus, Trash2 } from 'lucide-vue-next'
 import { databaseApi, evaluationApi } from '@/apis/knowledge_api'
+import { researchApi } from '@/apis/research_api'
 import ModelSelectorComponent from '@/components/ModelSelectorComponent.vue'
 import ResourceEmptyState from '@/components/shared/ResourceEmptyState.vue'
 
@@ -543,6 +545,21 @@ const viewExperiment = async (record) => {
     message.error('加载实验报告失败')
   } finally {
     reportLoading.value = false
+  }
+}
+
+const exportExperimentResult = async (record) => {
+  try {
+    const blob = await researchApi.exportResearchData(props.kbId, 'eval_experiment', 'json', record.experiment_id)
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `research_eval_experiment_${record.experiment_id}.json`
+    link.click()
+    URL.revokeObjectURL(url)
+    message.success('实验报告已导出')
+  } catch (error) {
+    message.error(error.message || '实验报告导出失败')
   }
 }
 

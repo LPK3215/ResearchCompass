@@ -422,6 +422,13 @@ class SynthesisTopicTasksInput(SynthesisTopicsInput):
     limit: int = Field(default=10, ge=1, le=20, description="最多创建的选题任务数")
 
 
+class GenerateEvalDatasetInput(BaseModel):
+    name: str = Field(min_length=1, max_length=100, description="基准名称")
+    count: int = Field(default=10, ge=5, le=50, description="题目数量")
+    llm_model_spec: str | None = Field(default=None, max_length=512, description="生成模型；省略时使用默认模型")
+    description: str = Field(default="", max_length=500, description="基准说明")
+
+
 def _research_context(runtime: ToolRuntime) -> dict[str, Any]:
     context = getattr(runtime, "context", None)
     research_context = getattr(context, "research_context", None)
@@ -2259,6 +2266,48 @@ async def research_export_kb_manifest(dummy: str, runtime: ToolRuntime) -> dict[
     }
 
 
+@tool(
+    category="research",
+    tags=["科研", "评估", "基准"],
+    display_name="生成评估基准",
+    args_schema=GenerateEvalDatasetInput,
+)
+async def research_generate_eval_dataset(
+    name: str,
+    count: int,
+    llm_model_spec: str | None,
+    description: str,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """基于当前知识库自动生成 RAG 评估基准（仅管理员），返回基准 ID 与题量。"""
+    from yuxi.knowledge.eval.service import EvaluationService
+    from yuxi.services.research_deliverable_service import _resolve_model_spec
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    await _require_admin(user)
+    model_spec = _resolve_model_spec(llm_model_spec)
+    created_by = str(getattr(user, "id", "") or getattr(user, "user_id", "") or "system")
+    result = await _call(
+        EvaluationService().generate_dataset(
+            kb_id=context["kb_id"],
+            name=name,
+            description=description,
+            count=count,
+            neighbors_count=3,
+            concurrency_count=2,
+            llm_model_spec=model_spec,
+            created_by=created_by,
+        )
+    )
+    return {
+        "dataset_id": result.get("dataset_id"),
+        "name": result.get("name") or name,
+        "question_count": result.get("item_count") or result.get("question_count") or count,
+        "message": "评估基准已生成，可在 RAG 评估中选择该基准发起评估",
+    }
+
+
 RESEARCH_TOOLS = [
     research_get_context,
     research_list_projects,
@@ -2334,4 +2383,5 @@ RESEARCH_TOOLS = [
     research_create_tasks_from_topics,
     research_find_duplicate_papers,
     research_export_kb_manifest,
+    research_generate_eval_dataset,
 ]
