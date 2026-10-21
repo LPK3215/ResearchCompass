@@ -414,6 +414,14 @@ class CitationInsightInput(BaseModel):
     dummy: str = Field(default="", description="无需填写，忽略此参数")
 
 
+class SynthesisTopicsInput(BaseModel):
+    run_id: str = Field(min_length=1, max_length=64, description="证据综述运行 ID")
+
+
+class SynthesisTopicTasksInput(SynthesisTopicsInput):
+    limit: int = Field(default=10, ge=1, le=20, description="最多创建的选题任务数")
+
+
 def _research_context(runtime: ToolRuntime) -> dict[str, Any]:
     context = getattr(runtime, "context", None)
     research_context = getattr(context, "research_context", None)
@@ -2159,6 +2167,48 @@ async def research_generate_citation_insight(dummy: str, runtime: ToolRuntime) -
     }
 
 
+@tool(
+    category="research",
+    tags=["科研", "综述", "选题"],
+    display_name="综述转选题清单",
+    args_schema=SynthesisTopicsInput,
+)
+async def research_export_synthesis_topics(run_id: str, runtime: ToolRuntime) -> dict[str, Any]:
+    """把已验证综述的研究空白、后续方向与未支持结论整理为选题清单（Markdown）。"""
+    from yuxi.services.research_deliverable_service import build_topic_list
+
+    user = await _current_user(runtime)
+    topics = await _call(build_topic_list(run_id=run_id, current_user=user))
+    filename = f"research_topics_{run_id}.md"
+    artifact_path = await _write_artifact(runtime, filename, topics["markdown"].encode("utf-8"))
+    return {
+        "run_id": run_id,
+        "topic_count": len(topics["items"]),
+        "filename": filename,
+        "artifact_path": artifact_path,
+        "message": f"选题清单已写入 {filename}，请调用 present_artifacts 工具展示该文件",
+    }
+
+
+@tool(
+    category="research",
+    tags=["科研", "综述", "选题", "项目"],
+    display_name="选题转为项目任务",
+    args_schema=SynthesisTopicTasksInput,
+)
+async def research_create_tasks_from_topics(
+    run_id: str,
+    limit: int,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """把综述选题批量建为当前研究项目的待办任务（需当前会话已绑定项目）。"""
+    from yuxi.services.research_deliverable_service import create_tasks_from_topics
+
+    user = await _current_user(runtime)
+    project_id = await _project_id(runtime, None, user)
+    return await _call(create_tasks_from_topics(run_id=run_id, project_id=project_id, current_user=user, limit=limit))
+
+
 RESEARCH_TOOLS = [
     research_get_context,
     research_list_projects,
@@ -2230,4 +2280,6 @@ RESEARCH_TOOLS = [
     research_export_research_data,
     research_export_comparison_matrix,
     research_generate_citation_insight,
+    research_export_synthesis_topics,
+    research_create_tasks_from_topics,
 ]

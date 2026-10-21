@@ -999,3 +999,116 @@ async def generate_citation_insight(*, kb_id: str, current_user: User) -> dict[s
         "isolate_count": len(isolates),
         "generated_at": utc_now_naive().strftime("%Y-%m-%d %H:%M"),
     }
+
+
+def _topic_items(result: dict[str, Any]) -> list[dict[str, str]]:
+    gaps = result.get("research_gaps") or result.get("gaps") or {}
+    items: list[dict[str, str]] = []
+    if isinstance(gaps, dict):
+        for gap in gaps.get("gaps") or []:
+            if isinstance(gap, dict) and str(gap.get("claim") or "").strip():
+                items.append(
+                    {
+                        "topic": str(gap["claim"]).strip(),
+                        "basis": str(gap.get("basis") or "").strip(),
+                        "confidence": str(gap.get("confidence") or "").strip(),
+                        "source": "研究空白",
+                    }
+                )
+        for direction in gaps.get("future_directions") or []:
+            if str(direction).strip():
+                items.append(
+                    {
+                        "topic": str(direction).strip(),
+                        "basis": "综述给出的后续方向",
+                        "confidence": "",
+                        "source": "后续方向",
+                    }
+                )
+    unsupported = result.get("unsupported_claims") or result.get("unsupported") or []
+    if isinstance(unsupported, list):
+        for claim in unsupported:
+            text = str(claim.get("claim") if isinstance(claim, dict) else claim).strip()
+            if text:
+                items.append(
+                    {
+                        "topic": text,
+                        "basis": "综述中未被证据支持的结论，需补文献后再定题",
+                        "confidence": "",
+                        "source": "未支持结论",
+                    }
+                )
+    seen: set[str] = set()
+    unique: list[dict[str, str]] = []
+    for item in items:
+        if item["topic"] in seen:
+            continue
+        seen.add(item["topic"])
+        unique.append(item)
+    return unique
+
+
+def render_topic_markdown(run_id: str, items: list[dict[str, str]], generated_at: str) -> str:
+    lines = [
+        "# 选题清单",
+        "",
+        f"- 来源综述：{run_id}",
+        f"- 生成时间：{generated_at}",
+        f"- 选题数：{len(items)}",
+        "- 说明：选题来自综述的研究空白、后续方向与未支持结论；未支持结论需先补文献，不建议直接开题。",
+        "",
+    ]
+    for index, item in enumerate(items, start=1):
+        suffix = f"（置信度：{item['confidence']}）" if item["confidence"] else ""
+        lines.append(f"{index}. {item['topic']}{suffix}")
+        lines.append(f"   - 来源：{item['source']}")
+        if item["basis"]:
+            lines.append(f"   - 依据：{item['basis']}")
+    return "\n".join(lines)
+
+
+async def build_topic_list(*, run_id: str, current_user: User) -> dict[str, Any]:
+    """从一次证据综述运行提取可追踪的选题清单。"""
+    from yuxi.utils.datetime_utils import utc_now_naive
+    from yuxi.services.research_synthesis_service import get_research_synthesis
+
+    run = await get_research_synthesis(run_id=run_id, current_user=current_user)
+    if str(run.get("status")) != "success":
+        raise ResearchDeliverableError("synthesis_not_success", "只有验证完成的证据综述才能转选题")
+    result = run.get("result") if isinstance(run.get("result"), dict) else {}
+    items = _topic_items(result)
+    if not items:
+        raise ResearchDeliverableError("topic_no_data", "本次综述没有可转成选题的空白或方向")
+    generated_at = utc_now_naive().strftime("%Y-%m-%d %H:%M")
+    return {
+        "run_id": run_id,
+        "items": items,
+        "generated_at": generated_at,
+        "markdown": render_topic_markdown(run_id, items, generated_at),
+    }
+
+
+async def create_tasks_from_topics(
+    *, run_id: str, project_id: str, current_user: User, limit: int = 10
+) -> dict[str, Any]:
+    """把综述选题批量建为当前项目的待办任务，标题与依据一一对应。"""
+    from yuxi.services.research_project_plan_service import create_project_task
+
+    topics = await build_topic_list(run_id=run_id, current_user=current_user)
+    created = []
+    for item in topics["items"][:limit]:
+        description = f"来源：证据综述 {run_id} · {item['source']}"
+        if item["basis"]:
+            description += f"\n依据：{item['basis']}"
+        task = await create_project_task(
+            project_id=project_id,
+            current_user=current_user,
+            title=item["topic"][:200],
+            description=description,
+            status="todo",
+            priority="medium",
+            due_date=None,
+            milestone_id=None,
+        )
+        created.append({"task_id": task.get("task_id"), "title": task.get("title")})
+    return {"created": len(created), "tasks": created, "source_run_id": run_id}

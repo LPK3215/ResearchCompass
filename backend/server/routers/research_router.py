@@ -138,6 +138,8 @@ from yuxi.services.research_deliverable_service import (
     generate_paper_brief,
     generate_presentation_pack,
     generate_structure_diagram,
+    build_topic_list,
+    create_tasks_from_topics,
     render_brief_markdown,
 )
 from yuxi.services.academic_paper_analysis_evaluation_service import (
@@ -2029,6 +2031,8 @@ _DELIVERABLE_STATUS_MAP = {
     "target_required": 422,
     "matrix_requires_two_papers": 422,
     "graph_empty": 409,
+    "synthesis_not_success": 409,
+    "topic_no_data": 409,
     "forbidden": 403,
 }
 
@@ -2242,3 +2246,44 @@ async def export_research_citation_insight(
         media_type="text/markdown; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+class SynthesisTopicTasksRequest(BaseModel):
+    project_id: str = Field(..., min_length=1, max_length=64)
+    limit: int = Field(default=10, ge=1, le=20)
+
+
+@research.get("/synthesis-runs/{run_id}/topics")
+async def export_synthesis_topics(
+    run_id: str,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        topics = await build_topic_list(run_id=run_id, current_user=current_user)
+    except ResearchDeliverableError as exc:
+        raise _to_http_error(exc, _DELIVERABLE_STATUS_MAP) from exc
+    from yuxi.utils.datetime_utils import utc_now_naive
+
+    filename = f"research_topics_{run_id}_{utc_now_naive().strftime('%Y%m%d%H%M')}.md"
+    return Response(
+        content=topics["markdown"].encode("utf-8"),
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@research.post("/synthesis-runs/{run_id}/topics/tasks")
+async def create_tasks_from_synthesis_topics(
+    run_id: str,
+    payload: SynthesisTopicTasksRequest,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await create_tasks_from_topics(
+            run_id=run_id,
+            project_id=payload.project_id,
+            current_user=current_user,
+            limit=payload.limit,
+        )
+    except ResearchDeliverableError as exc:
+        raise _to_http_error(exc, _DELIVERABLE_STATUS_MAP) from exc
