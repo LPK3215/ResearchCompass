@@ -134,6 +134,7 @@ from yuxi.services.research_deliverable_service import (
     export_paper_cards,
     generate_paper_brief,
     generate_presentation_pack,
+    generate_structure_diagram,
     render_brief_markdown,
 )
 from yuxi.services.academic_paper_analysis_evaluation_service import (
@@ -2019,6 +2020,8 @@ _DELIVERABLE_STATUS_MAP = {
     "brief_invalid_schema": 502,
     "presentation_invalid_json": 502,
     "presentation_invalid_schema": 502,
+    "invalid_diagram_kind": 422,
+    "diagram_no_data": 409,
 }
 
 
@@ -2137,6 +2140,26 @@ async def export_research_academic_graph(
         )
     except AcademicGraphSyncError as exc:
         raise _to_http_error(exc, _GRAPH_STATUS_MAP) from exc
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@research.get("/databases/{kb_id}/papers/{paper_id}/structure-diagram")
+async def export_paper_structure_diagram(
+    kb_id: str,
+    paper_id: str,
+    kind: str = Query(default="method", pattern=r"^(method|topics)$"),
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        filename, content, media_type = await generate_structure_diagram(
+            kb_id=kb_id, paper_id=paper_id, current_user=current_user, kind=kind
+        )
+    except ResearchDeliverableError as exc:
+        raise _to_http_error(exc, _DELIVERABLE_STATUS_MAP) from exc
     return Response(
         content=content,
         media_type=media_type,

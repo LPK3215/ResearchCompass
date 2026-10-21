@@ -171,6 +171,7 @@ RESEARCH_COPILOT_TOOL_SLUGS = [
     "research_generate_paper_brief",
     "research_generate_presentation_pack",
     "research_export_academic_graph",
+    "research_export_paper_diagram",
 ]
 RESEARCH_COPILOT_SYSTEM_PROMPT = """你是 ResearchCompass 的 AI 研究助手。
 

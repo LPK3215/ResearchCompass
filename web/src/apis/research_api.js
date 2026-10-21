@@ -457,6 +457,12 @@ export const researchApi = {
       { method: 'GET' }, true, 'blob'
     ).then((response) => response.blob()),
 
+  exportPaperDiagram: (kbId, paperId, kind = 'method') =>
+    apiRequest(
+      `/api/research/databases/${encodeURIComponent(kbId)}/papers/${encodeURIComponent(paperId)}/structure-diagram?kind=${encodeURIComponent(kind)}`,
+      { method: 'GET' }, true, 'blob'
+    ).then((response) => response.blob()),
+
   generatePaperBrief: (kbId, paperId, payload = {}) =>
     apiRequest(
       `/api/research/databases/${encodeURIComponent(kbId)}/papers/${encodeURIComponent(paperId)}/brief`,

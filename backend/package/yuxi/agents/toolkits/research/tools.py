@@ -390,6 +390,11 @@ class ExportAcademicGraphInput(BaseModel):
     limit: int = Field(default=500, ge=1, le=500, description="最多导出的图谱节点数")
 
 
+class StructureDiagramInput(BaseModel):
+    paper_id: str = Field(min_length=1, max_length=128, description="论文 ID")
+    kind: Literal["method", "topics"] = Field(default="method", description="method 为方法流程，topics 为主题图")
+
+
 def _research_context(runtime: ToolRuntime) -> dict[str, Any]:
     context = getattr(runtime, "context", None)
     research_context = getattr(context, "research_context", None)
@@ -2004,6 +2009,39 @@ async def research_export_academic_graph(
     }
 
 
+@tool(
+    category="research",
+    tags=["科研", "结构图", "导出"],
+    display_name="生成论文结构图",
+    args_schema=StructureDiagramInput,
+)
+async def research_export_paper_diagram(
+    paper_id: str,
+    kind: str,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """根据论文分析结果或关键词生成 SVG 结构图（方法流程 / 主题图），并写入交付物目录。
+
+    导出完成后应调用 present_artifacts 工具将文件展示给用户。
+    """
+    from yuxi.services.research_deliverable_service import generate_structure_diagram
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    filename, content, media_type = await _call(
+        generate_structure_diagram(kb_id=context["kb_id"], paper_id=paper_id, current_user=user, kind=kind)
+    )
+    artifact_path = await _write_artifact(runtime, filename, content)
+    return {
+        "paper_id": paper_id,
+        "kind": kind,
+        "filename": filename,
+        "media_type": media_type,
+        "artifact_path": artifact_path,
+        "message": f"结构图已生成 {filename}，请调用 present_artifacts 工具展示该文件",
+    }
+
+
 RESEARCH_TOOLS = [
     research_get_context,
     research_list_projects,
@@ -2071,4 +2109,5 @@ RESEARCH_TOOLS = [
     research_generate_paper_brief,
     research_generate_presentation_pack,
     research_export_academic_graph,
+    research_export_paper_diagram,
 ]

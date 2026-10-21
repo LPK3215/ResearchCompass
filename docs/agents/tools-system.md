@@ -72,7 +72,7 @@ kb_tools = get_common_kb_tools()
 
 ### 科研工具 (research)
 
-科研工具使用 `@tool(category="research")` 注册，是 ResearchCompass 在 Yuxi 框架之上扩展的核心能力，由 `research-copilot` 主智能体调用，覆盖项目治理、论文检索、证据综述、分析、图谱、评测与交付物导出等科研闭环场景。每个能力都同时具备工作台界面入口与 AI 工具入口（双通道），共 65 个工具。具体工具如下：
+科研工具使用 `@tool(category="research")` 注册，是 ResearchCompass 在 Yuxi 框架之上扩展的核心能力，由 `research-copilot` 主智能体调用，覆盖项目治理、论文检索、证据综述、分析、图谱、评测与交付物导出等科研闭环场景。每个能力都同时具备工作台界面入口与 AI 工具入口（双通道），共 67 个工具。具体工具如下：
 
 | 工具 | 说明 |
 |------|------|
@@ -141,6 +141,8 @@ kb_tools = get_common_kb_tools()
 | `research_export_paper_analysis` | 把论文分析运行导出为 Markdown 报告 |
 | `research_generate_paper_brief` | 生成单篇论文分层摘要（一句话 / 一段 / 一页） |
 | `research_generate_presentation_pack` | 基于 1 到 10 篇论文生成汇报包（MD / HTML） |
+| `research_export_academic_graph` | 导出引用图谱快照（节点/边，CSV / GraphML） |
+| `research_export_paper_diagram` | 生成论文结构图（方法流程 / 主题图，SVG） |
 
 ## 工具组装
 

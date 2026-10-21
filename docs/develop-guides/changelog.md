@@ -97,6 +97,7 @@
 - 新增科研交付物服务与四个双通道入口：`research_deliverable_service` 统一渲染文献卡片（元数据 + 最新分析摘要，Markdown/JSON）、论文分析报告 Markdown、单篇论文分层摘要（一句话/一段/一页，模型生成）与组会汇报包（大纲、对比表、讲稿要点，Markdown/单页 HTML）；HTTP 新增 `GET /papers/cards`、`GET /paper-analysis-runs/{id}/export`、`POST /papers/{id}/brief`、`POST /presentation-packs`，工具新增 `research_export_paper_cards`、`research_export_paper_analysis`、`research_generate_paper_brief`、`research_generate_presentation_pack`（工具总数 61 到 65）。界面在论文库导出下拉新增卡片与汇报包入口，在论文分析页新增“导出 Markdown”与“分层摘要”；分析导出同时兼容 `stage_results` 与 `result` 两种运行快照结构，缺字段时显式写“未明确提供”。
 - 论文导出新增期刊引文样式：在 BibTeX/RIS/Markdown/CSV/纯文本之外，支持 GB/T 7714、APA、IEEE 三种参考文献样式。`EXPORT_FORMATS` 新增 `gb7714/apa/ieee` 并统一由 `render_papers_citation` 按存储元数据渲染，作者姓名按原文输出、不做缩写与机构推断，缺失字段直接省略；论文库导出下拉与 `research_export_papers` 工具同步支持三种样式。
 - 引用图谱支持快照导出：新增 `GET /api/research/databases/{kb_id}/academic-graph/export`（`format=csv|graphml`，`limit` 最大 500）与 `research_export_academic_graph` 工具，导出节点（论文/作者/主题）、边（CITES / AUTHORED / HAS_TOPIC）以及最近一次同步运行标识；CSV 用 `record_type` 列区分节点与边并对公式样式单元格加前导单引号，GraphML 对标识与文本转义；界面顶部工具栏新增“导出图谱”下拉。
+- 新增论文结构图（SVG）：`GET /api/research/databases/{kb_id}/papers/{paper_id}/structure-diagram?kind=method|topics` 与 `research_export_paper_diagram` 工具，方法流程图取自最新分析的方法步骤（无分析时回退到结构提取的方法描述），主题图以论文关键词为中心辐射；输出为单文件 SVG，白底、内联样式，可直接在工作区预览与下载；论文分析页新增“结构图”下拉。引用脉络图待 G-22 补齐。
 
 ## v0.10.0
 

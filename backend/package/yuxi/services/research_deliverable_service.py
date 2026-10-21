@@ -572,3 +572,118 @@ def export_pack(*, pack: dict[str, Any], export_format: str) -> tuple[str, bytes
         raise ResearchDeliverableError("invalid_export_format", "汇报包只支持 markdown 或 html")
     filename = f"research_presentation_{utc_now_naive().strftime('%Y%m%d%H%M')}.{ext}"
     return filename, content.encode("utf-8"), media_type
+
+
+DIAGRAM_KINDS = {"method": "flow", "topics": "hub"}
+
+
+def _svg_escape(value: Any) -> str:
+    from xml.sax.saxutils import escape
+
+    return escape(str(value or ""))
+
+
+def _svg_text(
+    x: float,
+    y: float,
+    text: str,
+    *,
+    size: int = 13,
+    fill: str = "#1f2328",
+    weight: str = "400",
+) -> str:
+    return (
+        f'<text x="{x}" y="{y}" text-anchor="middle" font-family="Microsoft YaHei, sans-serif" '
+        f'font-size="{size}" font-weight="{weight}" fill="{fill}">{_svg_escape(text)}</text>'
+    )
+
+
+def _render_flow_svg(title: str, steps: list[str]) -> str:
+    width, node_height, gap = 860, 56, 30
+    height = 80 + len(steps) * (node_height + gap)
+    parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
+        '<rect width="100%" height="100%" fill="#ffffff"/>',
+        _svg_text(width / 2, 38, title, size=18, weight="600"),
+    ]
+    top = 70
+    for index, step in enumerate(steps):
+        y = top + index * (node_height + gap)
+        parts.append(
+            f'<rect x="130" y="{y}" width="{width - 260}" height="{node_height}" rx="10" '
+            'fill="#f3f8fa" stroke="#046a82"/>'
+        )
+        parts.append(_svg_text(width / 2, y + node_height / 2 + 5, f"{index + 1}. {step}"))
+        if index < len(steps) - 1:
+            arrow_y = y + node_height
+            parts.append(
+                f'<line x1="{width / 2}" y1="{arrow_y}" x2="{width / 2}" y2="{arrow_y + gap}" '
+                'stroke="#046a82" marker-end="url(#arrow)"/>'
+            )
+    parts.append(
+        '<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto">'
+        '<path d="M0,0 L10,5 L0,10 z" fill="#046a82"/></marker></defs>'
+    )
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def _render_hub_svg(title: str, center: str, spokes: list[str]) -> str:
+    import math
+
+    width, height, radius = 860, 520, 180
+    cx, cy = width / 2, height / 2 + 20
+    parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
+        '<rect width="100%" height="100%" fill="#ffffff"/>',
+        _svg_text(width / 2, 36, title, size=18, weight="600"),
+    ]
+    count = max(len(spokes), 1)
+    for index, spoke in enumerate(spokes):
+        angle = -math.pi / 2 + 2 * math.pi * index / count
+        x = cx + radius * math.cos(angle)
+        y = cy + radius * math.sin(angle)
+        parts.append(f'<line x1="{cx:.1f}" y1="{cy:.1f}" x2="{x:.1f}" y2="{y:.1f}" stroke="#9fb3bd"/>')
+        parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="46" fill="#f3f8fa" stroke="#046a82"/>')
+        parts.append(_svg_text(round(x, 1), round(y + 4, 1), spoke[:14], size=11))
+    parts.append(f'<circle cx="{cx}" cy="{cy}" r="70" fill="#046a82"/>')
+    parts.append(_svg_text(cx, cy + 5, center[:18], size=12, fill="#ffffff"))
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+async def generate_structure_diagram(
+    *, kb_id: str, paper_id: str, current_user: User, kind: str
+) -> tuple[str, bytes, str]:
+    """根据论文分析结果或关键词生成结构图（SVG）：方法流程或主题图。"""
+    await _ensure_access(current_user, kb_id)
+    if kind not in DIAGRAM_KINDS:
+        raise ResearchDeliverableError("invalid_diagram_kind", "结构图只支持 method 或 topics")
+    paper = await AcademicPaperRepository().get_by_paper_id(kb_id=kb_id, paper_id=paper_id)
+    if paper is None:
+        raise ResearchDeliverableError("paper_not_found", "论文不存在")
+    title = f"{(paper.title or paper_id)[:60]}"
+    if kind == "method":
+        from yuxi.services.academic_paper_analysis_service import get_latest_paper_analysis
+
+        analysis = await get_latest_paper_analysis(kb_id=kb_id, paper_id=paper_id, current_user=current_user)
+        stages = _stage_payload(analysis)
+        methodology = stages.get("methodology")
+        if not isinstance(methodology, dict):
+            single = stages.get("single_agent")
+            methodology = single.get("methodology") if isinstance(single, dict) else None
+        steps = _bullet_lines((methodology or {}).get("method_steps"))
+        if not steps:
+            structure = _structure_of(stages)
+            if structure.get("method"):
+                steps = [str(structure["method"])]
+        if not steps:
+            raise ResearchDeliverableError("diagram_no_data", "还没有可用的方法步骤，请先生成论文分析")
+        svg = _render_flow_svg(f"方法流程：{title}", steps[:12])
+    else:
+        keywords = _string_list(paper.keywords)
+        if not keywords:
+            raise ResearchDeliverableError("diagram_no_data", "该论文没有可用的关键词，无法生成主题图")
+        svg = _render_hub_svg(f"主题图：{title}", title, keywords[:8])
+    filename = f"research_structure_{kind}_{paper_id}.svg"
+    return filename, svg.encode("utf-8"), "image/svg+xml; charset=utf-8"

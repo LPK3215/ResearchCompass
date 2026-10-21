@@ -10,6 +10,18 @@
           导出 Markdown
         </a-button>
         <a-button :disabled="!paper" :loading="briefing" @click="generateBrief">分层摘要</a-button>
+        <a-dropdown :trigger="['click']" :disabled="!paper">
+          <a-button :disabled="!paper" :loading="diagramLoading">
+            结构图
+            <ChevronDown :size="14" />
+          </a-button>
+          <template #overlay>
+            <a-menu @click="exportDiagram">
+              <a-menu-item key="method">方法流程图</a-menu-item>
+              <a-menu-item key="topics">主题图</a-menu-item>
+            </a-menu>
+          </template>
+        </a-dropdown>
         <a-button type="primary" :loading="starting" :disabled="running" @click="startAnalysis">
           {{ running ? `分析中：${run?.stage || '准备中'}` : '重新生成报告' }}
         </a-button>
@@ -119,6 +131,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
+import { ChevronDown } from 'lucide-vue-next'
 import PageHeader from '@/components/shared/PageHeader.vue'
 import { researchApi } from '@/apis/research_api'
 
@@ -132,6 +145,7 @@ const loading = ref(false)
 const starting = ref(false)
 const exporting = ref(false)
 const briefing = ref(false)
+const diagramLoading = ref(false)
 const error = ref('')
 let pollTimer = null
 
@@ -241,6 +255,20 @@ const generateBrief = async () => {
     message.error(err.message || '分层摘要生成失败')
   } finally {
     briefing.value = false
+  }
+}
+
+const exportDiagram = async ({ key: kind }) => {
+  if (!paper.value) return
+  diagramLoading.value = true
+  try {
+    const blob = await researchApi.exportPaperDiagram(kbId, paperId, kind)
+    saveBlob(blob, `research_structure_${kind}_${paperId}.svg`)
+    message.success('结构图已生成')
+  } catch (err) {
+    message.error(err.message || '结构图生成失败')
+  } finally {
+    diagramLoading.value = false
   }
 }
 
