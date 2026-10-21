@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import html
 import json
 import re
@@ -74,15 +75,24 @@ def _resolve_model_spec(model_spec: str | None) -> str:
 
 
 async def _call_model(model_spec: str, system_prompt: str, context: str, *, stage: str) -> dict[str, Any]:
-    model = select_model(model_spec=model_spec, model_params={"temperature": 0})
-    try:
-        response = await model.call(
-            [{"role": "system", "content": system_prompt}, {"role": "user", "content": context}],
-            stream=False,
-        )
-    except Exception as exc:  # noqa: BLE001 - 外部模型异常统一转为可定位错误
-        raise ResearchDeliverableError("deliverable_model_failed", "交付物生成模型调用失败") from exc
-    return _parse_json_object(str(response.content or ""), stage=stage)
+    last_error: Exception | None = None
+    for attempt in range(2):
+        try:
+            model = select_model(model_spec=model_spec, model_params={"temperature": 0})
+            response = await model.call(
+                [{"role": "system", "content": system_prompt}, {"role": "user", "content": context}],
+                stream=False,
+            )
+            return _parse_json_object(str(response.content or ""), stage=stage)
+        except Exception as exc:  # noqa: BLE001 - 外部模型异常统一转为可定位错误
+            last_error = exc
+            if attempt == 0:
+                await asyncio.sleep(1)
+                continue
+            if isinstance(exc, ResearchDeliverableError):
+                raise
+            raise ResearchDeliverableError("deliverable_model_failed", "交付物生成模型调用失败") from exc
+    raise ResearchDeliverableError("deliverable_model_failed", "交付物生成模型调用失败") from last_error
 
 
 def _string_list(value: Any) -> list[str]:
@@ -1088,20 +1098,33 @@ def _topic_items(result: dict[str, Any]) -> list[dict[str, str]]:
                     }
                 )
         for direction in gaps.get("future_directions") or []:
-            if str(direction).strip():
+            if isinstance(direction, dict):
+                text = str(direction.get("direction") or direction.get("title") or direction.get("claim") or "").strip()
+                basis = str(direction.get("basis") or "综述给出的后续方向").strip()
+                confidence = str(direction.get("confidence") or "").strip()
+            else:
+                text = str(direction).strip()
+                basis = "综述给出的后续方向"
+                confidence = ""
+            if text and text.lower() not in {"none", "null"}:
                 items.append(
                     {
-                        "topic": str(direction).strip(),
-                        "basis": "综述给出的后续方向",
-                        "confidence": "",
+                        "topic": text,
+                        "basis": basis,
+                        "confidence": confidence,
                         "source": "后续方向",
                     }
                 )
     unsupported = result.get("unsupported_claims") or result.get("unsupported") or []
     if isinstance(unsupported, list):
         for claim in unsupported:
-            text = str(claim.get("claim") if isinstance(claim, dict) else claim).strip()
-            if text:
+            if isinstance(claim, dict):
+                text = str(
+                    claim.get("claim") or claim.get("statement") or claim.get("text") or claim.get("title") or ""
+                ).strip()
+            else:
+                text = str(claim).strip()
+            if text and text.lower() not in {"none", "null"}:
                 items.append(
                     {
                         "topic": text,
