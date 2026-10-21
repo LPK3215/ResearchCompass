@@ -164,7 +164,8 @@
 
 ### 4.2 自动化测试
 
-- 前端：`pnpm test:unit` **89 项通过**；ESLint、生产构建通过
+- 前端：`pnpm test:unit` **91 项通过**；ESLint、生产构建通过
+- 前端 API 层：幂等 GET/HEAD 瞬时网络失败自动重试 1 次（300ms），POST 不重试；新增 2 项单测
 - 后端全量：`pytest test/unit` **1645 项通过、5 项跳过**（4 个 Windows 符号链接测试 + 1 个 MinerU 不可用），0 失败
 - 后端相关套件：笔记 8、参考文献导入 13、图谱 8、tasker 18、改密 4、筛选 6、论文对话 5、翻译 6、导入工具 35、导入服务 9、汇报包渲染 2、路由顺序 1，全部通过
 - 工具守卫：`python scripts/check_research_tool_parity.py` → `defined=97 enabled=97 parity ok`

@@ -36,8 +36,18 @@ export async function apiRequest(url, options = {}, requiresAuth = true, respons
       Object.assign(requestOptions.headers, userStore.getAuthHeaders())
     }
 
-    // 发送请求
-    const response = await fetch(url, requestOptions)
+    // 发送请求。服务重启或网络抖动时，幂等 GET/HEAD 自动重试一次，避免首屏数据直接失败。
+    const method = String(requestOptions.method || 'GET').toUpperCase()
+    let response
+    try {
+      response = await fetch(url, requestOptions)
+    } catch (error) {
+      if (!['GET', 'HEAD'].includes(method) || error.name === 'AbortError' || requestOptions.signal?.aborted) {
+        throw error
+      }
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      response = await fetch(url, requestOptions)
+    }
 
     // 处理API返回的错误
     if (!response.ok) {
