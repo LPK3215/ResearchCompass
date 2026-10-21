@@ -117,7 +117,7 @@
 | G-22 | 引用网络洞察报告 | 图谱只能看不能讲 | P2 | 已接入，待验收 | 输出枢纽论文、研究谱系与断层叙事（MD），每条结论带引用 |
 | G-23 | 研究空白转选题 | 综述空白无法落地 | P2 | 已接入，待验收 | 从综述未支持结论/空白生成选题清单，并批量建为项目任务 |
 | G-30 | 引文样式缺失 | 参考文献只输出数据库字段，不能按期刊格式渲染 | P2 | 已接入，待验收 | 支持 GB/T 7714、APA、IEEE 等至少三种样式，可导出且与项目报告一致 |
-| G-31 | 评估与统计结果不可导出 | 评估/消融/趋势/机会只能用界面看 | P2 | 已接入，待验收（趋势/机会界面已接；评估逐条导出为待选项） | 评估运行、消融报告、趋势与机会统计可导出 CSV/JSON，带数据指纹 |
+| G-31 | 评估与统计结果不可导出 | 评估/消融/趋势/机会只能用界面看 | P2 | 已接入，待验收（趋势/机会/评估运行均有入口；消融逐条导出仍为待选项） | 评估运行、消融报告、趋势与机会统计可导出 CSV/JSON，带数据指纹 |
 | G-32 | 引用图谱数据不可导出 | 图谱只能看不能带走 | P2 | 已接入，待验收 | 支持导出节点/边为 CSV 与 GraphML，含同步快照标识 |
 
 ### 5.3 生态与写作（G-24 至 G-29、G-33 至 G-34，需单独立项）
@@ -188,6 +188,7 @@
 | 2026-10-21 | 状态核对：G-10 拆分完成项与待选项，G-15 转待决策 | G-10 核心链路（查询基准/发起评估/读结果/实验报告）已通，基准与消融创建工具列为待选项；G-15 守卫需新增单测，按编码规则第 9 条需用户授权 | 本文档 §5 | 是 |
 | 2026-10-21 | G-15 守卫落地（脚本式，不新增单测） | 新增 `backend/scripts/check_research_tool_parity.py`，比较工具定义与 research-copilot 启用清单；实跑 `defined=72 enabled=72 parity ok`，退出码 0；按编码规则第 9 条未写测试代码 | `backend/scripts/check_research_tool_parity.py` | 是（G-15 转已完成） |
 | 2026-10-21 | P3 首项：G-25 重复论文检测（只读部分） | 新增 `GET /databases/{kb_id}/duplicates` 与 `research_find_duplicate_papers` 工具：按 DOI（优先）或归一化标题分组，只报告不合并；工具总数 72 到 73；跨库扫描与合并策略待决策 | `backend/package/yuxi/services/research_deliverable_service.py`、`server/routers/research_router.py`、`toolkits/research/tools.py` | 是（G-25 标记部分完成） |
+| 2026-10-21 | G-31 补评估运行逐条导出 | RAG 评估历史行新增“导出”链接，调用 `/exports/eval_run` 下载 JSON（带数据指纹）；`exportResearchData` 支持 target_id；消融逐条导出仍为待选项 | `web/src/components/RAGEvaluationTab.vue`、`web/src/apis/research_api.js` | 是 |
 | 2026-10-21 | P3 第 3 项：G-34 知识库迁移清单 | 新增 `GET /databases/{kb_id}/export-manifest` 与 `research_export_kb_manifest` 工具：输出论文元数据清单与图谱统计（不含原文/向量），并声明备份链路边界；工具总数 73 到 74；导入校验待补 | `backend/package/yuxi/services/research_deliverable_service.py`、`server/routers/research_router.py`、`toolkits/research/tools.py` | 是（G-34 标记部分完成） |
 
 ## 8. 明确不做与边界

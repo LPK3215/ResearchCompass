@@ -489,11 +489,13 @@ export const researchApi = {
       { method: 'POST', body: JSON.stringify(payload) }
     ),
 
-  exportResearchData: (kbId, kind, exportFormat = 'json') =>
-    apiRequest(
-      `/api/research/databases/${encodeURIComponent(kbId)}/exports/${encodeURIComponent(kind)}?format=${encodeURIComponent(exportFormat)}`,
+  exportResearchData: (kbId, kind, exportFormat = 'json', targetId = null) => {
+    const query = buildQuery({ format: exportFormat, ...(targetId ? { target_id: targetId } : {}) })
+    return apiRequest(
+      `/api/research/databases/${encodeURIComponent(kbId)}/exports/${encodeURIComponent(kind)}?${query}`,
       { method: 'GET' }, true, 'blob'
-    ).then((response) => response.blob()),
+    ).then((response) => response.blob())
+  },
 
   exportSynthesisTopics: (runId) =>
     apiRequest(

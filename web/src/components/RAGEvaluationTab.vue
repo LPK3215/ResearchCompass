@@ -232,6 +232,14 @@
                   >
                     查看
                   </a>
+                  <a
+                    v-if="record.status === 'completed'"
+                    href=""
+                    class="history-action-link"
+                    @click.prevent="exportRunResult(record)"
+                  >
+                    导出
+                  </a>
                   <a-popconfirm
                     title="确定要删除这条评估记录吗？"
                     description="删除后将无法恢复"
@@ -450,6 +458,7 @@
 import { ref, reactive, onMounted, onUnmounted, computed, watch, h } from 'vue'
 import { message } from 'ant-design-vue'
 import { evaluationApi } from '@/apis/knowledge_api'
+import { researchApi } from '@/apis/research_api'
 import ModelSelectorComponent from '@/components/ModelSelectorComponent.vue'
 import { BarChart3, ChevronDown, ClipboardList, RefreshCw, X } from 'lucide-vue-next'
 import ResourceEmptyState from '@/components/shared/ResourceEmptyState.vue'
@@ -1021,6 +1030,21 @@ const viewResults = async (runId) => {
 }
 
 // 删除评估记录
+const exportRunResult = async (record) => {
+  try {
+    const blob = await researchApi.exportResearchData(props.kbId, 'eval_run', 'json', record.run_id)
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `research_eval_run_${record.run_id}.json`
+    link.click()
+    URL.revokeObjectURL(url)
+    message.success('评估结果已导出')
+  } catch (error) {
+    message.error(error.message || '评估结果导出失败')
+  }
+}
+
 const deleteEvaluationRecord = async (runId) => {
   try {
     // 找到对应的记录并设置loading状态
