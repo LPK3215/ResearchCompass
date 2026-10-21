@@ -101,6 +101,7 @@
 - 新增科研数据导出：`GET /api/research/databases/{kb_id}/exports/{kind}` 与 `research_export_research_data` 工具，支持 `eval_run`（RAG 评估逐题结果）、`eval_experiment`（消融实验报告）、`trends`（发表与关键词趋势）、`opportunities`（机会排序）四类数据的 JSON/CSV 导出；JSON 带 `generated_at` 与数据指纹（kb_id、run/experiment id、年份区间），CSV 为通用平铺（嵌套字段以 JSON 文本保留）并在首行写入指纹注释。评估类导出仅管理员可用，CSV 页面入口待补。
 - 新增文献对比矩阵：`GET /api/research/databases/{kb_id}/comparison-matrix?paper_ids=&format=markdown|csv` 与 `research_export_comparison_matrix` 工具，2 到 20 篇论文按“论文/年份/来源/研究问题/方法/数据集/结论/局限”成表；内容来自元数据与最近一次分析，未生成分析或原文未说明的单元格标注“证据不足”而非留空；论文库导出下拉新增 Markdown 与 CSV 两项。
 - 新增综述转选题与页面入口：`GET /api/research/synthesis-runs/{run_id}/topics` 与 `POST /api/research/synthesis-runs/{run_id}/topics/tasks` 把已验证综述的研究空白、后续方向与未支持结论整理为选题清单，并可批量建为当前项目任务（1–20 条）；证据综述页新增“转选题”下拉，工具栏新增“导出数据”下拉（趋势/机会 JSON·CSV）。
+- 新增研究工具一致性守卫脚本：`backend/scripts/check_research_tool_parity.py` 比较 `RESEARCH_TOOLS` 定义与 research-copilot 启用清单，不一致时返回退出码 1 并列出差异工具；当前实跑 `defined=72 enabled=72`，用于防止新增工具只改一处导致 AI 拿不到。
 - 统一对外定位口径并限定研究助手能力边界：README 首屏改用“证据可追溯的科研工作台”，并明确写作、协作与投稿不在当前范围；能力全景补充研究助手不执行系统命令、不直接写任意文件的限制，文件类产出统一走导出工具；research-copilot 系统提示同步要求不得声称已保存不存在的文件。
 
 ## v0.10.0
