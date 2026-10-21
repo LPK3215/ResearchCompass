@@ -145,18 +145,17 @@
 
 `backend/scripts/smoke_acceptance.py`，覆盖认证、知识库、论文、笔记、筛选、项目、检索、综述、图谱、趋势/机会、交付物、评估、用户评测、多源检索、参考文献导入、AI 工具调用。
 
-- 结果：**52 项通过 / 0 失败**
-- 报告：`test-results/smoke-acceptance-20261021-185959.md`
-- 其中包含：临时用户改密全流程（旧 Token 401 / 新 Token 200）、AI 助手真实 run `completed`、图谱导出 166 KB、引用洞察 2.6 KB、检索 3 条证据
+- 结果：**54 项通过 / 0 失败**（2026-10-22 复跑，报告 `test-results/smoke-acceptance-20261022-014947.md`；上一轮 52 项报告 `test-results/smoke-acceptance-20261021-185959.md`）
+- 其中包含：临时用户改密全流程（旧 Token 401 / 新 Token 200）、AI 助手真实 run `completed`、图谱导出 166 KB、引用洞察 2.6 KB、检索 3 条证据（本地混合检索 27.4 秒，含重排）
 
 ### 4.2 自动化测试
 
 - 前端：`pnpm test:unit` **91 项通过**；ESLint、生产构建通过
 - 前端 API 层：幂等 GET/HEAD 瞬时网络失败自动重试 1 次（300ms），POST 不重试；新增 2 项单测
-- 后端全量：`pytest test/unit` **1654 项通过、5 项跳过**（4 个 Windows 符号链接测试 + 1 个 MinerU 不可用），0 失败
+- 后端全量：`pytest test/unit` **1674 项通过、5 项跳过**（4 个 Windows 符号链接测试 + 1 个 MinerU 不可用），0 失败
 - 后端相关套件：笔记 8、参考文献导入 13、图谱 8、tasker 18、改密 7、筛选 6、论文对话 5、翻译 8、交付物输出 3、导入工具 35、导入服务 9、汇报包渲染 2、上下文提示词 3、路由顺序 1，全部通过
 - 工具守卫：`python scripts/check_research_tool_parity.py` → `defined=97 enabled=97 parity ok`
-- 静态检查：`ruff check package server scripts` 0；`--select I` 64→0（import 排序已修复）；默认规则与 import 排序均通过
+- 静态检查：`ruff check package server scripts test/unit/scripts` 0；`--select I` 0（import 排序已修复）；默认规则与 import 排序均通过
 
 ### 4.3 真实数据验证
 
@@ -166,6 +165,7 @@
 - 图谱：1636 节点 / 2083 边导出成功；引用洞察 2.6 KB
 - 固定语料：Attention、BERT、CoT、ReAct 已真实入库（备选库共 5 篇，含 1 篇冒烟参考文献）
 - 补全文挂载：ReAct 仅元数据记录（ref_176...）补全文后 `file_id=file_17bafb`，论文总数保持 5 篇，未新建重复记录；标题归一化 + 年份兜底修复 arXiv DOI 与出版社 DOI 不一致
+- 演示数据包（体验验证版本）：`demo_data/` 两个知识库快照真实导入新库——`kb_8ghxea85ay`（11 篇 / 336 chunk / 11 文件）与 `kb_ck44124dfg`（6 篇 / 139 chunk / 4 文件）；业务快照逐表对齐：检索 48+1、证据 59、分析运行 7、评测 7、评测明细 63、研究 3、邀请 15、项目 3、任务/里程碑/风险/资产各 2，行数与导出快照一致；检索命中分数与源环境一致（同 hybrid 模式、同样 top-k）
 
 ### 4.4 验收期间发现并修复的缺陷
 
@@ -187,6 +187,8 @@
 | 改密后已签发 JWT 在过期前仍有效（旧 Token 200） | users 增加 `password_changed_at`；JWT 增加 `iat`；自助改密、管理员重置、OIDC 恢复均撤销旧 Token；前端改密后重新登录；真实 E2E 旧 Token 401 / 新 Token 200 |
 | 论文对照翻译一次请求 6 个片段，模型调用无超时，前端无限 pending | 按 1 片段分批、每批 60 秒超时；真实接口 99 秒返回 4 段，浏览器 97 秒返回 4 段；2/4 段源 chunk 无页码元数据 |
 | 多源检索只在来源失败时显示状态，全部成功时没有逐源汇总 | 改为 `externalSources.length` 时始终显示；浏览器验证 10/10/10 + 卡片来源标签 |
+| 演示数据导出静默漏掉业务子表：`_primary_key_column` 对只有自增主键的表返回空，评测明细/研究邀请与回复/项目任务与里程碑与风险与资产未导出 | 改用业务主键列（`BUSINESS_KEY_COLUMN`）定位父表范围；导出后 63 条评测明细、15 条邀请、1 条回复、2 条任务、2 条里程碑、2 条风险、2 条资产全部恢复 |
+| 宿主机直跑只加载当前工作目录的 `.env`，读不到仓库根 `.env`（模型密钥、`RERANK_TIMEOUT_SECONDS`、`EMBEDDING_TIMEOUT`、`LLM_TIMEOUT` 全部缺失）：混合检索 502（重排按默认 30 秒超时）、智能体运行失败 | `backend/package/yuxi/__init__.py` 改为按仓库路径固定加载 `backend/.env` 与根 `.env`（`override=False`，真实环境变量优先），与 Docker Compose 的 `env_file: .env` 一致；复测混合检索 3 条命中（27.4 秒）、智能体 run `completed` |
 
 ## 5. 固定语料与基线
 
@@ -201,7 +203,7 @@
 2. **固定语料完整基线**：剩余 24 篇导入，记录检索命中、综述证据覆盖、盲评/消融数值。
 3. **可选增强**（按产品/策略决策，不是未完成的实现）：
    - G-25 跨库合并策略（需先定保留与资产迁移）；
-   - G-34 原文/向量打包与恢复（当前由 `backups/` 备份链路负责）；
+   - G-34 原文/向量打包与恢复：已有两条链路——`backups/backup-data.ps1` 负责全量备份（Postgres + MinIO 对象 + Milvus/Neo4j/Redis 卷），`demo_data/` 演示数据包负责“可分发的最小可演示现场”（论文 + PDF + chunk + 业务快照，不含原始向量，向量由目标环境重算）；
    - G-35 参考文献批量补全文（逐篇补全文已落地；批量需评估任务量与外部限流）。
 
 已关闭的边界：G-13 结构图已嵌入 HTML 汇报包；G-10 外部基线可通过 AI 上传 JSONL 基准。
@@ -210,15 +212,17 @@
 
 ### 风险观察（未解决，不盲改）
 
-- **结果渲染偶发主线程无响应**：G-40 多源结果、G-42 翻译结果各观察一次；a11y 快照仍可用，无法稳定复现；下一步用 Chrome Performance 采样，暂未定位。
 - **本地模型时延**：4 段翻译约 97 秒；已按 1 片段/批、每批 60 秒超时防止无限等待，并新增“约需 1–2 分钟”加载提示；后续可评估异步任务与进度条。
 - **上游引文数据质量**：G-38 被引列表含 2027 年份/跨领域论文；已核对本地年份 2017 与 external S2 ID 正确，应用按 S2 原始结果展示，不从应用层猜测过滤。
+- **多源检索时延**：2026-10-22 冒烟中 `discovery multi-source` 真实耗时 117.6 秒，已逼近脚本 120 秒超时（外部源 Semantic Scholar / Tavily 在本机网络下偏慢）；本轮只记录、不改产品逻辑。
 
 ### 已关闭的风险（2026-10-21）
 
 - **翻译页码缺口（已关闭）**：根因是页码锚点只认“起止各 80 字符都命中”，导致 464 个学术 chunk 中仅 145 个（31%）有页码。已重写 `pdf_locator`：锚点按 80/60/45/30/20 词对齐递减重试、短锚点必须全文唯一、长锚点才允许用文档顺序消歧，图表 chunk 起点匹配不到时回退到 chunk 内部可唯一定位的片段扫描；结束页无法验证时只保留起始页（新增 `pdf_page_start` 定位类型），绝不伪造页码。真实语料回放：带起始页 chunk **145 → 458（98.7%）**，原实现已命中的 145 个页码**全部保留、零冲突、零丢失**。存量文件用 `backend/scripts/refresh_pdf_page_metadata.py` 补算（只重算定位字段，不重解析、不重建向量、不删 chunk）。真实接口复验：`Attention is All you Need` 逐段中英对照 4 段**全部带页码**（此前 2/4），含 Figure 1 图表 chunk（页 3）。
 - **桌面端 AI 面板层叠隐患（实测非缺陷）**：浏览器实测 1440/1200/1101/1100/1000/961 六种宽度下，面板与 PageHeader **水平重叠 0px**（`.research-view.copilot-open` 预留 `padding-right`），`elementFromPoint` 命中面板本身，关闭按钮可点；≤960px 面板按设计变为 z-index 1100 的固定抽屉。截图 `test-results/copilot-zindex-check.png`。低优先级观察：`.research-content` 的 `height: calc(100% - 57px)` 与实际页头 60.67px 差 4px，被 `overflow: hidden` 裁掉，当前不可见，按“不盲改”暂不动。
 - **真实模型审批未跑（已关闭）**：G-37 走完真实模型审批 E2E——copilot 先调 `research_list_archived_papers` 并请求确认，确认后调 `research_restore_archived_papers` 触发真实 `human_approval_required` 中断（携带真实工具名与参数）；approve 后工具实际执行（`restored_paper_ids` 1 篇、归档列表回到 0、DB `archived_at` 置空），reject 后工具返回“用户拒绝执行该操作”且论文保持归档；两种分支都用 REST 复原了 fixture，未删数据。
+- **结果渲染主线程无响应（已关闭，实测非缺陷）**：Chrome Performance 采样 G-40 多源结果页与 G-42 翻译结果页，最长 long task 131ms（远低于 50ms/200ms 的“卡顿”阈值上沿），未出现长任务堆积；截图 `test-results/perf-flowA-results.png`、`test-results/perf-flowB-translated.png`。先前的“无响应”观感来自模型请求等待（翻译按 1 片段/批，每批 60 秒超时）与 a11y 快照时序，不是主线程阻塞。
+- **备份链路缺口（已关闭）**：此前 `backups/backup-data.ps1` 只复制仓库内 `docker/volumes` 绑定目录，而运行中的 pg / MinIO / Milvus / Neo4j / Redis 使用仓库外 shared-infra 编排的命名卷，实际数据未进备份。现补第 6 步：MinIO 按对象级导出（`mc mirror` 知识库桶，PDF 原文可读可回传），Milvus / Neo4j / Redis 按卷打包。
 
 ## 7. 边界与不做
 
@@ -250,17 +254,20 @@
 | 2026-10-21 | 按最新状态重写本文档：44 条缺口重新按“已完成 / 待验收 / 待评估 / 不做”组织，补充验收证据与剩余边界 |
 | 2026-10-21 | 收口剩余边界：G-13 结构图嵌入 HTML 汇报包；G-35 详情页逐篇补全文；G-10 外部基线边界关闭；冒烟 52/52 复跑通过 |
 | 2026-10-21 | 风险批次：G-37 真实模型审批 E2E 跑通（approve/reject 双分支）；G-42 页码缺口根因修复（页码覆盖 145→458，零回归）；AI 面板 z-index 实测非缺陷 |
+| 2026-10-22 | 体验验证版本：新增演示数据包导出/导入脚本（`demo_data/` 含 PDF 原文 + chunk + 业务快照）；修复导出漏子表；备份脚本补齐共享 infra 命名卷；G-40/G-42 主线程无响应经 Performance 采样关闭（最长 long task 131ms） |
+| 2026-10-22 | 修复宿主机直跑读不到仓库根 `.env`（混合检索 502、智能体运行失败的共同根因）；冒烟复跑 54/54，后端单测 1674 通过 / 5 跳过 |
 
 ## 10. 浏览器验收前检查清单（2026-10-21）
 
 已收口：
 
-- [x] 后端全量单测 1662 通过 / 5 跳过 / 0 失败
+- [x] 后端全量单测 1674 通过 / 5 跳过 / 0 失败
 - [x] 前端单测 91 通过；ESLint、生产构建通过
-- [x] 冒烟验收 52/52；报告 `test-results/smoke-acceptance-20261021-215331.md`
+- [x] 冒烟验收 54/54；报告 `test-results/smoke-acceptance-20261022-014947.md`
 - [x] 工具一致性 97/97；路由顺序、工具签名、工具文档同步守卫通过
 - [x] 双通道缺口：G-25 合并按钮、G-34 清单导出按钮已补
 - [x] 固定语料 4/28 已真实入库
+- [x] 演示数据包（体验验证版本）：导出 → 导入新库 → 行数对齐 → 检索命中均真实跑通
 
 首轮浏览器结果（2026-10-21）：
 
@@ -292,7 +299,7 @@
 - [x] G-25 归档恢复：临时归档 1 篇 → 归档列表 1 篇 → restore 1 篇 → active；未删除论文
 - [x] G-36 元数据补全：ResNet/10.1109/CVPR.2016.90 通过 Crossref 补作者、CVPR venue、引用数；abstract/keywords 为缺项
 - [x] G-37 审批分层：REST 恢复真实通过；审批名单/default 强制/interrupt 33 项测试通过；真实模型审批 E2E 已跑通（approve 工具实际执行 + reject 保持归档，fixture 已复原）
-- 未解决性能观察：G-40/G-42 结果渲染后偶发主线程无响应，a11y 快照仍可用；无可稳定复现，未定位根因
+- 未解决性能观察：无（G-40/G-42 结果渲染的主线程无响应已于 2026-10-21 经 Performance 采样关闭，最长 long task 131ms）
 - [x] 桌面端 AI 面板 z-index 实测：1440/1200/1101/1100/1000/961 六种宽度与 PageHeader 水平重叠 0px，elementFromPoint 命中面板，关闭按钮可点（实测非缺陷）
 - 截图：`test-results/ui-research.png`、`ui-onboarding.png`、`ui-notes.png`、`ui-manifest.png`、`ui-duplicate.png`、`ui-merged.png`；改密 UI：`pw-change-01..05`；本轮：`g40-02-multisource-results.png`、`g41-01-chat-pending.png`、`g42-retest2-01-after-click.png`、`g43-01-onboarding-autoopen.png`
 

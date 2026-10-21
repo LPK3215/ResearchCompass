@@ -10,6 +10,11 @@
 
 ## v0.11.0 (current)
 
+- 修复宿主机直跑读不到仓库根 `.env`：`backend/package/yuxi/__init__.py` 原先按当前工作目录加载 `.env`，从 `backend/` 直跑时只能拿到 `backend/.env`，根目录 `.env` 里的模型密钥、`RERANK_TIMEOUT_SECONDS`、`EMBEDDING_TIMEOUT`、`LLM_TIMEOUT` 全部缺失——表现为混合检索 502（重排按默认 30 秒超时）与智能体运行失败。改为按仓库路径固定加载 `backend/.env` 与根 `.env`（`override=False`，真实环境变量优先），与 Docker Compose 的 `env_file: .env` 保持一致。真实复测：本地混合检索 3 条命中（27.4 秒，含重排），智能体 run `completed`。
+- 冒烟验收复跑 **54 项通过 / 0 失败**（报告 `test-results/smoke-acceptance-20261022-014947.md`）；后端单测 1674 通过 / 5 跳过；`ruff check package server scripts test/unit/scripts` 与 import 排序均为 0。
+- 新增「演示数据包（体验验证版本）」：新增 `backend/scripts/export_demo_data.py` 与 `backend/scripts/import_demo_data.py`（共享表结构定义在 `backend/scripts/demo_data_spec.py`）。导出把知识库的论文元数据、PDF 原文、chunk 正文与页码定位元数据、以及 17 张业务表的快照固化到仓库 `demo_data/`；导入在新环境一键重建——建演示库、上传 PDF、按快照重建 chunk、用目标环境自己的 embedding 模型重算向量、把业务主键与跨表引用重新映射后写回业务快照。**只增不删**：不覆盖也不删除目标环境已有数据；用户不存在时自动执行 `seed_initial_users.py` 初始化标准账号。`.gitignore` 对 `demo_data/**/*.pdf` 放开，PDF 原文随仓库分发，换机器/重建 Docker 后不再是空库。真实导入验证：11 篇/336 chunk 与 6 篇/139 chunk 两个库导入后，论文、chunk、检索、证据、评测、项目行数与导出快照逐项一致，检索命中分数与源环境一致。
+- 修复演示数据导出的业务子表漏导：`_primary_key_column` 对只有自增主键的表返回空，导致评测明细、研究邀请与回复、项目任务/里程碑/风险/资产的快照被静默跳过；改用业务主键列（`BUSINESS_KEY_COLUMN`）定位父表范围后，63 条评测明细、15 条邀请、1 条回复、2 条任务、2 条里程碑、2 条风险、2 条资产恢复导出。
+- 备份脚本补齐运行中数据卷：`backups/backup-data.ps1` 新增第 6 步，MinIO 按对象级导出（`mc mirror` 知识库桶，PDF 原文可直接查看与回传），Milvus / Neo4j / Redis 按卷打包，解决此前只覆盖仓库内 `docker/volumes` 绑定目录、运行中的共享 infra 命名卷未进备份的缺口。
 - 修复论文对照翻译源片段大量缺页码：重写 PDF 页码锚点策略——锚点按 80/60/45/30/20 词对齐递减重试，短锚点必须全文唯一命中、长锚点才允许用文档顺序消歧，图表 chunk 起点匹配不到时回退到 chunk 内部可唯一定位的片段扫描；结束页无法验证时只保留起始页（新增 `pdf_page_start` 定位类型），不再伪造页码。真实语料回放：464 个学术 chunk 带起始页比例 145（31%）→ 458（98.7%），原实现已命中的页码全部保留、零冲突、零丢失。存量文件用新增的 `backend/scripts/refresh_pdf_page_metadata.py` 补算（只重算定位字段，不重解析、不重建向量、不删 chunk）。前端补齐 `pdf_page_start` 白名单。新增 8 项页码定位单元测试；后端单测 1662 通过/5 跳过，真实接口复验 `Attention is All you Need` 逐段中英对照 4 段全部带页码。
 - 验收补齐：G-37 归档审批分层验证；REST 恢复真实通过，restore 已注册敏感工具，研究 copilot 强制 default 审批，审批/interrupt 相关 33 项测试通过；真实模型审批 E2E 已跑通——approve 后工具实际执行（恢复 1 篇归档论文、库中归档数回到 0），reject 后工具返回“用户拒绝执行该操作”且论文保持归档，两条分支都用 REST 复原 fixture，未删除数据。
 - 验收补齐：G-36 元数据补全；备选库导入真实 DOI 的 ResNet 参考条目，Crossref 补齐作者、CVPR venue、引用数；abstract/keywords 缺项如实返回，未覆盖已有字段。

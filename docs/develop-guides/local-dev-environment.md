@@ -84,7 +84,7 @@ worker 必须单独起一个进程：智能体对话、文献解析、证据综�
 
 ## 配置文件（均被 git 忽略）
 
-- 根目录 `.env`：模型 API Key（`DEEPSEEK_API_KEY` 等）、MinIO/Neo4j 凭据、本地服务地址（`MINIO_URI=http://127.0.0.1:19000`、`MILVUS_URI=http://127.0.0.1:19530`、`NEO4J_URI=bolt://127.0.0.1:7687`）。由后端启动命令的 `--env-file ../.env` 注入。
+- 根目录 `.env`：模型 API Key（`DEEPSEEK_API_KEY` 等）、MinIO/Neo4j 凭据、本地服务地址（`MINIO_URI=http://127.0.0.1:19000`、`MILVUS_URI=http://127.0.0.1:19530`、`NEO4J_URI=bolt://127.0.0.1:7687`）。后端包启动时按仓库路径自动加载（`backend/package/yuxi/__init__.py`），启动命令上的 `--env-file ../.env` 为等价写法，二者都保留。
 - `backend/.env`：`POSTGRES_URL`、`REDIS_URL`。
 - `web/.env.local`：`VITE_API_URL=http://127.0.0.1:5050`、`VITE_MINIO_URL=http://127.0.0.1:19000`。
 
@@ -104,7 +104,8 @@ worker 必须单独起一个进程：智能体对话、文献解析、证据综�
 
 - **对话发出去没有任何反应**：多半是 worker 没启动。检查 `arq server.worker_main.WorkerSettings` 进程是否存在；worker 缺席时 `POST /api/agent/runs` 仍返回 200，但 run 一直停在 `pending`，前端 SSE 流不会结束。
 - **智能体命令工具报 `sandbox provisioner is unreachable`**：沙箱服务没启动或地址不对。先确认 `docker ps` 里有 `sandbox-provisioner` 且 `GET http://127.0.0.1:8002/health` 正常，再确认 `backend/.env` 的 `SANDBOX_PROVISIONER_URL` 指向 `http://127.0.0.1:8002`；改完需要重启后端与 worker。
-- **后端启动报事件循环错误**：Windows 默认 Proactor 循环与 psycopg 不兼容，必须带 `--loop asyncio:SelectorEventLoop`。
+- **后端启动报事件循环错误**：Windows 默认 Proactor 循环与 psycopg 不兼容，必须带 `--loop asyncio:SelectorEventLoop`。缺这个参数会在启动阶段报 `psycopg_pool.PoolTimeout: pool initialization incomplete after 30.0 sec`。
+- **直跑时混合检索 502 / 智能体运行失败**：多半是根目录 `.env` 没被加载（`RERANK_TIMEOUT_SECONDS`、模型密钥缺失）。确认后端是按仓库路径启动的（`backend/` 目录下执行），并检查进程环境里 `RERANK_TIMEOUT_SECONDS` 是否存在。
 - **5050 被残留进程占用**：`uvicorn --reload` 的父子进程可能残留，用 `Get-NetTCPConnection -LocalPort 5050` 找到 PID 后 `taskkill /F /T /PID <pid>`，确认释放再启动；多个实例并存时健康检查可能仍 200 但行为是旧代码。
 - **Docker 命令报 500**：`desktop-linux` 上下文可能异常，统一使用 `docker --context default`。
 - **`docker pull` 全部镜像源失败**：已通过 Docker Desktop 手动代理（`settings-store.json` 指向本机 `127.0.0.1:7897`）根治，拉取走代理直连 Docker Hub；修改代理配置后需重启 Docker Desktop，容器会自动恢复。备用方案仍可用仓库外 `D:\Develop\SourceCode\infra\bin\crane.exe` 拉取后 `docker load`。
