@@ -117,7 +117,7 @@
 | G-22 | 引用网络洞察报告 | 图谱只能看不能讲 | P2 | 待修复 | 输出枢纽论文、研究谱系与断层叙事（MD），每条结论带引用 |
 | G-23 | 研究空白转选题 | 综述空白无法落地 | P2 | 待修复 | 从综述未支持结论/空白生成选题清单，并批量建为项目任务 |
 | G-30 | 引文样式缺失 | 参考文献只输出数据库字段，不能按期刊格式渲染 | P2 | 已接入，待验收 | 支持 GB/T 7714、APA、IEEE 等至少三种样式，可导出且与项目报告一致 |
-| G-31 | 评估与统计结果不可导出 | 评估/消融/趋势/机会只能用界面看 | P2 | 待修复 | 评估运行、消融报告、趋势与机会统计可导出 CSV/JSON，带数据指纹 |
+| G-31 | 评估与统计结果不可导出 | 评估/消融/趋势/机会只能用界面看 | P2 | 部分完成（接口 + AI 工具；界面入口待补） | 评估运行、消融报告、趋势与机会统计可导出 CSV/JSON，带数据指纹 |
 | G-32 | 引用图谱数据不可导出 | 图谱只能看不能带走 | P2 | 已接入，待验收 | 支持导出节点/边为 CSV 与 GraphML，含同步快照标识 |
 
 ### 5.3 生态与写作（G-24 至 G-29、G-33 至 G-34，需单独立项）
@@ -164,6 +164,7 @@
 | 2026-10-21 | 批次 2 第 1 项：G-30 引文样式 | `EXPORT_FORMATS` 新增 gb7714/apa/ieee，`render_papers_citation` 按元数据渲染；论文库导出下拉与 `research_export_papers` 工具同步支持；未运行测试与真实调用 | `backend/package/yuxi/services/research_paper_export_service.py`、`web/src/views/ResearchCompassView.vue`、`toolkits/research/tools.py` | 是（G-30 标记已接入，待验收） |
 | 2026-10-21 | 批次 2 第 2 项：G-32 引用图谱导出 | 新增 `GET /academic-graph/export`（csv/graphml，limit ≤ 500）与 `research_export_academic_graph` 工具，含节点/边与最近同步运行标识；顶部工具栏新增导出下拉；工具总数 65 到 66；未运行测试与真实调用 | `backend/package/yuxi/services/academic_graph_sync_service.py`、`server/routers/research_router.py`、`toolkits/research/tools.py`、`web/src/views/ResearchCompassView.vue`、`web/src/apis/research_api.js` | 是（G-32 标记已接入，待验收） |
 | 2026-10-21 | 批次 2 第 3 项：G-20 结构图（部分） | 新增结构图服务与接口，支持方法流程图（来自最新分析的方法步骤）与主题图（论文关键词），SVG 输出；工具与论文分析页入口同步；引用脉络图待 G-22；工具总数 66 到 67；未运行测试与真实调用 | `backend/package/yuxi/services/research_deliverable_service.py`、`server/routers/research_router.py`、`toolkits/research/tools.py`、`web/src/views/ResearchPaperAnalysisView.vue`、`web/src/apis/research_api.js` | 是（G-20 标记部分完成） |
+| 2026-10-21 | 批次 3 第 1 项：G-31 数据导出（部分） | 新增 `GET /databases/{kb_id}/exports/{kind}` 与 `research_export_research_data` 工具，支持 eval_run / eval_experiment / trends / opportunities 的 JSON/CSV 导出，带数据指纹；评估类仅管理员；界面入口待补；工具总数 67 到 68；未运行测试 | `backend/package/yuxi/services/research_deliverable_service.py`、`server/routers/research_router.py`、`toolkits/research/tools.py` | 是（G-31 标记部分完成） |
 
 ## 8. 明确不做与边界
 
@@ -194,6 +195,7 @@
 | 2026-10-21 | 批次 2 第 1 项：新增 GB/T 7714、APA、IEEE 三种引文样式，G-30 转“已接入，待验收” |
 | 2026-10-21 | 批次 2 第 2 项：引用图谱支持 CSV/GraphML 快照导出，G-32 转“已接入，待验收” |
 | 2026-10-21 | 批次 2 第 3 项：新增方法流程图与主题图（SVG），G-20 转“部分完成” |
+| 2026-10-21 | 批次 3 第 1 项：评估/消融/趋势/机会数据支持 JSON/CSV 导出（带指纹），G-31 转“部分完成”（界面入口待补） |
 
 ## 附录 A：本轮文档重整的落地与验证（2026-10-21）
 

@@ -132,6 +132,7 @@ from yuxi.services.research_deliverable_service import (
     export_pack,
     export_paper_analysis_markdown,
     export_paper_cards,
+    export_research_data,
     generate_paper_brief,
     generate_presentation_pack,
     generate_structure_diagram,
@@ -2022,6 +2023,9 @@ _DELIVERABLE_STATUS_MAP = {
     "presentation_invalid_schema": 502,
     "invalid_diagram_kind": 422,
     "diagram_no_data": 409,
+    "invalid_data_kind": 422,
+    "target_required": 422,
+    "forbidden": 403,
 }
 
 
@@ -2157,6 +2161,35 @@ async def export_paper_structure_diagram(
     try:
         filename, content, media_type = await generate_structure_diagram(
             kb_id=kb_id, paper_id=paper_id, current_user=current_user, kind=kind
+        )
+    except ResearchDeliverableError as exc:
+        raise _to_http_error(exc, _DELIVERABLE_STATUS_MAP) from exc
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@research.get("/databases/{kb_id}/exports/{kind}")
+async def export_research_data_endpoint(
+    kb_id: str,
+    kind: str,
+    format: str = Query(default="json", pattern=r"^(json|csv)$"),
+    target_id: str | None = Query(default=None, max_length=128),
+    year_from: int | None = Query(default=None, ge=1500),
+    year_to: int | None = Query(default=None, ge=1500),
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        filename, content, media_type = await export_research_data(
+            kb_id=kb_id,
+            current_user=current_user,
+            kind=kind,
+            target_id=target_id,
+            export_format=format,
+            year_from=year_from,
+            year_to=year_to,
         )
     except ResearchDeliverableError as exc:
         raise _to_http_error(exc, _DELIVERABLE_STATUS_MAP) from exc

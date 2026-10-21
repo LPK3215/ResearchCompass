@@ -687,3 +687,121 @@ async def generate_structure_diagram(
         svg = _render_hub_svg(f"主题图：{title}", title, keywords[:8])
     filename = f"research_structure_{kind}_{paper_id}.svg"
     return filename, svg.encode("utf-8"), "image/svg+xml; charset=utf-8"
+
+
+EXPORT_DATA_KINDS = {"eval_run", "eval_experiment", "trends", "opportunities"}
+
+
+def _flatten_rows(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)] or [{"value": payload}]
+    if not isinstance(payload, dict):
+        return [{"value": payload}]
+    for key in ("items", "responses", "keywords", "variants", "runs", "papers", "results"):
+        value = payload.get(key)
+        if isinstance(value, list) and value and isinstance(value[0], dict):
+            return value
+    for value in payload.values():
+        if isinstance(value, list) and value and isinstance(value[0], dict):
+            return value
+    return [payload]
+
+
+def _render_rows_csv(rows: list[dict[str, Any]]) -> str:
+    import csv
+    import io
+
+    columns: list[str] = []
+    for row in rows:
+        for key in row:
+            if key not in columns:
+                columns.append(key)
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(columns)
+    for row in rows:
+        cells = []
+        for key in columns:
+            value = row.get(key)
+            if isinstance(value, (dict, list)):
+                cells.append(json.dumps(value, ensure_ascii=False))
+            else:
+                cells.append("" if value is None else str(value))
+        writer.writerow(cells)
+    return buffer.getvalue()
+
+
+async def export_research_data(
+    *,
+    kb_id: str,
+    current_user: User,
+    kind: str,
+    target_id: str | None,
+    export_format: str,
+    year_from: int | None = None,
+    year_to: int | None = None,
+) -> tuple[str, bytes, str]:
+    """导出评估运行、消融实验、趋势或机会统计为 JSON/CSV，并附带数据指纹。"""
+    from yuxi.utils.datetime_utils import utc_now_naive
+
+    await _ensure_access(current_user, kb_id)
+    if kind not in EXPORT_DATA_KINDS:
+        raise ResearchDeliverableError(
+            "invalid_data_kind", "只支持 eval_run / eval_experiment / trends / opportunities"
+        )
+    if export_format not in {"json", "csv"}:
+        raise ResearchDeliverableError("invalid_export_format", "数据导出只支持 json 或 csv")
+    if kind in {"eval_run", "eval_experiment"}:
+        if str(getattr(current_user, "role", "")) not in {"admin", "superadmin"}:
+            raise ResearchDeliverableError("forbidden", "评估数据导出仅管理员可用")
+    if kind in {"eval_run", "eval_experiment"} and not (target_id or "").strip():
+        raise ResearchDeliverableError("target_required", "评估数据导出需要提供 target_id")
+
+    if kind == "eval_run":
+        from yuxi.knowledge.eval.service import EvaluationService
+
+        payload = await EvaluationService().get_run_results(kb_id, str(target_id).strip(), page=1, page_size=100)
+        fingerprint = {"kind": kind, "run_id": target_id, "kb_id": kb_id}
+    elif kind == "eval_experiment":
+        from yuxi.knowledge.eval.service import EvaluationService
+
+        payload = await EvaluationService().get_experiment(kb_id, str(target_id).strip())
+        fingerprint = {"kind": kind, "experiment_id": target_id, "kb_id": kb_id}
+    elif kind == "trends":
+        from yuxi.services.academic_trend_service import get_academic_trends
+
+        payload = await get_academic_trends(
+            kb_id=kb_id,
+            current_user=current_user,
+            year_from=year_from,
+            year_to=year_to,
+            offset=0,
+            limit=200,
+            top_keywords=20,
+        )
+        fingerprint = {"kind": kind, "kb_id": kb_id, "year_from": year_from, "year_to": year_to}
+    else:
+        from yuxi.services.academic_opportunity_service import get_academic_opportunities
+
+        payload = await get_academic_opportunities(
+            kb_id=kb_id, current_user=current_user, year_from=year_from, year_to=year_to, limit=50
+        )
+        fingerprint = {"kind": kind, "kb_id": kb_id, "year_from": year_from, "year_to": year_to}
+
+    meta = {
+        "generated_at": utc_now_naive().strftime("%Y-%m-%d %H:%M"),
+        "fingerprint": fingerprint,
+    }
+    stamp = utc_now_naive().strftime("%Y%m%d%H%M")
+    if export_format == "json":
+        body = json.dumps({**meta, "data": payload}, ensure_ascii=False, indent=2)
+        media_type = "application/json; charset=utf-8"
+        ext = "json"
+    else:
+        rows = _flatten_rows(payload)
+        header = f"# generated_at={meta['generated_at']} fingerprint={json.dumps(fingerprint, ensure_ascii=False)}\n"
+        body = header + _render_rows_csv(rows)
+        media_type = "text/csv; charset=utf-8"
+        ext = "csv"
+    filename = f"research_{kind}_{kb_id}_{stamp}.{ext}"
+    return filename, body.encode("utf-8"), media_type

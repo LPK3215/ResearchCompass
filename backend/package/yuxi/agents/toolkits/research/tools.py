@@ -395,6 +395,16 @@ class StructureDiagramInput(BaseModel):
     kind: Literal["method", "topics"] = Field(default="method", description="method 为方法流程，topics 为主题图")
 
 
+class ExportResearchDataInput(BaseModel):
+    kind: Literal["eval_run", "eval_experiment", "trends", "opportunities"] = Field(
+        description="评估运行 / 消融实验 / 趋势 / 机会"
+    )
+    format: Literal["json", "csv"] = Field(default="json", description="导出格式")
+    target_id: str | None = Field(default=None, max_length=128, description="eval_run 或 eval_experiment 的 ID")
+    year_from: int | None = Field(default=None, ge=1500)
+    year_to: int | None = Field(default=None, ge=1500)
+
+
 def _research_context(runtime: ToolRuntime) -> dict[str, Any]:
     context = getattr(runtime, "context", None)
     research_context = getattr(context, "research_context", None)
@@ -2042,6 +2052,47 @@ async def research_export_paper_diagram(
     }
 
 
+@tool(
+    category="research",
+    tags=["科研", "导出", "数据"],
+    display_name="导出科研数据",
+    args_schema=ExportResearchDataInput,
+)
+async def research_export_research_data(
+    kind: str,
+    format: str,
+    target_id: str | None,
+    year_from: int | None,
+    year_to: int | None,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """导出评估运行、消融实验、趋势或机会统计为 JSON/CSV，附带数据指纹。"""
+    from yuxi.services.research_deliverable_service import export_research_data
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    filename, content, media_type = await _call(
+        export_research_data(
+            kb_id=context["kb_id"],
+            current_user=user,
+            kind=kind,
+            target_id=target_id,
+            export_format=format,
+            year_from=year_from,
+            year_to=year_to,
+        )
+    )
+    artifact_path = await _write_artifact(runtime, filename, content)
+    return {
+        "kind": kind,
+        "filename": filename,
+        "format": format,
+        "media_type": media_type,
+        "artifact_path": artifact_path,
+        "message": f"数据已导出为 {filename}，请调用 present_artifacts 工具展示该文件",
+    }
+
+
 RESEARCH_TOOLS = [
     research_get_context,
     research_list_projects,
@@ -2110,4 +2161,5 @@ RESEARCH_TOOLS = [
     research_generate_presentation_pack,
     research_export_academic_graph,
     research_export_paper_diagram,
+    research_export_research_data,
 ]
