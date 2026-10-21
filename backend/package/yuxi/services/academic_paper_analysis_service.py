@@ -209,6 +209,8 @@ async def _paper_context(kb_id: str, paper_id: str) -> tuple[Any, str]:
     paper = await AcademicPaperRepository().get_by_paper_id(kb_id=kb_id, paper_id=paper_id)
     if paper is None:
         raise AcademicPaperAnalysisError("paper_not_found", "论文不存在")
+    if paper.file_id is None:
+        raise AcademicPaperAnalysisError("paper_fulltext_unavailable", "该论文只有元数据，没有可分析的全文")
     chunks: list[Any] = []
     offset = 0
     repository = KnowledgeChunkRepository()

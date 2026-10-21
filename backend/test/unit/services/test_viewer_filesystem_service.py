@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -11,6 +12,7 @@ from yuxi.services import viewer_filesystem_service as svc
 from yuxi.services import workspace_service
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows 默认无符号链接权限")
 def test_resolve_local_user_data_path_blocks_upload_symlink_escape(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(sandbox_paths.conf, "save_dir", str(tmp_path))
     thread_id = "thread-1"
@@ -28,6 +30,7 @@ def test_resolve_local_user_data_path_blocks_upload_symlink_escape(tmp_path: Pat
     assert exc_info.value.status_code == 403
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows 默认无符号链接权限")
 def test_list_local_entries_skips_symlink_escape(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(sandbox_paths.conf, "save_dir", str(tmp_path))
     thread_id = "thread-1"

@@ -8,6 +8,31 @@
 
 ## v0.11.0 (current)
 
+- 补齐双通道界面入口：重复论文检测弹窗新增“合并本组”（归档式合并，可恢复），迁移清单弹窗新增“导出当前库清单”。
+- 仅元数据论文支持“补全文”：从开放获取源下载 PDF 后挂到已有论文记录，不再新建重复记录；外部导入按标题归一化 + 年份兜底，修复 arXiv DOI 与出版社 DOI 不一致时的重复导入。
+- 汇报包 HTML 新增方法流程图：从论文分析方法步骤生成 SVG 并嵌入，Markdown 版同步列出文字步骤。
+- 修复外部论文导入任务默认 6 小时超时：导入任务改为 15 分钟，并把可恢复任务的超时写入任务 payload，服务重启后沿用原超时，避免解析卡住长时间占用任务队列。
+- 修复仅元数据论文仍可进入论文对话与筛选的问题：论文对话在检索前明确返回 `paper_chunk_missing`；已归档论文不能再写入筛选结论，避免产生不计入统计的无效记录。
+- 修复外部论文导入在 Semantic Scholar 的 `openAccessPdf` 指向落地页时直接失败的问题：有 arXiv ID 时优先使用 `arxiv.org/pdf/<id>.pdf` 直链，非 arXiv 论文仍使用原开放获取地址；已用 Attention 与 BERT 两篇真实导入验证。
+- 新增账户自助改密：账户设置页新增“安全设置”，`POST /api/auth/password` 校验当前密码并拒绝新旧相同，修改后旧密码立即失效；临时用户端到端验证通过。
+- 修复仅元数据论文仍显示“生成报告”入口：论文详情页禁用分析按钮并提示该论文仅含元数据。
+- 修复引用图谱导出与引用网络洞察的数据源不一致：两者原本读取 PostgreSQL 的图谱投影，而图谱视图读取 Neo4j，导致图上有 1636 个节点时导出/洞察仍返回 409 `graph_empty`。现统一复用 `AcademicGraphService.get_network` 的快照，导出 CSV/GraphML 与洞察报告与界面看到的是同一张图。
+- 新增可重复冒烟验收与固定语料：`backend/scripts/smoke_acceptance.py` 覆盖 17 个能力族（含 AI 工具真实运行）并输出 JSON/Markdown 报告；`scripts/eval/fixed_corpus.json` 提供 28 篇开放获取论文与 10 个金标准问题，配套批量导入脚本。
+- 新增论文阅读笔记与选区批注：论文详情抽屉支持笔记增删改查、在章节分块中选中文字直接添加批注（记录分块、字符区间与 PDF 页码）、分块内高亮回显与 Markdown 导出；笔记按用户隔离，AI 侧新增查询、记录、修改、删除、导出五个工具，其中删除进入审批名单；新增 `research_paper_notes` 表（启动时自动建表）与 `research_paper_note_service`，并补充服务级单测。
+- 论文库新增参考文献文件导入：支持 BibTeX 与 RIS，按 DOI 优先、标题兜底幂等去重；导入记录只含元数据（`file_id` 为空）并在论文库与详情页标注“仅元数据”，不参与全文检索。新增 `research_reference_import_service`、`POST /api/research/databases/{kb_id}/papers/import-references` 与 `research_import_reference_file`，论文库顶部提供“导入文献”弹窗，返回新增 / 跳过 / 失败计数；`academic_papers.file_id` 改为可空并补启动迁移。下载开放获取全文列为待选项。
+- 新增文献筛选（纳入 / 排除）双通道：论文库支持逐篇勾选或批量标记纳入 / 排除并填写理由，顶部展示识别 / 纳入 / 排除 / 待定计数，可导出带计数的 CSV；筛选结果按用户隔离，新增 `GET/POST /api/research/databases/{kb_id}/papers/screening` 与 `GET .../screening/export`，AI 侧新增查询、记录、导出三个工具，其中记录工具进入审批名单，明确只能记录用户给出的结论、不得替用户判断；新增 `academic_paper_screenings` 表（启动时自动建表）与 `research_paper_screening_service`，并补充服务级单测。
+- 新增外部论文多源检索：关键词检索并发查询 Semantic Scholar、OpenAlex 与 Crossref，按 DOI（优先）或归一化标题归并去重并在结果中标注来源；单个来源失败只降级为 `partial` 并在界面提示，全部来源失败才返回可重试错误。BibTeX / RIS / DOI 等标识符仍走 Semantic Scholar 精确解析，导入链路不变。新增 `external_academic_search_service` 与归并 / 降级单测。
+- 新增单篇论文对话：论文分析页提供论文作用域追问，检索范围固定为该论文的学术切片（hybrid 失败时仅在 embedding 故障时降级关键词），回答要求用 `[chunk:...]` 标注来源，返回带页码与章节的引用，点击可回到论文库并打开带高亮定位的原文 PDF；新增 `POST /api/research/databases/{kb_id}/papers/{paper_id}/chat` 与 `research_ask_paper_question`，界面与 AI 工具共用同一 service 与检索范围。
+- 新增引文滚雪球：论文详情页可从单篇论文发起“参考文献 / 被引文献”，勾选后批量纳入本地库；默认只写元数据（复用仅元数据批量写入，按 DOI 优先、标题兜底幂等，不参与全文检索），开启全文下载时仅对开放获取条目复用既有外部导入任务，避免重复下载与重复记录。新增 `GET /api/research/databases/{kb_id}/papers/{paper_id}/related`、`POST .../related/import` 与 `research_list_related_papers`、`research_import_related_papers` 两个工具。
+- 补齐 RAG 评估双通道：新增 `research_upload_eval_dataset`（接收 JSONL 文本，校验 `.jsonl` 后缀）与 `research_create_eval_experiment`（2 到 8 个变体，可指定基线序号），均为管理员工具；外部基线录入仍在界面完成。至此评估基准、评估运行、消融实验与结果导出均有人工与 AI 两个入口。
+- 知识库迁移清单支持导入校验：新增 `POST /api/research/databases/{kb_id}/export-manifest/validate` 与 `research_validate_kb_manifest`，按 paper_id 优先、DOI 兜底比对清单与当前库，输出匹配 / 缺失 / 新增计数与明细；论文库顶部新增“校验清单”入口（选择 JSON 文件，限制 8 MB）。校验只对比元数据，不声称已校验原文文件、向量与图谱。
+- 修复引文滚雪球导入成功后的前端事件错误：原实现复用 `updated` 事件但未携带论文对象，父组件按 `result.paper.paper_id` 取值会抛错；现改为 `library-changed` 并刷新论文库列表。
+- 修复多源检索丢失 arXiv 开放获取回退：Semantic Scholar 条目只读 `openAccessPdf`，导致仅有 arXiv 标识的论文被误判为“无公开 PDF”、导入按钮被禁用；现恢复 arXiv PDF 回退并补充单测。
+- 优化文献筛选页加载：计数改为 SQL 聚合、当前页只加载本页论文，避免每次翻页扫描全库论文与摘要。
+- 新增论文对照翻译（G-42）：论文详情页可按章节生成逐段中英对照，返回页码与章节定位，支持长文截断与未翻译片段显式标注；译文只在响应中返回，不写入数据库与证据库，避免把模型译文当成可引用证据。新增 `POST /api/research/databases/{kb_id}/papers/{paper_id}/translate` 与 `research_translate_paper`，界面与 AI 工具共用同一服务；单次最多 12 个片段。
+- 补充自助改密回归测试（G-44）：已有 `POST /api/auth/password` 与账户设置页密码表单，本次新增 4 项接口测试，覆盖旧密码错误、新旧密码相同、成功更新哈希与短密码 422，验证修改后旧密码立即失效。
+- 新增跨库查重（只读）：`GET /api/research/duplicates/cross-library` 枚举当前用户可访问的 Milvus 知识库，按 DOI（优先）/归一化标题汇总跨库重复论文，只报告不合并；查重弹窗新增“跨库查重”入口，AI 侧新增 `research_find_cross_library_duplicates`。跨库合并需先确定保留库与原文、证据和项目资产的迁移策略，本轮不做。
+- 新增知识库迁移包（ZIP）：`GET /api/research/databases/{kb_id}/export-bundle` 打包 `manifest.json`、`papers.csv`、`files.csv`、`graph/citation_graph.csv` 与 README；图谱未同步时降级为说明行而不阻断导出；论文库“导出数据”菜单新增“知识库迁移包（ZIP）”，AI 侧新增 `research_export_kb_bundle`。包内不含原文二进制与向量，恢复后请用“校验清单”核对。
 - 接入本地向量与重排推理服务并切换系统默认模型:新增 OpenAI 兼容的本地推理服务(端口 19100,`paraphrase-multilingual-MiniLM-L12-v2` 384 维与 `BAAI/bge-reranker-base`),注册为内置供应商 `local-embedding` 并在引导时启用;系统默认 `embed_model` 与 `reranker` 切换为本地模型,界面建库、检索与综述不再依赖 SiliconFlow。重排请求超时支持 `RERANK_TIMEOUT_SECONDS` 覆盖(默认 30 秒),适配本地 CPU 推理处理大候选集。模型更换会改变向量维度,已有知识库需重建。
 - 修复科研检索聊天模型解析缺省回退:按请求参数、知识库配置、系统默认模型三级解析,与综述链路一致;空白配置视为未配置,避免知识库未填模型时整条检索链路不可用。补充单元测试。
 - 修复带时区时间戳被写入 8 小时偏移:业务代码统一用 `utc_now_naive()` 生成 naive UTC,而 asyncpg 在写入 `timestamptz` 时把 naive datetime 当作本地时区(Asia/Shanghai),导致检索运行、证据活动、通知等记录的时刻整体提前 8 小时。现新增 `UTCDateTime` 类型装饰器(`storage/postgres/column_types.py`),在绑定参数层把 naive 统一标注 UTC、aware 统一转为 UTC,并替换全部知识库模型列与 `UserNotification`,调用点零改动,同时覆盖 `update().values()` 查询写入;无时区业务表保持原有 naive UTC 约定不变。已用真实检索验证新写入与本地日志时刻一致。历史数据仍为偏移值,未做批量回填。
@@ -16,6 +41,13 @@
 - 修复研究助手场景下无法切换智能体:研究助手会话按「知识库+项目」作用域绑定,`POST /api/research/copilot/thread` 为幂等 ensure,路由切到无 `thread_id` 时前端会立即重新绑定同一条作用域会话,配合下拉按是否存在当前线程禁用其他智能体项,形成无法切换的死路。现切换智能体时先切智能体再清空当前线程并同步地址栏,切回研究助手时显式重新绑定作用域会话,下拉项不再置灰并提示「切换智能体将开启新对话」。
 - 修复沙箱服务不可达时工具返回不可定位的错误:沙箱客户端在地址解析失败时直接抛出 `httpx.ConnectError`,调用方只看到 `[Errno 11001] getaddrinfo failed`,无法区分是沙箱服务未启动还是地址配错。现将该异常转换为带当前地址与排查方向的 `RuntimeError`;同时在本地开发环境启动指南中补齐沙箱服务(sandbox-provisioner)的启动步骤、宿主机与容器内两套访问地址的配置位置、健康检查与故障排查条目,并在容器编排中把宿主机可见地址与容器网络地址拆分为两个独立配置项。
 - 论文资料库新增多格式导出：除原有 BibTeX 外，支持 Markdown 文献收藏、RIS（EndNote / Zotero / Mendeley 兼容）、CSV 与纯文本列表，统一入口为 `GET /api/research/databases/{kb_id}/papers/export/{export_format}`，沿用知识库访问权限校验，非法格式返回 422 结构化错误。BibTeX 复用既有转义与引用键生成，新旧接口输出一致；CSV 使用 UTF-8 BOM 并对公式样式单元格加前导单引号；Markdown 与 RIS 对换行字段做单行压缩。格式设计参考 LitScan 项目 `core/exporter.py`（MIT License），代码按本仓库论文模型重写，未新增第三方依赖。前端论文工具栏的单一 BibTeX 按钮改为导出下拉菜单。
+- 论文库新增元数据自动补全：`POST /api/research/databases/{kb_id}/papers/{paper_id}/metadata/enrich` 按 DOI（优先）或标题从 Crossref 回填 DOI、摘要、作者、年份、期刊、关键词与引用数，Crossref 未命中时用 Semantic Scholar 严格标题+年份匹配兜底；只写入空字段，人工校正过的值不会被覆盖。有原文文件的论文沿用“元数据修订 → 重建学术分块与检索索引”流程并返回同步任务，只有元数据的记录直接更新、不提交索引任务。前端论文详情抽屉在“校正元数据”旁新增“补全元数据”，AI 研究助手同步新增 `research_enrich_paper_metadata`，两条通道共用同一服务与权限校验。补充 14 项单元测试。
+- 修复文献卡片导出接口不可用：`GET /api/research/databases/{kb_id}/papers/cards` 声明在同层参数路由 `/papers/{paper_id}` 之后，被当作 `paper_id=cards` 匹配并返回“论文不存在”。现将字面量路由前移到 `/papers/archived` 之后，并新增路由顺序守卫单测（扫描全部 356 条接口，确认无其它字面量路由被参数路由遮蔽）。
+- 新增首次使用引导：首次进入科研罗盘自动弹出“建库 → 上传 → 检索 → 综述”四步引导，未完成步骤可“去完成”直达知识库管理或对应工作区，可跳过、可点“使用引导”重新打开与重新检查；步骤完成状态由 `GET /api/research/onboarding` 按真实数据判定（可访问知识库数、本人上传文件数、成功检索数与成功综述数），不存引导进度也不使用演示数据。
+- 新增研究工具调用签名守卫：解析 `tools.py` 中全部 `from yuxi... import ...` 调用（当前 201 处）并与实际函数签名比对，关键字拼错或缺少必填参数会在单测阶段直接失败，避免只在真实对话中报 ToolException；同时把 `docs/agents/tools-system.md` 的科研工具表从 77 条补齐到 93 条（含笔记、筛选、关联文献、引用文件导入、单篇对话、归档清单、元数据补全与评估基准上传），并新增文档同步守卫与 `RESEARCH_TOOLS` 双向比对。
+- 修复重复合并把论文移出统计却仍留在论文库的问题：归档改用独立字段 `academic_papers.archived_at`，不再占用 `metadata_status`；论文库列表、导出、检索范围、趋势、机会与图谱同步统一排除归档论文，恢复只清空归档时间并保留原有元数据状态（不再把 `verified` 降级为 `extracted`）。新增 `GET /api/research/databases/{kb_id}/papers/archived` 与 `research_list_archived_papers` 供核对与恢复，合并与恢复进入审批名单；查重弹窗新增“已归档”清单，管理员可逐篇恢复并刷新论文库与重复分组；合并与恢复改为知识库写权限（管理员）。启动迁移会把历史 `metadata_status='archived'` 的行回填为归档时间并校正索引修订号（幂等）。真实 PostgreSQL 事务内验证归档前后可见性（归档后不可见、归档清单可查、恢复后可见），测试已回滚无残留数据。
+- 修复引文滚雪球把已归档重复条目再次导入的问题：滚雪球的“已入库”判定改为包含归档论文（与参考文献导入一致），避免合并隐藏后又被滚雪球重新建记录；真实库验证默认口径不含归档、含归档口径可见，临时数据已清理。
+- 修复单篇论文对话始终提示“没有可用于回答的正文片段”：知识库召回把 `chunk_id` / `chunk_index` 放在 `metadata` 内，对话服务按顶层字段读取导致上下文渲染为空。现兼容两种结构并补充真实召回结构的回归测试；真实问答验证返回 668 字回答与 6 条引用（4 条被引用）。
 
 - 修复真实 Chromium 浏览器回归中 Ant Design 模态框按钮可访问名称包含空格导致的定位超时:项目、里程碑、任务与风险保存统一使用模态框主按钮选择器;在 Docker 运行的真实账号回归已通过。
 - 扩展真实 Chromium 回归的导出验收:通过研究项目界面点击“导出报告→CSV 数据”,等待实际浏览器下载并校验文件名扩展名,覆盖从用户操作到文件交付的完整路径。

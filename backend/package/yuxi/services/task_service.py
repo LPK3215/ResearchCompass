@@ -14,6 +14,7 @@ from yuxi.utils.logging_config import logger
 TaskCoroutine = Callable[["TaskContext"], Awaitable[Any]]
 TERMINAL_STATUSES = {"success", "failed", "cancelled"}
 RESUMABLE_PAYLOAD_KEY = "_tasker_resumable"
+RESUMABLE_TIMEOUT_KEY = "_tasker_timeout_seconds"
 # 纯进度推进时，进度增量小于该阈值则只更新内存、不落库（前端读内存，不受影响）
 PROGRESS_PERSIST_DELTA = 2.0
 # 内存保留最近多少条终态任务，持久化历史由显式管理员删除或保留策略治理。
@@ -208,7 +209,10 @@ class Tasker:
     ) -> Task:
         effective_timeout = self._resolve_timeout_seconds(timeout_seconds)
         task_id = uuid.uuid4().hex
-        task = Task(id=task_id, name=name, type=task_type, payload=self._prepare_payload(task_type, payload))
+        task_payload = self._prepare_payload(task_type, payload)
+        if task_type in self._resumable_handlers:
+            task_payload[RESUMABLE_TIMEOUT_KEY] = effective_timeout
+        task = Task(id=task_id, name=name, type=task_type, payload=task_payload)
         async with self._lock:
             self._tasks[task_id] = task
             await self._persist_task(task)
@@ -255,6 +259,8 @@ class Tasker:
     ) -> tuple[Task, bool]:
         effective_timeout = self._resolve_timeout_seconds(timeout_seconds)
         task_payload = self._prepare_payload(task_type, payload)
+        if task_type in self._resumable_handlers:
+            task_payload[RESUMABLE_TIMEOUT_KEY] = effective_timeout
         async with self._lock:
             task_id = uuid.uuid4().hex
             task = Task(id=task_id, name=name, type=task_type, payload=task_payload)
@@ -643,7 +649,10 @@ class Tasker:
                     task.completed_at = None
                     task.updated_at = utc_isoformat()
                     await self._persist_task(task)
-                    await self._queue.put((task.id, handler, self.default_timeout_seconds))
+                    requeue_timeout = float(
+                        task.payload.get(RESUMABLE_TIMEOUT_KEY) or self.default_timeout_seconds
+                    )
+                    await self._queue.put((task.id, handler, requeue_timeout))
                     requeued += 1
                 else:
                     # 未注册任务没有可安全重建的执行函数，必须明确失败而不是伪造恢复。

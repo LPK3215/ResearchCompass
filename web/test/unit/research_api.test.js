@@ -412,3 +412,213 @@ test('public user study requests never require authentication', async () => {
     }
   ])
 })
+
+test('exportKbBundle requests an authenticated zip blob', async () => {
+  const expected = new Blob(['PK'])
+  requestResult = { blob: async () => expected }
+
+  assert.equal(await researchApi.exportKbBundle('kb/1'), expected)
+  assert.deepEqual(calls, [
+    {
+      method: 'apiRequest',
+      args: ['/api/research/databases/kb%2F1/export-bundle', { method: 'GET' }, true, 'blob']
+    }
+  ])
+})
+
+test('validateKbManifest posts the manifest payload', async () => {
+  const manifest = { papers: [{ paper_id: 'p1', title: 'Paper' }] }
+
+  await researchApi.validateKbManifest('kb/1', manifest)
+
+  assert.deepEqual(calls, [
+    {
+      method: 'apiRequest',
+      args: [
+        '/api/research/databases/kb%2F1/export-manifest/validate',
+        { method: 'POST', body: JSON.stringify({ manifest }) }
+      ]
+    }
+  ])
+})
+
+test('findCrossLibraryDuplicates requests the cross-library report', async () => {
+  await researchApi.findCrossLibraryDuplicates()
+
+  assert.deepEqual(calls, [{ method: 'apiGet', args: ['/api/research/duplicates/cross-library'] }])
+})
+
+test('paper screening, chat and snowball APIs preserve research contracts', async () => {
+  const exportBlob = new Blob(['paper_id,title'])
+  await researchApi.getPaperScreening('kb/1', { paper_ids: 'paper/1,paper 2', limit: 200 })
+  await researchApi.setPaperScreening('kb/1', {
+    paper_ids: ['paper/1'],
+    decision: 'included',
+    reason: 'relevant'
+  })
+  requestResult = { blob: async () => exportBlob }
+  assert.equal(await researchApi.exportPaperScreening('kb/1'), exportBlob)
+  await researchApi.askPaperQuestion('kb/1', 'paper/1', { question: 'What method?', history: [] })
+  await researchApi.listRelatedPapers('kb/1', 'paper/1', 'references', 20)
+  await researchApi.importRelatedPapers('kb/1', 'paper/1', {
+    direction: 'references',
+    paper_ids: ['s2-1'],
+    include_full_text: false
+  })
+
+  assert.deepEqual(calls, [
+    {
+      method: 'apiGet',
+      args: ['/api/research/databases/kb%2F1/papers/screening?paper_ids=paper%2F1%2Cpaper+2&limit=200']
+    },
+    {
+      method: 'apiRequest',
+      args: [
+        '/api/research/databases/kb%2F1/papers/screening',
+        {
+          method: 'POST',
+          body: JSON.stringify({ paper_ids: ['paper/1'], decision: 'included', reason: 'relevant' })
+        }
+      ]
+    },
+    {
+      method: 'apiRequest',
+      args: [
+        '/api/research/databases/kb%2F1/papers/screening/export',
+        { method: 'GET' },
+        true,
+        'blob'
+      ]
+    },
+    {
+      method: 'apiRequest',
+      args: [
+        '/api/research/databases/kb%2F1/papers/paper%2F1/chat',
+        { method: 'POST', body: JSON.stringify({ question: 'What method?', history: [] }) }
+      ]
+    },
+    {
+      method: 'apiGet',
+      args: ['/api/research/databases/kb%2F1/papers/paper%2F1/related?direction=references&limit=20']
+    },
+    {
+      method: 'apiRequest',
+      args: [
+        '/api/research/databases/kb%2F1/papers/paper%2F1/related/import',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            direction: 'references',
+            paper_ids: ['s2-1'],
+            include_full_text: false
+          })
+        }
+      ]
+    }
+  ])
+})
+
+test('translatePaper posts the section and limit to the paper endpoint', async () => {
+  await researchApi.translatePaper('kb/1', 'paper/1', { section_type: 'methodology', limit: 6 })
+
+  assert.deepEqual(calls, [
+    {
+      method: 'apiRequest',
+      args: [
+        '/api/research/databases/kb%2F1/papers/paper%2F1/translate',
+        { method: 'POST', body: JSON.stringify({ section_type: 'methodology', limit: 6 }) }
+      ]
+    }
+  ])
+})
+
+test('onboarding, metadata enrich, reference import and paper notes APIs preserve contracts', async () => {
+  const exportBlob = new Blob(['# notes'])
+  const referencePayload = { content: '@article{a, title={T}}', format: 'bibtex' }
+  const notePayload = { content: 'note', chunk_id: 'chunk/1', start_offset: 0, end_offset: 4 }
+
+  await researchApi.getOnboardingState()
+  await researchApi.enrichPaperMetadata('kb/1', 'paper/1')
+  await researchApi.importReferenceFile('kb/1', referencePayload)
+  await researchApi.listPaperNotes('kb/1', 'paper/1')
+  await researchApi.createPaperNote('kb/1', 'paper/1', notePayload)
+  await researchApi.updatePaperNote('kb/1', 'paper/1', 'note/1', 'updated note')
+  await researchApi.deletePaperNote('kb/1', 'paper/1', 'note/1')
+  requestResult = { blob: async () => exportBlob }
+  assert.equal(await researchApi.exportPaperNotes('kb/1', 'paper/1'), exportBlob)
+
+  assert.deepEqual(calls, [
+    { method: 'apiGet', args: ['/api/research/onboarding'] },
+    {
+      method: 'apiRequest',
+      args: [
+        '/api/research/databases/kb%2F1/papers/paper%2F1/metadata/enrich',
+        { method: 'POST' }
+      ]
+    },
+    {
+      method: 'apiRequest',
+      args: [
+        '/api/research/databases/kb%2F1/papers/import-references',
+        { method: 'POST', body: JSON.stringify(referencePayload) }
+      ]
+    },
+    { method: 'apiGet', args: ['/api/research/databases/kb%2F1/papers/paper%2F1/notes'] },
+    {
+      method: 'apiRequest',
+      args: [
+        '/api/research/databases/kb%2F1/papers/paper%2F1/notes',
+        { method: 'POST', body: JSON.stringify(notePayload) }
+      ]
+    },
+    {
+      method: 'apiRequest',
+      args: [
+        '/api/research/databases/kb%2F1/papers/paper%2F1/notes/note%2F1',
+        { method: 'PATCH', body: JSON.stringify({ content: 'updated note' }) }
+      ]
+    },
+    {
+      method: 'apiRequest',
+      args: [
+        '/api/research/databases/kb%2F1/papers/paper%2F1/notes/note%2F1',
+        { method: 'DELETE' }
+      ]
+    },
+    {
+      method: 'apiRequest',
+      args: [
+        '/api/research/databases/kb%2F1/papers/paper%2F1/notes/export',
+        { method: 'GET' },
+        true,
+        'blob'
+      ]
+    }
+  ])
+})
+
+test('duplicate merge and manifest export APIs preserve contracts', async () => {
+  const exportBlob = new Blob(['{}'])
+  await researchApi.mergeDuplicateGroup('kb/1', 'doi:10.1/x')
+  requestResult = { blob: async () => exportBlob }
+  assert.equal(await researchApi.exportKbManifest('kb/1'), exportBlob)
+
+  assert.deepEqual(calls, [
+    {
+      method: 'apiRequest',
+      args: [
+        '/api/research/databases/kb%2F1/duplicates/merge',
+        { method: 'POST', body: JSON.stringify({ key: 'doi:10.1/x' }) }
+      ]
+    },
+    {
+      method: 'apiRequest',
+      args: [
+        '/api/research/databases/kb%2F1/export-manifest',
+        { method: 'GET' },
+        true,
+        'blob'
+      ]
+    }
+  ])
+})

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -80,6 +81,7 @@ async def test_list_thread_files_runs_directory_scan_in_worker_thread(tmp_path: 
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows 默认无符号链接权限")
 async def test_resolve_thread_artifact_view_blocks_symlink_escape(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     thread_root = tmp_path / "threads" / "thread-1" / "user-data"
     uploads_dir = thread_root / "uploads"

@@ -100,7 +100,7 @@ def _now_text() -> str:
 def _paper_meta(paper: Any) -> dict[str, Any]:
     return {
         "paper_id": str(paper.paper_id),
-        "file_id": str(paper.file_id),
+        "file_id": str(paper.file_id or ""),
         "title": str(paper.title or "").strip(),
         "authors": _string_list(paper.authors),
         "year": paper.publication_year,
@@ -139,13 +139,16 @@ def _bullet_lines(values: Any) -> list[str]:
     return []
 
 
-async def _latest_structure(kb_id: str, paper_id: str, current_user: User) -> tuple[dict[str, Any], str]:
+async def _latest_structure(
+    kb_id: str, paper_id: str, current_user: User
+) -> tuple[dict[str, Any], str, dict[str, Any]]:
     from yuxi.services.academic_paper_analysis_service import get_latest_paper_analysis
 
     analysis = await get_latest_paper_analysis(kb_id=kb_id, paper_id=paper_id, current_user=current_user)
     if not analysis:
-        return {}, ""
-    return _structure_of(_stage_payload(analysis)), str(analysis.get("run_id") or "")
+        return {}, "", {}
+    stages = _stage_payload(analysis)
+    return _structure_of(stages), str(analysis.get("run_id") or ""), stages
 
 
 async def _compose_cards(kb_id: str, paper_ids: list[str], current_user: User) -> list[dict[str, Any]]:
@@ -161,7 +164,14 @@ async def _compose_cards(kb_id: str, paper_ids: list[str], current_user: User) -
             papers.extend(batch)
     cards = []
     for paper in papers:
-        structure, analysis_run_id = await _latest_structure(kb_id, str(paper.paper_id), current_user)
+        structure, analysis_run_id, stages = await _latest_structure(kb_id, str(paper.paper_id), current_user)
+        methodology = stages.get("methodology")
+        if not isinstance(methodology, dict):
+            single = stages.get("single_agent")
+            methodology = single.get("methodology") if isinstance(single, dict) else None
+        method_steps = _bullet_lines((methodology or {}).get("method_steps"))
+        if not method_steps and structure.get("method"):
+            method_steps = [str(structure["method"])]
         cards.append(
             {
                 **_paper_meta(paper),
@@ -169,6 +179,7 @@ async def _compose_cards(kb_id: str, paper_ids: list[str], current_user: User) -
                 "analysis": {
                     "problem": str(structure.get("problem") or "").strip(),
                     "method": str(structure.get("method") or "").strip(),
+                    "method_steps": method_steps[:12],
                     "datasets": _bullet_lines(structure.get("datasets")),
                     "results": _bullet_lines(structure.get("results")),
                     "limitations": _bullet_lines(structure.get("limitations")),
@@ -465,6 +476,22 @@ async def generate_presentation_pack(
         "model": resolved_model,
         "generated_at": _now_text(),
     }
+    diagrams = [
+        {
+            "paper_id": card["paper_id"],
+            "title": card["title"],
+            "steps": card["analysis"]["method_steps"],
+            "svg": _render_flow_svg(
+                f"方法流程：{(card['title'] or card['paper_id'])[:60]}",
+                card["analysis"]["method_steps"],
+            ),
+        }
+        for card in cards
+        if card["analysis"]["method_steps"]
+    ][:3]
+    pack["diagrams"] = diagrams
+    if len(diagrams) < sum(1 for card in cards if card["analysis"]["method_steps"]):
+        pack["diagram_note"] = "仅展示前 3 篇有方法步骤的论文"
     return pack
 
 
@@ -492,6 +519,19 @@ def render_pack_markdown(pack: dict[str, Any]) -> str:
             cells = [_markdown_cell(cell) for cell in row]
             cells += [""] * (len(columns) - len(cells))
             lines.append("| " + " | ".join(cells[: len(columns)]) + " |")
+        lines.append("")
+    diagrams = pack.get("diagrams") or []
+    if diagrams:
+        lines.extend(["## 方法流程图", ""])
+        for diagram in diagrams:
+            lines.append(f"### {diagram.get('title') or diagram.get('paper_id')}")
+            lines.extend(
+                f"{index}. {step}" for index, step in enumerate(diagram.get("steps") or [], start=1)
+            )
+            lines.append("")
+        lines.append("HTML 版包含对应的 SVG 流程图。")
+        if pack.get("diagram_note"):
+            lines.append(f"（{pack['diagram_note']}）")
         lines.append("")
     if pack.get("talking_points"):
         lines.extend(["## 讲稿要点", ""] + [f"- {item}" for item in pack["talking_points"]] + [""])
@@ -545,6 +585,14 @@ def render_pack_html(pack: dict[str, Any]) -> str:
             parts.extend(f"<td>{esc(cell)}</td>" for cell in cells[: len(columns)])
             parts.append("</tr>")
         parts.append("</tbody></table>")
+    diagrams = pack.get("diagrams") or []
+    if diagrams:
+        parts.append("<h2>方法流程图</h2>")
+        for diagram in diagrams:
+            parts.append(f"<h3>{esc(diagram.get('title') or diagram.get('paper_id'))}</h3>")
+            parts.append(diagram.get("svg") or "")
+        if pack.get("diagram_note"):
+            parts.append(f'<p class="note">{esc(pack["diagram_note"])}</p>')
     if pack.get("talking_points"):
         parts.append("<h2>讲稿要点</h2><ul>")
         parts.extend(f"<li>{esc(item)}</li>" for item in pack["talking_points"])
@@ -897,11 +945,11 @@ async def export_comparison_matrix(
 
 
 async def _load_graph_snapshot(kb_id: str, limit: int = 500) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    from yuxi.repositories.academic_graph_repository import AcademicGraphRepository
+    from yuxi.knowledge.graphs.academic_graph_service import AcademicGraphService
 
-    graph = await AcademicGraphRepository().get_graph(kb_id=kb_id, center_paper_id=None, limit=limit)
-    nodes = [item for item in graph.get("nodes") or [] if isinstance(item, dict)]
-    edges = [item for item in graph.get("edges") or [] if isinstance(item, dict)]
+    network = await AcademicGraphService().get_network(kb_id=kb_id, center_paper_id=None, depth=1, limit=limit)
+    nodes = [item for item in network.get("nodes") or [] if isinstance(item, dict)]
+    edges = [item for item in network.get("edges") or [] if isinstance(item, dict)]
     return nodes, edges
 
 
@@ -1122,6 +1170,72 @@ def _duplicate_key(paper: Any) -> str:
     return f"title:{title[:80]}" if title else ""
 
 
+async def find_cross_library_duplicates(*, current_user: User, max_libraries: int = 10) -> dict[str, Any]:
+    """在当前用户可访问的多个知识库之间识别重复论文，只报告不合并。"""
+    from yuxi.knowledge.runtime import knowledge_base as kb_runtime
+    from yuxi.repositories.knowledge_base_repository import KnowledgeBaseRepository
+
+    user_info = {
+        "uid": str(current_user.uid),
+        "role": current_user.role,
+        "department_id": current_user.department_id,
+    }
+    libraries = []
+    for kb in await KnowledgeBaseRepository().get_all():
+        if str(getattr(kb, "kb_type", "milvus") or "").lower() != "milvus":
+            continue
+        if not await kb_runtime.check_accessible(user_info, kb.kb_id):
+            continue
+        libraries.append(kb)
+        if len(libraries) >= max_libraries:
+            break
+    if len(libraries) < 2:
+        raise ResearchDeliverableError("cross_library_insufficient", "跨库查重至少需要两个可访问的论文知识库")
+
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for kb in libraries:
+        async for batch in AcademicPaperRepository().iter_export_batches(kb_id=str(kb.kb_id)):
+            for paper in batch:
+                key = _duplicate_key(paper)
+                if not key:
+                    continue
+                groups.setdefault(key, []).append(
+                    {
+                        "kb_id": str(kb.kb_id),
+                        "kb_name": str(kb.name or kb.kb_id),
+                        "paper_id": str(paper.paper_id),
+                        "title": str(paper.title or ""),
+                        "publication_year": paper.publication_year,
+                        "doi": str(paper.doi or ""),
+                    }
+                )
+
+    duplicates = []
+    for key, items in groups.items():
+        library_ids = {item["kb_id"] for item in items}
+        if len(library_ids) < 2:
+            continue
+        duplicates.append(
+            {
+                "key": key,
+                "paper_count": len(items),
+                "library_count": len(library_ids),
+                "papers": sorted(items, key=lambda item: (item["kb_id"], item["paper_id"])),
+            }
+        )
+    duplicates.sort(key=lambda item: (item["library_count"], item["paper_count"]), reverse=True)
+    return {
+        "library_count": len(libraries),
+        "libraries": [{"kb_id": str(kb.kb_id), "name": str(kb.name or "")} for kb in libraries],
+        "duplicate_group_count": len(duplicates),
+        "duplicate_paper_count": sum(item["paper_count"] for item in duplicates),
+        "groups": duplicates,
+        "note": (
+            "只报告跨库重复，不自动合并；跨库合并需先确定保留库与原文、证据和项目资产的迁移策略，当前仅库内合并可用"
+        ),
+    }
+
+
 async def find_duplicate_papers(*, kb_id: str, current_user: User) -> dict[str, Any]:
     """在当前知识库内按 DOI（优先）或归一化标题检测重复论文，只读不改数据。"""
     await _ensure_access(current_user, kb_id)
@@ -1218,38 +1332,224 @@ async def export_kb_manifest(*, kb_id: str, current_user: User) -> dict[str, Any
     }
 
 
-async def merge_duplicate_group(*, kb_id: str, key: str, current_user: User) -> dict[str, Any]:
-    """按重复分组做归档式合并：保留建议条目，其余置为 archived，可恢复。"""
+BUNDLE_README = """# ResearchCompass 知识库迁移包
+
+本包包含：
+
+- `manifest.json`：论文元数据与图谱统计（与“导出知识库清单”一致）
+- `papers.csv`：论文元数据表
+- `files.csv`：知识库文件清单（不含二进制）
+- `graph/citation_graph.csv`：引用图谱快照（最多 500 个节点）
+
+恢复方式：
+
+1. 原文文件、向量与图数据由备份链路（Postgres + docker volumes）恢复；
+2. 在新环境导入后用论文库“校验清单”上传 `manifest.json`，核对缺失与新增；
+3. 本包不包含 PDF 原文与向量，不能单独完成整库恢复。
+"""
+
+
+def _bundle_csv(header: list[str], rows: list[list[Any]]) -> bytes:
+    """渲染 UTF-8 BOM CSV，并对公式样式单元格加前导单引号。"""
+    import csv
+    from io import StringIO
+
+    buffer = StringIO(newline="")
+    writer = csv.writer(buffer, lineterminator="\n")
+    writer.writerow(header)
+    for row in rows:
+        normalized = [("'" + str(cell)) if str(cell or "")[:1] in {"=", "+", "-", "@"} else cell for cell in row]
+        writer.writerow(normalized)
+    return buffer.getvalue().encode("utf-8-sig")
+
+
+async def export_kb_bundle(*, kb_id: str, current_user: User) -> tuple[str, bytes, str]:
+    """打包知识库迁移文件：清单、论文表、文件清单与图谱快照（不含二进制）。"""
+    import zipfile
+    from io import BytesIO
+
+    from yuxi.repositories.knowledge_file_repository import KnowledgeFileRepository
+    from yuxi.services.academic_graph_sync_service import export_academic_graph
+
     await _ensure_access(current_user, kb_id)
+    manifest = await export_kb_manifest(kb_id=kb_id, current_user=current_user)
+    papers = manifest["papers"]
+    files = [record for record in await KnowledgeFileRepository().list_by_kb_id(kb_id) if not record.is_folder]
+
+    try:
+        _, graph_bytes, _ = await export_academic_graph(kb_id=kb_id, current_user=current_user, export_format="csv")
+        graph_csv = graph_bytes.decode("utf-8")
+    except Exception as exc:  # noqa: BLE001 - 图谱为空不应阻断迁移包导出
+        if getattr(exc, "error_type", "") != "graph_empty":
+            raise
+        graph_csv = "notice\n图谱尚未同步，本包只含元数据与文件清单\n"
+
+    paper_rows = [
+        [
+            paper["paper_id"],
+            paper["title"],
+            paper["publication_year"],
+            paper["venue"],
+            paper["doi"],
+            paper["file_id"],
+        ]
+        for paper in papers
+    ]
+    file_rows = [
+        [
+            str(record.file_id),
+            str(record.filename or ""),
+            str(record.original_filename or ""),
+            str(record.file_type or ""),
+            str(record.status or ""),
+            record.file_size,
+            int(record.chunk_count or 0),
+            "yes" if (record.minio_url or record.path) else "no",
+            "yes" if record.markdown_file else "no",
+        ]
+        for record in files
+    ]
+
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
+        archive.writestr(
+            "papers.csv",
+            _bundle_csv(["paper_id", "title", "publication_year", "venue", "doi", "file_id"], paper_rows),
+        )
+        archive.writestr(
+            "files.csv",
+            _bundle_csv(
+                [
+                    "file_id",
+                    "filename",
+                    "original_filename",
+                    "file_type",
+                    "status",
+                    "file_size",
+                    "chunk_count",
+                    "original_available",
+                    "parsed_available",
+                ],
+                file_rows,
+            ),
+        )
+        archive.writestr("graph/citation_graph.csv", graph_csv)
+        archive.writestr("README.md", BUNDLE_README)
+    filename = f"research_bundle_{kb_id}_{utc_now_naive().strftime('%Y%m%d%H%M')}.zip"
+    return filename, buffer.getvalue(), "application/zip"
+
+
+async def merge_duplicate_group(*, kb_id: str, key: str, current_user: User) -> dict[str, Any]:
+    """按重复分组做归档式合并：保留建议条目，其余写归档时间，可恢复。"""
+    await _ensure_access(current_user, kb_id, write=True)
     result = await find_duplicate_papers(kb_id=kb_id, current_user=current_user)
     group = next((item for item in result["groups"] if item["key"] == key), None)
     if group is None:
         raise ResearchDeliverableError("duplicate_group_not_found", "该重复分组不存在或已被处理")
     keep_id = group["recommended_paper_id"]
-    archived: list[str] = []
-    repo = AcademicPaperRepository()
-    for paper in group["papers"]:
-        paper_id = paper["paper_id"]
-        if paper_id == keep_id:
-            continue
-        updated = await repo.update_metadata(kb_id=kb_id, paper_id=paper_id, data={"metadata_status": "archived"})
-        if updated is not None:
-            archived.append(paper_id)
+    remove_ids = [paper["paper_id"] for paper in group["papers"] if paper["paper_id"] != keep_id]
+    archived = await AcademicPaperRepository().archive_papers(kb_id=kb_id, paper_ids=remove_ids)
     return {
         "key": key,
         "kept_paper_id": keep_id,
         "archived_paper_ids": archived,
-        "message": "重复条目已归档（metadata_status=archived），原文文件与向量未删除，可调用恢复接口撤销",
+        "message": (
+            "重复条目已归档（独立归档时间，不占用 metadata_status），列表、检索、导出与统计不再包含这些论文；"
+            "原文文件与向量未删除，可调用恢复接口撤销"
+        ),
     }
 
 
 async def restore_archived_papers(*, kb_id: str, paper_ids: list[str], current_user: User) -> dict[str, Any]:
-    """恢复被归档的论文条目，重新参与检索与导出。"""
-    await _ensure_access(current_user, kb_id)
-    repo = AcademicPaperRepository()
-    restored: list[str] = []
-    for paper_id in paper_ids:
-        updated = await repo.update_metadata(kb_id=kb_id, paper_id=paper_id, data={"metadata_status": "extracted"})
-        if updated is not None:
-            restored.append(paper_id)
+    """恢复归档论文，使其恢复归档前的元数据状态并重新参与检索与导出。"""
+    await _ensure_access(current_user, kb_id, write=True)
+    restored = await AcademicPaperRepository().restore_papers(kb_id=kb_id, paper_ids=paper_ids)
     return {"restored_paper_ids": restored, "count": len(restored)}
+
+
+async def list_archived_papers(*, kb_id: str, current_user: User, limit: int = 100) -> dict[str, Any]:
+    """列出已归档论文，供合并后核对可见性与按需恢复。"""
+    await _ensure_access(current_user, kb_id)
+    papers = await AcademicPaperRepository().list_archived_papers(kb_id=kb_id, limit=limit)
+    return {
+        "count": len(papers),
+        "items": [
+            {
+                "paper_id": str(paper.paper_id),
+                "title": str(paper.title or ""),
+                "publication_year": paper.publication_year,
+                "doi": str(paper.doi or ""),
+                "metadata_status": str(paper.metadata_status or ""),
+                "archived_at": paper.archived_at.isoformat() if paper.archived_at else None,
+            }
+            for paper in papers
+        ],
+    }
+
+
+MAX_MANIFEST_ENTRIES = 20000
+MANIFEST_DETAIL_LIMIT = 50
+
+
+def _manifest_doi(value: Any) -> str:
+    doi = str(value or "").strip().casefold()
+    return re.sub(r"^https?://(?:dx\.)?doi\.org/", "", doi)
+
+
+async def validate_kb_manifest(*, kb_id: str, manifest: Any, current_user: User) -> dict[str, Any]:
+    """把迁移清单与当前库论文比对，报告缺失与新增条目，用于换机/恢复后的校验。"""
+    await _ensure_access(current_user, kb_id)
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("papers"), list):
+        raise ResearchDeliverableError("manifest_invalid", "迁移清单缺少 papers 数组")
+    entries = [item for item in manifest["papers"] if isinstance(item, dict)]
+    if not entries:
+        raise ResearchDeliverableError("manifest_empty", "迁移清单没有论文条目")
+    if len(entries) > MAX_MANIFEST_ENTRIES:
+        raise ResearchDeliverableError("manifest_too_large", f"迁移清单最多支持 {MAX_MANIFEST_ENTRIES} 篇论文")
+
+    current_by_id: dict[str, Any] = {}
+    current_by_doi: dict[str, Any] = {}
+    async for batch in AcademicPaperRepository().iter_export_batches(kb_id=kb_id):
+        for paper in batch:
+            current_by_id[str(paper.paper_id)] = paper
+            doi = _manifest_doi(paper.doi)
+            if doi:
+                current_by_doi[doi] = paper
+
+    matched_ids: set[str] = set()
+    missing: list[dict[str, Any]] = []
+    for entry in entries:
+        paper_id = str(entry.get("paper_id") or "")
+        doi = _manifest_doi(entry.get("doi"))
+        paper = current_by_id.get(paper_id) or (current_by_doi.get(doi) if doi else None)
+        if paper is None:
+            missing.append(
+                {
+                    "paper_id": paper_id,
+                    "title": str(entry.get("title") or ""),
+                    "doi": str(entry.get("doi") or ""),
+                }
+            )
+            continue
+        matched_ids.add(str(paper.paper_id))
+
+    extras = [paper for paper_id, paper in current_by_id.items() if paper_id not in matched_ids]
+    return {
+        "kb_id": kb_id,
+        "manifest_paper_count": len(entries),
+        "library_paper_count": len(current_by_id),
+        "matched_count": len(matched_ids),
+        "missing_count": len(missing),
+        "extra_count": len(extras),
+        "missing": missing[:MANIFEST_DETAIL_LIMIT],
+        "extra": [
+            {"paper_id": str(paper.paper_id), "title": str(paper.title or "")}
+            for paper in extras[:MANIFEST_DETAIL_LIMIT]
+        ],
+        "consistent": not missing,
+        "note": (
+            "校验按 paper_id 优先、DOI 兜底匹配；“新增”表示当前库多出的论文，迁移后新增文献属正常情况；"
+            "本校验只对比元数据，不校验原文文件、向量与图谱。"
+        ),
+    }

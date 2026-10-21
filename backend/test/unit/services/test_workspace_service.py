@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
@@ -53,6 +54,7 @@ def test_workspace_root_keeps_existing_agents_prompt_file(tmp_path: Path, monkey
     assert agents_file.read_text(encoding="utf-8") == "保留已有内容"
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows 默认无符号链接权限")
 def test_workspace_root_rejects_symlink_root(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(workspace_paths.conf, "save_dir", str(tmp_path))
     user_root = tmp_path / "threads" / "shared" / "user-1"

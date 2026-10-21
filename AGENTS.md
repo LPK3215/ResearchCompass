@@ -15,7 +15,7 @@ ResearchCompass（科研罗盘）是本仓库作者在开源智能体框架 Yuxi
 | 部署、配置、智能体开发 | `docs/advanced/`、`docs/agents/` |
 | 开发规范、测试、变更记录 | `docs/develop-guides/` |
 | 作者个人编码规则（17 条，优先于通用约定） | `docs/develop-guides/coding-rules.md` |
-| 能力缺口与双通道（人工/AI）修复计划与进度 | `docs/project/2026-10-21-capability-gaps-and-dual-channel-plan.md` |
+| 能力缺口与双通道（人工/AI）收口报告与缺口总账 | `docs/project/2026-10-21-capability-gaps-and-dual-channel-plan.md` |
 | 过程性归档（方案/决策/跟踪表/验收记录） | `docs/project/`（不发布到文档站） |
 | 需求与设计笔记 | `docs/vibe/` |
 

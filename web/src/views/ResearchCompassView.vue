@@ -32,6 +32,17 @@
         <a-button
           v-if="userStore.isAdmin"
           class="lucide-icon-btn"
+          title="导入参考文献"
+          aria-label="导入参考文献"
+          :disabled="!selectedKbId"
+          @click="openReferenceImport"
+        >
+          <template #icon><Upload :size="15" /></template>
+          导入文献
+        </a-button>
+        <a-button
+          v-if="userStore.isAdmin"
+          class="lucide-icon-btn"
           title="同步引用图谱"
           aria-label="同步引用图谱"
           :loading="graphSyncLoading"
@@ -79,6 +90,8 @@
               <a-menu-item key="trends:csv">趋势数据（CSV）</a-menu-item>
               <a-menu-item key="opportunities:json">机会数据（JSON）</a-menu-item>
               <a-menu-item key="opportunities:csv">机会数据（CSV）</a-menu-item>
+              <a-menu-divider />
+              <a-menu-item key="bundle:zip">知识库迁移包（ZIP）</a-menu-item>
             </a-menu>
           </template>
         </a-dropdown>
@@ -90,7 +103,43 @@
         >
           查重
         </a-button>
+        <a-button
+          v-if="userStore.isAdmin"
+          class="lucide-icon-btn"
+          :disabled="!selectedKbId"
+          @click="openManifestModal"
+        >
+          校验清单
+        </a-button>
+        <a-button class="lucide-icon-btn" @click="openOnboarding">
+          <template #icon><CircleHelp :size="15" /></template>
+          使用引导
+        </a-button>
         <a-modal v-model:open="duplicatesOpen" title="重复论文检测" :footer="null" width="720px">
+          <div class="duplicates-toolbar">
+            <a-button size="small" :loading="crossLibraryLoading" @click="checkCrossLibraryDuplicates">
+              跨库查重
+            </a-button>
+          </div>
+          <a-alert v-if="crossLibraryError" type="error" show-icon :message="crossLibraryError" />
+          <div v-if="crossLibraryResult" class="cross-library-result">
+            <p>
+              覆盖 {{ crossLibraryResult.library_count }} 个知识库，发现 {{ crossLibraryResult.duplicate_group_count }} 组跨库重复
+              （{{ crossLibraryResult.duplicate_paper_count }} 篇）。
+            </p>
+            <a-empty v-if="crossLibraryResult.duplicate_group_count === 0" description="未发现跨库重复论文" />
+            <div v-for="group in crossLibraryResult.groups" :key="group.key" class="cross-library-group">
+              <p>
+                <strong>{{ group.key }}</strong> · {{ group.library_count }} 个库 / {{ group.paper_count }} 篇
+              </p>
+              <ul>
+                <li v-for="item in group.papers" :key="`${item.kb_id}:${item.paper_id}`">
+                  {{ item.kb_name }}：{{ item.title || item.paper_id }}（{{ item.publication_year || '年份未知' }}）
+                </li>
+              </ul>
+            </div>
+            <p class="cross-library-note">{{ crossLibraryResult.note }}</p>
+          </div>
           <a-spin v-if="duplicatesLoading" />
           <template v-else>
             <a-empty v-if="duplicateGroups.length === 0" description="未发现重复论文" />
@@ -104,11 +153,174 @@
                   {{ item.title || item.paper_id }}（{{ item.publication_year || '年份未知' }}）
                 </li>
               </ul>
+              <a-popconfirm
+                v-if="userStore.isAdmin"
+                title="合并会把组内多余论文归档，保留建议项；原文与向量不删除，可在下方恢复。"
+                ok-text="合并"
+                cancel-text="取消"
+                @confirm="mergeDuplicateGroup(group)"
+              >
+                <a-button size="small" danger :loading="mergingGroupKey === group.key">合并本组</a-button>
+              </a-popconfirm>
             </div>
             <p v-if="duplicateGroups.length" style="color: var(--color-text-tertiary); font-size: 12px;">
-              仅报告与建议，不会自动合并。
+              合并会将组内多余论文归档（不删除原文与向量），可在下方恢复。
             </p>
+            <div v-if="archivedPapers.length" style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--gray-150);">
+              <p style="margin: 0 0 6px;">
+                <strong>已归档 {{ archivedPapers.length }} 篇</strong>
+                <span style="color: var(--color-text-tertiary); font-size: 12px;">
+                  合并时隐藏，不删除原文与向量
+                </span>
+              </p>
+              <ul style="margin: 0 0 0 18px; padding: 0;">
+                <li v-for="paper in archivedPapers" :key="paper.paper_id" style="margin-bottom: 4px;">
+                  {{ paper.title || paper.paper_id }}（{{ paper.publication_year || '年份未知' }}）
+                  <a-button
+                    v-if="userStore.isAdmin"
+                    type="link"
+                    size="small"
+                    :loading="restoringPaperId === paper.paper_id"
+                    @click="restoreArchivedPaper(paper)"
+                  >
+                    恢复
+                  </a-button>
+                </li>
+              </ul>
+            </div>
           </template>
+        </a-modal>
+        <a-modal
+          v-model:open="manifestModalOpen"
+          title="校验迁移清单"
+          :footer="null"
+          width="640px"
+        >
+          <p class="manifest-hint">
+            选择由“导出知识库清单”下载的 JSON；校验按 paper_id 优先、DOI 兜底匹配，只比对元数据，不校验原文文件与向量。
+          </p>
+          <input
+            ref="manifestFileInput"
+            type="file"
+            accept="application/json,.json"
+            class="manifest-file-input"
+            @change="handleManifestFile"
+          />
+          <a-space>
+            <a-button :loading="manifestExporting" @click="exportManifest">导出当前库清单</a-button>
+            <a-button type="primary" :loading="manifestValidating" @click="manifestFileInput?.click()">
+              选择清单文件
+            </a-button>
+          </a-space>
+          <a-spin v-if="manifestValidating" />
+          <a-alert v-if="manifestError" type="error" show-icon :message="manifestError" />
+          <div v-if="manifestResult" class="manifest-result">
+            <p>
+              清单 {{ manifestResult.manifest_paper_count }} 篇 · 当前库 {{ manifestResult.library_paper_count }} 篇 · 匹配
+              {{ manifestResult.matched_count }} 篇
+            </p>
+            <a-alert
+              :type="manifestResult.consistent ? 'success' : 'warning'"
+              show-icon
+              :message="manifestResult.consistent ? '清单中的论文全部存在' : `缺失 ${manifestResult.missing_count} 篇`"
+            />
+            <ul v-if="manifestResult.missing?.length" class="manifest-missing-list">
+              <li v-for="item in manifestResult.missing" :key="item.paper_id || item.doi">
+                {{ item.title || item.doi || item.paper_id }}
+              </li>
+            </ul>
+            <p>当前库新增 {{ manifestResult.extra_count }} 篇（迁移后新增文献属正常）。</p>
+            <p class="manifest-note">{{ manifestResult.note }}</p>
+          </div>
+        </a-modal>
+        <a-modal
+          v-model:open="onboardingOpen"
+          title="新手引导：从建库到综述"
+          :footer="null"
+          width="640px"
+          @cancel="closeOnboarding"
+        >
+          <a-spin v-if="onboardingLoading" />
+          <template v-else>
+            <p style="color: var(--color-text-secondary);">
+              已完成 {{ onboarding.completed_count }} / {{ onboarding.total }} 步；完成状态按你的真实使用记录判断，不是演示数据。
+            </p>
+            <ol style="padding-left: 20px;">
+              <li v-for="step in onboarding.steps" :key="step.key" style="margin-bottom: 10px;">
+                <strong>{{ step.completed ? '✓' : '○' }} {{ step.title }}</strong>
+                <p style="margin: 2px 0 0; color: var(--color-text-secondary); font-size: 12px;">
+                  {{ step.hint }}
+                </p>
+                <a-button
+                  v-if="!step.completed"
+                  type="link"
+                  size="small"
+                  style="padding: 0;"
+                  @click="goToOnboardingStep(step)"
+                >
+                  去完成
+                </a-button>
+              </li>
+            </ol>
+            <p v-if="onboarding.all_completed" style="color: var(--color-text-secondary);">
+              四步都已完成，可以直接开始你的研究项目。
+            </p>
+            <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px;">
+              <a-button :loading="onboardingLoading" @click="loadOnboarding">重新检查</a-button>
+              <a-button type="primary" @click="closeOnboarding">知道了</a-button>
+            </div>
+          </template>
+        </a-modal>
+        <a-modal
+          v-model:open="referenceImportOpen"
+          title="导入参考文献文件"
+          :footer="null"
+          width="640px"
+        >
+          <div style="display: grid; gap: 12px;">
+            <p style="margin: 0; color: var(--color-text-tertiary); font-size: 12px;">
+              支持 BibTeX（.bib）与 RIS（.ris）。只导入元数据，不下载全文；按 DOI 优先、标题兜底去重。
+            </p>
+            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+              <input type="file" accept=".bib,.ris,text/plain" @change="readReferenceFile" />
+              <a-select v-model:value="referenceImportFormat" style="width: 140px">
+                <a-select-option value="auto">自动识别</a-select-option>
+                <a-select-option value="bibtex">BibTeX</a-select-option>
+                <a-select-option value="ris">RIS</a-select-option>
+              </a-select>
+              <span v-if="referenceImportFileName" style="font-size: 12px;">{{ referenceImportFileName }}</span>
+            </div>
+            <a-textarea
+              v-model:value="referenceImportContent"
+              :rows="8"
+              placeholder="也可以直接粘贴 BibTeX / RIS 内容"
+            />
+            <a-alert v-if="referenceImportError" type="error" show-icon :message="referenceImportError" />
+            <a-alert
+              v-if="referenceImportResult"
+              type="success"
+              show-icon
+              :message="`导入完成：新增 ${referenceImportResult.imported_count}，跳过 ${referenceImportResult.skipped_count}，失败 ${referenceImportResult.failed_count}`"
+              description="导入的论文仅含元数据，不参与全文检索；需要全文请按 DOI 导入外部论文。"
+            />
+            <div v-if="referenceImportResult?.failed?.length" style="max-height: 160px; overflow: auto;">
+              <p style="margin: 0 0 4px; font-size: 12px;">失败条目（最多显示 50 条）：</p>
+              <ul style="margin: 0 0 0 18px; padding: 0; font-size: 12px;">
+                <li v-for="item in referenceImportResult.failed" :key="`${item.index}-${item.error_type}`">
+                  第 {{ item.index }} 条：{{ item.message }}
+                </li>
+              </ul>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 8px;">
+              <a-button @click="referenceImportOpen = false">取消</a-button>
+              <a-button
+                type="primary"
+                :loading="referenceImportLoading"
+                :disabled="!referenceImportContent.trim()"
+                @click="submitReferenceImport"
+              >开始导入</a-button>
+            </div>
+          </div>
         </a-modal>
         <a-button
           class="lucide-icon-btn"
@@ -1031,6 +1243,31 @@
           </div>
         </section>
 
+        <section class="screening-bar" aria-label="文献筛选">
+          <div class="screening-counts">
+            <span>识别 {{ screeningCounts?.identified ?? 0 }}</span>
+            <span class="screening-included">纳入 {{ screeningCounts?.included ?? 0 }}</span>
+            <span class="screening-excluded">排除 {{ screeningCounts?.excluded ?? 0 }}</span>
+            <span>待定 {{ screeningCounts?.pending ?? 0 }}</span>
+            <span v-if="screeningError" class="screening-error">{{ screeningError }}</span>
+          </div>
+          <div class="screening-actions">
+            <span v-if="selectedPaperIds.length">已选 {{ selectedPaperIds.length }} 篇</span>
+            <a-button size="small" :disabled="!selectedPaperIds.length" @click="openScreeningModal('included')">
+              标记纳入
+            </a-button>
+            <a-button size="small" :disabled="!selectedPaperIds.length" @click="openScreeningModal('excluded')">
+              标记排除
+            </a-button>
+            <a-button size="small" :disabled="!selectedPaperIds.length" @click="openScreeningModal('pending')">
+              退回待定
+            </a-button>
+            <a-button size="small" :loading="screeningExporting" @click="exportScreening">
+              导出筛选 CSV
+            </a-button>
+          </div>
+        </section>
+
         <div v-if="loading && papers.length === 0" class="papers-loading">
           <a-skeleton active :paragraph="{ rows: 8 }" />
         </div>
@@ -1070,9 +1307,24 @@
             <div class="paper-icon" aria-hidden="true">
               <FileText :size="20" />
             </div>
+            <a-checkbox
+              class="paper-select"
+              :checked="selectedPaperIds.includes(paper.paper_id)"
+              @click.stop
+              @change="togglePaperSelection(paper.paper_id)"
+            />
             <div class="paper-main">
               <div class="paper-title-row">
                 <h3>{{ paper.title }}</h3>
+                <a-tag v-if="!paper.has_fulltext" style="margin-left: 8px;">仅元数据</a-tag>
+                <span
+                  v-if="screeningMap[paper.paper_id]"
+                  class="screening-tag"
+                  :class="`screening-${screeningMap[paper.paper_id].decision}`"
+                  :title="screeningMap[paper.paper_id].reason || ''"
+                >
+                  {{ screeningDecisionLabel(screeningMap[paper.paper_id].decision) }}
+                </span>
                 <span class="metadata-status" :class="statusClass(paper.metadata_status)">
                   {{ statusLabel(paper.metadata_status) }}
                 </span>
@@ -1119,7 +1371,7 @@
             show-size-changer
             show-quick-jumper
             :show-total="(value) => `共 ${value} 篇`"
-            @change="loadPapers"
+            @change="handlePageChange"
             @show-size-change="handlePageSizeChange"
           />
         </div>
@@ -1140,14 +1392,34 @@
     />
 
     <a-modal
+      v-model:open="screeningModalOpen"
+      :title="screeningDecisionLabel(screeningDecision) + '论文'"
+      :confirm-loading="screeningSubmitting"
+      ok-text="保存"
+      destroy-on-close
+      @ok="submitScreening"
+    >
+      <p class="screening-modal-hint">
+        将对已选的 {{ selectedPaperIds.length }} 篇论文记录“{{ screeningDecisionLabel(screeningDecision) }}”结论；理由可选，建议排除时填写依据。
+      </p>
+      <a-textarea
+        v-model:value="screeningReason"
+        :maxlength="500"
+        show-count
+        :rows="3"
+        placeholder="筛选理由（例如：主题不符 / 非同行评审 / 样本量不足）"
+      />
+    </a-modal>
+
+    <a-modal
       v-model:open="externalImportOpen"
-      title="导入 Semantic Scholar 公开论文"
+      title="导入公开论文（多源检索）"
       width="760px"
       :footer="null"
       destroy-on-close
     >
       <p class="external-import-help">
-        输入论文标题、DOI 或 Semantic Scholar Paper ID。系统只导入 Semantic Scholar 声明的公开 PDF，下载后会自动进入 Academic Paper 分块、解析和 Milvus 索引任务。
+        输入论文标题、DOI 或 Semantic Scholar Paper ID。关键词检索会同时查询 Semantic Scholar、OpenAlex 与 Crossref 并按 DOI 归并；导入仍走 Semantic Scholar 声明的公开 PDF，下载后自动进入 Academic Paper 分块、解析和索引任务。
       </p>
       <div class="external-import-search-row">
         <a-input
@@ -1161,6 +1433,11 @@
         </a-button>
       </div>
       <a-alert v-if="externalImportError" type="error" show-icon :message="externalImportError" />
+      <div v-if="externalSources.some((source) => source.status === 'failed')" class="external-source-status">
+        <a-tag v-for="source in externalSources" :key="source.source" :color="source.status === 'ok' ? 'green' : 'orange'">
+          {{ source.label }}：{{ source.status === 'ok' ? `可用 ${source.count} 条` : source.message || '暂不可用' }}
+        </a-tag>
+      </div>
       <a-spin v-if="externalSearchLoading" />
       <a-empty v-else-if="externalSearchPerformed && !externalPapers.length" description="没有找到可导入的论文" />
       <div v-else class="external-paper-results">
@@ -1171,6 +1448,7 @@
             <p v-if="paper.abstract" class="external-paper-abstract">{{ paper.abstract }}</p>
             <div class="external-paper-meta">
               <a-tag v-if="paper.doi">DOI {{ paper.doi }}</a-tag>
+              <a-tag v-for="source in paper.sources || []" :key="source">{{ source }}</a-tag>
               <a-tag v-if="paper.is_open_access" color="green">公开获取</a-tag>
               <a-tag v-else color="orange">无公开 PDF</a-tag>
               <span v-if="paper.citation_count !== null && paper.citation_count !== undefined">被引 {{ paper.citation_count }}</span>
@@ -1195,6 +1473,7 @@
       :can-edit="userStore.isAdmin"
       @close="closePaper"
       @updated="handlePaperUpdated"
+      @library-changed="loadPapers"
     />
 
     <a-drawer
@@ -1283,13 +1562,14 @@
 // 与用户评测等多张工作台；通用对话页与智能体运行时由 Yuxi 提供，本视图不重复实现。
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
   AlertTriangle,
   BookOpenText,
   CalendarDays,
   ChevronDown,
   ChevronRight,
+  CircleHelp,
   CircleStop,
   Database,
   Download,
@@ -1306,7 +1586,8 @@ import {
   Search,
   ShieldCheck,
   Sparkles,
-  Target
+  Target,
+  Upload
 } from 'lucide-vue-next'
 import { databaseApi } from '@/apis/knowledge_api'
 import { researchApi } from '@/apis/research_api'
@@ -1347,6 +1628,7 @@ const loadPdfJs = () => {
 }
 
 const router = useRouter()
+const route = useRoute()
 const userStore = useUserStore()
 const databases = ref([])
 const databasesLoading = ref(false)
@@ -1374,10 +1656,27 @@ const evidencePdfPreviewRef = ref(null)
 const evidencePdfCanvasRef = ref(null)
 const evidencePdfAspectRatio = ref('')
 const exportLoading = ref(false)
+const screeningCounts = ref(null)
+const screeningMap = ref({})
+const screeningError = ref('')
+const screeningSubmitting = ref(false)
+const screeningExporting = ref(false)
+const screeningModalOpen = ref(false)
+const screeningDecision = ref('included')
+const screeningReason = ref('')
+const selectedPaperIds = ref([])
 const graphExportLoading = ref(false)
 const externalImportOpen = ref(false)
+const referenceImportOpen = ref(false)
+const referenceImportContent = ref('')
+const referenceImportFormat = ref('auto')
+const referenceImportFileName = ref('')
+const referenceImportLoading = ref(false)
+const referenceImportResult = ref(null)
+const referenceImportError = ref('')
 const externalImportQuery = ref('')
 const externalPapers = ref([])
+const externalSources = ref([])
 const externalSearchLoading = ref(false)
 const externalSearchPerformed = ref(false)
 const externalImportError = ref('')
@@ -1760,12 +2059,94 @@ const loadPapers = async () => {
     if (page.value > 1 && papers.value.length === 0 && total.value > 0) {
       page.value = Math.ceil(total.value / pageSize.value)
       await loadPapers()
+      return
     }
+    await loadScreening()
   } catch (error) {
     if (requestGeneration !== workspaceRequestGeneration) return
     papersError.value = error.message || '无法加载论文列表'
   } finally {
     if (requestGeneration === workspaceRequestGeneration) loading.value = false
+  }
+}
+
+const loadScreening = async () => {
+  if (!selectedKbId.value) {
+    screeningCounts.value = null
+    screeningMap.value = {}
+    return
+  }
+  const kbId = selectedKbId.value
+  screeningError.value = ''
+  try {
+    const result = await researchApi.getPaperScreening(kbId, {
+      paper_ids: papers.value.map((paper) => paper.paper_id).join(','),
+      limit: 200
+    })
+    if (kbId !== selectedKbId.value) return
+    screeningCounts.value = result.counts || null
+    screeningMap.value = Object.fromEntries(
+      (result.items || [])
+        .filter((item) => item.decision !== 'pending')
+        .map((item) => [item.paper_id, item])
+    )
+  } catch (error) {
+    if (kbId !== selectedKbId.value) return
+    screeningError.value = error.message || '筛选状态加载失败'
+  }
+}
+
+const screeningDecisionLabel = (decision) => ({
+  included: '纳入',
+  excluded: '排除',
+  pending: '待定'
+})[decision] || decision || '待定'
+
+const togglePaperSelection = (paperId) => {
+  selectedPaperIds.value = selectedPaperIds.value.includes(paperId)
+    ? selectedPaperIds.value.filter((item) => item !== paperId)
+    : [...selectedPaperIds.value, paperId]
+}
+
+const openScreeningModal = (decision) => {
+  screeningDecision.value = decision
+  screeningReason.value = ''
+  screeningModalOpen.value = true
+}
+
+const submitScreening = async () => {
+  if (!selectedKbId.value || selectedPaperIds.value.length === 0) return
+  screeningSubmitting.value = true
+  try {
+    const result = await researchApi.setPaperScreening(selectedKbId.value, {
+      paper_ids: selectedPaperIds.value,
+      decision: screeningDecision.value,
+      reason: screeningReason.value
+    })
+    message.success(`已记录 ${result.updated} 篇论文的筛选结论`)
+    screeningModalOpen.value = false
+    selectedPaperIds.value = []
+    await loadScreening()
+  } catch (error) {
+    message.error(error.message || '筛选结论保存失败')
+  } finally {
+    screeningSubmitting.value = false
+  }
+}
+
+const exportScreening = async () => {
+  if (!selectedKbId.value) return
+  const kbId = selectedKbId.value
+  screeningExporting.value = true
+  try {
+    const blob = await researchApi.exportPaperScreening(kbId)
+    if (kbId !== selectedKbId.value) return
+    saveBlob(blob, `paper_screening_${kbId}.csv`)
+    message.success('筛选结果已导出')
+  } catch (error) {
+    message.error(error.message || '筛选结果导出失败')
+  } finally {
+    screeningExporting.value = false
   }
 }
 
@@ -2238,6 +2619,53 @@ const closeEvidence = () => {
   evidenceDownloadVariant.value = ''
 }
 
+const openReferenceImport = () => {
+  referenceImportResult.value = null
+  referenceImportError.value = ''
+  referenceImportOpen.value = true
+}
+
+const readReferenceFile = (event) => {
+  const file = event?.target?.files?.[0]
+  if (!file) return
+  const reader = new FileReader()
+  reader.onload = () => {
+    referenceImportContent.value = String(reader.result || '')
+    referenceImportFileName.value = file.name
+    referenceImportResult.value = null
+    referenceImportError.value = ''
+  }
+  reader.onerror = () => {
+    referenceImportError.value = '文件读取失败'
+  }
+  reader.readAsText(file)
+}
+
+const submitReferenceImport = async () => {
+  const content = referenceImportContent.value.trim()
+  if (!selectedKbId.value || !content || referenceImportLoading.value) return
+  const kbId = selectedKbId.value
+  const requestGeneration = workspaceRequestGeneration
+  referenceImportLoading.value = true
+  referenceImportError.value = ''
+  referenceImportResult.value = null
+  try {
+    const result = await researchApi.importReferenceFile(kbId, {
+      content,
+      format: referenceImportFormat.value === 'auto' ? null : referenceImportFormat.value
+    })
+    if (requestGeneration !== workspaceRequestGeneration || kbId !== selectedKbId.value) return
+    referenceImportResult.value = result
+    message.success(`导入完成：新增 ${result.imported_count}，跳过 ${result.skipped_count}`)
+    await loadPapers()
+  } catch (error) {
+    if (requestGeneration !== workspaceRequestGeneration) return
+    referenceImportError.value = error.message || '参考文献导入失败'
+  } finally {
+    if (requestGeneration === workspaceRequestGeneration) referenceImportLoading.value = false
+  }
+}
+
 const searchExternalPaperCatalog = async () => {
   const query = externalImportQuery.value.trim()
   if (!selectedKbId.value || !query) {
@@ -2253,9 +2681,11 @@ const searchExternalPaperCatalog = async () => {
     const result = await researchApi.searchExternalPapers(kbId, query, 10)
     if (requestGeneration !== workspaceRequestGeneration || kbId !== selectedKbId.value) return
     externalPapers.value = result.items || []
+    externalSources.value = result.sources || []
   } catch (error) {
     if (requestGeneration !== workspaceRequestGeneration) return
     externalPapers.value = []
+    externalSources.value = []
     externalImportError.value = error.message || '外部论文搜索失败'
   } finally {
     if (requestGeneration === workspaceRequestGeneration) externalSearchLoading.value = false
@@ -2274,6 +2704,7 @@ const importExternalPaperItem = async (paper) => {
     message.success(`已提交“${paper.title || paper.paper_id}”导入任务`)
     externalImportOpen.value = false
     externalPapers.value = []
+    externalSources.value = []
     externalImportQuery.value = ''
     externalSearchPerformed.value = false
     await loadPapers()
@@ -2449,17 +2880,182 @@ const dataExportLoading = ref(false)
 const duplicatesOpen = ref(false)
 const duplicatesLoading = ref(false)
 const duplicateGroups = ref([])
+const crossLibraryLoading = ref(false)
+const crossLibraryError = ref('')
+const crossLibraryResult = ref(null)
+const manifestModalOpen = ref(false)
+const manifestValidating = ref(false)
+const manifestExporting = ref(false)
+const manifestError = ref('')
+const manifestResult = ref(null)
+const manifestFileInput = ref(null)
+const MAX_MANIFEST_FILE_BYTES = 8 * 1024 * 1024
+const onboardingOpen = ref(false)
+const onboardingLoading = ref(false)
+const onboarding = reactive({ steps: [], completed_count: 0, total: 4, all_completed: false })
+const onboardingStorageKey = () => `research-onboarding-seen:${userStore.uid || 'anonymous'}`
+const loadOnboarding = async () => {
+  onboardingLoading.value = true
+  try {
+    const result = await researchApi.getOnboardingState()
+    onboarding.steps = result.steps || []
+    onboarding.completed_count = result.completed_count || 0
+    onboarding.total = (result.steps || []).length
+    onboarding.all_completed = Boolean(result.all_completed)
+  } catch (error) {
+    message.error(error.message || '引导状态加载失败')
+  } finally {
+    onboardingLoading.value = false
+  }
+}
+const openOnboarding = async () => {
+  onboardingOpen.value = true
+  await loadOnboarding()
+}
+const closeOnboarding = () => {
+  onboardingOpen.value = false
+  localStorage.setItem(onboardingStorageKey(), '1')
+}
+const maybeOpenOnboarding = async () => {
+  if (localStorage.getItem(onboardingStorageKey())) return
+  await openOnboarding()
+}
+const onboardingActions = {
+  create_knowledge_base: openKnowledgeManagement,
+  upload_paper: openKnowledgeManagement,
+  run_search: () => {
+    activeMode.value = 'search'
+  },
+  run_synthesis: () => {
+    activeMode.value = 'synthesis'
+  }
+}
+const goToOnboardingStep = (step) => {
+  closeOnboarding()
+  onboardingActions[step.key]?.()
+}
+const archivedPapers = ref([])
+const restoringPaperId = ref('')
+const mergingGroupKey = ref('')
+const loadArchivedPapers = async () => {
+  if (!selectedKbId.value) return
+  try {
+    const result = await researchApi.listArchivedPapers(selectedKbId.value)
+    archivedPapers.value = result.items || []
+  } catch (error) {
+    archivedPapers.value = []
+    message.error(error.message || '已归档论文加载失败')
+  }
+}
+
+const checkCrossLibraryDuplicates = async () => {
+  crossLibraryLoading.value = true
+  crossLibraryError.value = ''
+  try {
+    crossLibraryResult.value = await researchApi.findCrossLibraryDuplicates()
+  } catch (error) {
+    crossLibraryResult.value = null
+    crossLibraryError.value = error.message || '跨库查重失败'
+  } finally {
+    crossLibraryLoading.value = false
+  }
+}
+
+const openManifestModal = () => {
+  manifestModalOpen.value = true
+  manifestError.value = ''
+  manifestResult.value = null
+}
+
+const exportManifest = async () => {
+  if (!selectedKbId.value || manifestExporting.value) return
+  manifestExporting.value = true
+  try {
+    const blob = await researchApi.exportKbManifest(selectedKbId.value)
+    saveBlob(blob, `research_manifest_${selectedKbId.value}.json`)
+    message.success('迁移清单已导出')
+  } catch (error) {
+    message.error(error.message || '迁移清单导出失败')
+  } finally {
+    manifestExporting.value = false
+  }
+}
+
+const handleManifestFile = async (event) => {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file || !selectedKbId.value) return
+  if (file.size > MAX_MANIFEST_FILE_BYTES) {
+    manifestError.value = '清单文件不能超过 8 MB'
+    return
+  }
+  manifestValidating.value = true
+  manifestError.value = ''
+  manifestResult.value = null
+  try {
+    let manifest
+    try {
+      manifest = JSON.parse(await file.text())
+    } catch {
+      manifestError.value = '清单文件不是合法 JSON'
+      return
+    }
+    manifestResult.value = await researchApi.validateKbManifest(selectedKbId.value, manifest)
+  } catch (error) {
+    manifestError.value = error.message || '迁移清单校验失败'
+  } finally {
+    manifestValidating.value = false
+  }
+}
+
 const checkDuplicates = async () => {
   if (!selectedKbId.value) return
   duplicatesOpen.value = true
   duplicatesLoading.value = true
+  crossLibraryResult.value = null
+  crossLibraryError.value = ''
   try {
     const result = await researchApi.findDuplicatePapers(selectedKbId.value)
     duplicateGroups.value = result.groups || []
+    await loadArchivedPapers()
   } catch (error) {
     message.error(error.message || '重复检测失败')
   } finally {
     duplicatesLoading.value = false
+  }
+}
+const mergeDuplicateGroup = async (group) => {
+  if (!selectedKbId.value || mergingGroupKey.value) return
+  mergingGroupKey.value = group.key
+  try {
+    const result = await researchApi.mergeDuplicateGroup(selectedKbId.value, group.key)
+    const archivedCount = result.archived_paper_ids?.length || 0
+    message.success(`已合并，归档 ${archivedCount} 篇`)
+    await loadArchivedPapers()
+    await loadPapers()
+    const refreshed = await researchApi.findDuplicatePapers(selectedKbId.value)
+    duplicateGroups.value = refreshed.groups || []
+  } catch (error) {
+    message.error(error.message || '合并失败')
+  } finally {
+    mergingGroupKey.value = ''
+  }
+}
+
+const restoreArchivedPaper = async (paper) => {
+  if (!selectedKbId.value || restoringPaperId.value) return
+  restoringPaperId.value = paper.paper_id
+  try {
+    await researchApi.restoreArchivedPapers(selectedKbId.value, [paper.paper_id])
+    message.success(`已恢复：${paper.title || paper.paper_id}`)
+    await loadArchivedPapers()
+    await loadPapers()
+    const result = await researchApi.findDuplicatePapers(selectedKbId.value)
+    duplicateGroups.value = result.groups || []
+  } catch (error) {
+    message.error(error.message || '恢复失败')
+  } finally {
+    restoringPaperId.value = ''
   }
 }
 const exportResearchData = async ({ key }) => {
@@ -2468,6 +3064,13 @@ const exportResearchData = async ({ key }) => {
   const [kind, format] = String(key).split(':')
   dataExportLoading.value = true
   try {
+    if (kind === 'bundle') {
+      const blob = await researchApi.exportKbBundle(kbId)
+      if (kbId !== selectedKbId.value) return
+      saveBlob(blob, `research_bundle_${kbId}.zip`)
+      message.success('知识库迁移包已导出')
+      return
+    }
     const blob = await researchApi.exportResearchData(kbId, kind, format)
     saveBlob(blob, `research_${kind}_${kbId}.${format}`)
     message.success('数据已导出')
@@ -2578,6 +3181,11 @@ const handleDatabaseChange = (kbId) => {
   externalPapers.value = []
   externalSearchPerformed.value = false
   externalImportError.value = ''
+  externalSources.value = []
+  selectedPaperIds.value = []
+  screeningCounts.value = null
+  screeningMap.value = {}
+  screeningError.value = ''
   loadPapers()
   graphData.value = null
   graphError.value = ''
@@ -2690,6 +3298,7 @@ const continueProjectAsset = async (asset) => {
 
 const applyFilters = () => {
   page.value = 1
+  selectedPaperIds.value = []
   loadPapers()
 }
 
@@ -2701,6 +3310,12 @@ const resetFilters = () => {
 
 const handlePageSizeChange = () => {
   page.value = 1
+  selectedPaperIds.value = []
+  loadPapers()
+}
+
+const handlePageChange = () => {
+  selectedPaperIds.value = []
   loadPapers()
 }
 
@@ -2725,10 +3340,27 @@ const openSelectedKnowledgeBase = () => {
   router.push(`/extensions/knowledgebase/${encodeURIComponent(selectedKbId.value)}`)
 }
 
+const openRouteEvidence = async () => {
+  const kbId = String(route.query.kbId || '')
+  const paperId = String(route.query.paperId || '')
+  const chunkId = String(route.query.chunkId || '')
+  if (!kbId || !paperId || !chunkId) return
+  if (databases.value.some((database) => database.kb_id === kbId) && selectedKbId.value !== kbId) {
+    selectedKbId.value = kbId
+    await loadPapers()
+  }
+  activeMode.value = 'library'
+  await openEvidence({ paper_id: paperId }, { chunk_id: chunkId })
+  await router.replace({ name: 'ResearchCompass' })
+}
+
 onMounted(async () => {
   await loadDatabases()
   await loadPapers()
+  await openRouteEvidence()
+  await maybeOpenOnboarding()
 })
+
 
 watch(activeMode, (mode) => {
   if (mode === 'graph' && !graphData.value) loadAcademicGraph()
@@ -4099,6 +4731,135 @@ onBeforeUnmount(() => {
   font-size: 13px;
 }
 
+.screening-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 14px;
+  border: 1px solid var(--gray-150);
+  border-radius: 8px;
+  background: var(--gray-10);
+  font-size: 12px;
+}
+
+.screening-counts,
+.screening-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  color: var(--color-text-secondary);
+}
+
+.screening-included {
+  color: var(--color-success-700);
+}
+
+.screening-excluded {
+  color: var(--color-error-700);
+}
+
+.screening-error {
+  color: var(--color-error-700);
+}
+
+.screening-tag {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+
+  &.screening-included {
+    color: var(--color-success-700);
+    background: var(--color-success-50);
+  }
+
+  &.screening-excluded {
+    color: var(--color-error-700);
+    background: var(--color-error-50);
+  }
+}
+
+.screening-modal-hint {
+  margin: 0 0 12px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+
+.manifest-hint {
+  margin: 0 0 12px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+
+.duplicates-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
+.cross-library-result {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--gray-150);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.cross-library-group {
+  margin-top: 8px;
+
+  ul {
+    margin: 4px 0 0 18px;
+    padding: 0;
+  }
+}
+
+.cross-library-note {
+  margin-bottom: 0;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+
+.manifest-file-input {
+  display: none;
+}
+
+.manifest-result {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+.manifest-result p {
+  margin: 0;
+}
+
+.manifest-missing-list {
+  margin: 0;
+  padding-left: 20px;
+  max-height: 180px;
+  overflow-y: auto;
+  color: var(--color-error-700);
+}
+
+.manifest-note {
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+
+.external-source-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+}
+
 .papers-loading,
 .page-empty {
   padding: 48px 20px;
@@ -4127,7 +4888,7 @@ onBeforeUnmount(() => {
 
 .paper-row {
   display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) 24px;
+  grid-template-columns: 40px 20px minmax(0, 1fr) 24px;
   gap: 14px;
   align-items: start;
   padding: 16px 18px;
@@ -4147,6 +4908,10 @@ onBeforeUnmount(() => {
   &:focus-visible {
     box-shadow: inset 0 0 0 2px var(--main-200);
   }
+}
+
+.paper-select {
+  margin-top: 10px;
 }
 
 .paper-icon {
@@ -4436,7 +5201,7 @@ onBeforeUnmount(() => {
   }
 
   .paper-row {
-    grid-template-columns: 32px minmax(0, 1fr);
+    grid-template-columns: 32px 20px minmax(0, 1fr);
     padding: 14px;
   }
 

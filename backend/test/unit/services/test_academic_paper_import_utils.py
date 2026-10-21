@@ -209,6 +209,13 @@ class TestOpenAccessUrl:
         paper = {"openAccessPdf": {"url": "https://example.com/paper.pdf"}}
         assert _open_access_url(paper) == "https://example.com/paper.pdf"
 
+    def test_arxiv_url_preferred_over_open_access_pdf(self):
+        paper = {
+            "openAccessPdf": {"url": "https://example.com/landing-page"},
+            "externalIds": {"ArXiv": "1810.04805"},
+        }
+        assert _open_access_url(paper) == "https://arxiv.org/pdf/1810.04805.pdf"
+
     def test_missing_open_access_pdf_returns_none(self):
         paper = {"title": "Test"}
         assert _open_access_url(paper) is None

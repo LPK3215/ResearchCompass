@@ -8,13 +8,15 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+import re
 from typing import Any
 
-from sqlalchemy import String, cast, func, or_, select
+from sqlalchemy import String, cast, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 
 from yuxi.storage.postgres.manager import pg_manager
-from yuxi.storage.postgres.models_knowledge import AcademicPaper, AcademicPaperTag
+from yuxi.storage.postgres.models_knowledge import AcademicPaper, AcademicPaperScreening, AcademicPaperTag
+from yuxi.utils.datetime_utils import utc_now_naive
 
 
 class AcademicPaperRepository:
@@ -86,7 +88,29 @@ class AcademicPaperRepository:
                     select(AcademicPaper).where(AcademicPaper.kb_id == kb_id, or_(*duplicate_filters))
                 )
                 duplicate = duplicate_result.scalar_one_or_none()
+                if duplicate is None and values.get("title"):
+                    normalized_title = self._normalize_title(values["title"])
+                    year = values.get("publication_year")
+                    candidates = await session.execute(select(AcademicPaper).where(AcademicPaper.kb_id == kb_id))
+                    for candidate in candidates.scalars().all():
+                        if year is not None and candidate.publication_year is not None:
+                            if int(candidate.publication_year) != int(year):
+                                continue
+                        if self._normalize_title(candidate.title) == normalized_title:
+                            duplicate = candidate
+                            break
                 if duplicate is not None:
+                    if duplicate.file_id is None:
+                        duplicate.file_id = file_id
+                        existing_doi = str(duplicate.doi or "").strip()
+                        for key, value in values.items():
+                            if key in {"paper_id", "kb_id", "file_id"}:
+                                continue
+                            if key == "doi" and existing_doi:
+                                continue
+                            setattr(duplicate, key, value)
+                        await session.flush()
+                        return duplicate
                     raise ValueError(f"论文已存在于当前知识库: {duplicate.title}")
                 revision = max(int(values.get("metadata_revision") or 1), 1)
                 values["metadata_revision"] = revision
@@ -149,6 +173,28 @@ class AcademicPaperRepository:
             papers_by_id = {paper.paper_id: paper for paper in result.scalars().all()}
         return [papers_by_id[paper_id] for paper_id in normalized_ids if paper_id in papers_by_id]
 
+    @staticmethod
+    def _normalize_title(value: Any) -> str:
+        normalized = re.sub(r"[^0-9a-z\u4e00-\u9fff]+", "", str(value or "").lower())
+        return normalized[:80]
+
+    async def find_by_normalized_title(
+        self, *, kb_id: str, title: str, year: int | None = None
+    ) -> AcademicPaper | None:
+        """按归一化标题查找论文，年份均存在时必须一致，避免同名不同年误匹配。"""
+        normalized = self._normalize_title(title)
+        if not normalized:
+            return None
+        async with pg_manager.get_async_session_context() as session:
+            result = await session.execute(select(AcademicPaper).where(AcademicPaper.kb_id == kb_id))
+            for paper in result.scalars().all():
+                if year is not None and paper.publication_year is not None:
+                    if int(paper.publication_year) != int(year):
+                        continue
+                if self._normalize_title(paper.title) == normalized:
+                    return paper
+        return None
+
     async def find_duplicate_for_import(
         self,
         *,
@@ -156,6 +202,8 @@ class AcademicPaperRepository:
         paper_id: str,
         doi: str | None,
         external_ids: dict[str, Any] | None,
+        title: str | None = None,
+        year: int | None = None,
     ) -> AcademicPaper | None:
         """在单个知识库内按任意稳定外部标识查重，命中则返回已存在的论文记录。"""
         identity_filters = [AcademicPaper.paper_id == paper_id]
@@ -188,7 +236,10 @@ class AcademicPaperRepository:
             result = await session.execute(
                 select(AcademicPaper).where(AcademicPaper.kb_id == kb_id, or_(*identity_filters)).limit(1)
             )
-            return result.scalar_one_or_none()
+            duplicate = result.scalar_one_or_none()
+        if duplicate is None and title:
+            duplicate = await self.find_by_normalized_title(kb_id=kb_id, title=title, year=year)
+        return duplicate
 
     async def update(self, *, kb_id: str, paper_id: str, data: dict[str, Any]) -> AcademicPaper | None:
         values = {key: value for key, value in data.items() if key in self._writable_fields}
@@ -276,6 +327,7 @@ class AcademicPaperRepository:
             AcademicPaper.kb_id == kb_id,
             AcademicPaper.indexed_revision >= AcademicPaper.metadata_revision,
             AcademicPaper.metadata_status.in_(["extracted", "verified"]),
+            AcademicPaper.archived_at.is_(None),
         ]
         if year_from is not None:
             filters.append(AcademicPaper.publication_year >= year_from)
@@ -297,6 +349,7 @@ class AcademicPaperRepository:
             AcademicPaper.kb_id == kb_id,
             AcademicPaper.indexed_revision >= AcademicPaper.metadata_revision,
             AcademicPaper.metadata_status.in_(["extracted", "verified"]),
+            AcademicPaper.archived_at.is_(None),
         ]
         if paper_ids:
             filters.append(AcademicPaper.paper_id.in_(paper_ids))
@@ -311,6 +364,7 @@ class AcademicPaperRepository:
             AcademicPaper.kb_id == kb_id,
             AcademicPaper.indexed_revision >= AcademicPaper.metadata_revision,
             AcademicPaper.metadata_status.in_(["extracted", "verified"]),
+            AcademicPaper.archived_at.is_(None),
         ]
         if year_from is not None:
             filters.append(AcademicPaper.publication_year >= year_from)
@@ -342,6 +396,54 @@ class AcademicPaperRepository:
             paper.external_ids = external_ids
             paper.citation_count = citation_count
 
+    async def archive_papers(self, *, kb_id: str, paper_ids: list[str]) -> list[str]:
+        """标记论文为已归档（只写归档时间，不改元数据状态），返回本次新归档的论文 ID。"""
+        normalized = [paper_id for paper_id in dict.fromkeys(paper_ids) if paper_id]
+        if not normalized:
+            return []
+        async with pg_manager.get_async_session_context() as session:
+            result = await session.execute(
+                update(AcademicPaper)
+                .where(
+                    AcademicPaper.kb_id == kb_id,
+                    AcademicPaper.paper_id.in_(normalized),
+                    AcademicPaper.archived_at.is_(None),
+                )
+                .values(archived_at=utc_now_naive())
+                .returning(AcademicPaper.paper_id)
+            )
+            return list(result.scalars().all())
+
+    async def restore_papers(self, *, kb_id: str, paper_ids: list[str]) -> list[str]:
+        """清除归档时间，使论文恢复原有元数据状态并重新参与列表、检索、导出与统计。"""
+        normalized = [paper_id for paper_id in dict.fromkeys(paper_ids) if paper_id]
+        if not normalized:
+            return []
+        async with pg_manager.get_async_session_context() as session:
+            result = await session.execute(
+                update(AcademicPaper)
+                .where(
+                    AcademicPaper.kb_id == kb_id,
+                    AcademicPaper.paper_id.in_(normalized),
+                    AcademicPaper.archived_at.is_not(None),
+                )
+                .values(archived_at=None)
+                .returning(AcademicPaper.paper_id)
+            )
+            return list(result.scalars().all())
+
+    async def list_archived_papers(self, *, kb_id: str, limit: int = 200) -> list[AcademicPaper]:
+        """按归档时间倒序列出已归档论文，供合并后核对与恢复。"""
+        normalized_limit = min(max(int(limit), 1), 500)
+        async with pg_manager.get_async_session_context() as session:
+            result = await session.execute(
+                select(AcademicPaper)
+                .where(AcademicPaper.kb_id == kb_id, AcademicPaper.archived_at.is_not(None))
+                .order_by(AcademicPaper.archived_at.desc(), AcademicPaper.id.desc())
+                .limit(normalized_limit)
+            )
+            return list(result.scalars().all())
+
     _sort_columns = {
         "year": AcademicPaper.publication_year,
         "citation_count": AcademicPaper.citation_count,
@@ -361,7 +463,7 @@ class AcademicPaperRepository:
         sort_by: str = "year",
         sort_order: str = "desc",
     ) -> tuple[list[AcademicPaper], int]:
-        filters = [AcademicPaper.kb_id == kb_id]
+        filters = [AcademicPaper.kb_id == kb_id, AcademicPaper.archived_at.is_(None)]
         normalized_query = (query or "").strip()
         if normalized_query:
             search = f"%{normalized_query.casefold()}%"
@@ -393,16 +495,18 @@ class AcademicPaperRepository:
             )
             return list(result.scalars().all()), int(total_result.scalar_one() or 0)
 
-    async def iter_export_batches(self, *, kb_id: str, batch_size: int = 200) -> AsyncIterator[list[AcademicPaper]]:
+    async def iter_export_batches(
+        self, *, kb_id: str, batch_size: int = 200, include_archived: bool = False
+    ) -> AsyncIterator[list[AcademicPaper]]:
         normalized_batch_size = min(max(int(batch_size), 1), 1_000)
         after_id = 0
         while True:
+            filters = [AcademicPaper.kb_id == kb_id, AcademicPaper.id > after_id]
+            if not include_archived:
+                filters.append(AcademicPaper.archived_at.is_(None))
             async with pg_manager.get_async_session_context() as session:
                 result = await session.execute(
-                    select(AcademicPaper)
-                    .where(AcademicPaper.kb_id == kb_id, AcademicPaper.id > after_id)
-                    .order_by(AcademicPaper.id.asc())
-                    .limit(normalized_batch_size)
+                    select(AcademicPaper).where(*filters).order_by(AcademicPaper.id.asc()).limit(normalized_batch_size)
                 )
                 papers = list(result.scalars().all())
             if not papers:
@@ -423,6 +527,7 @@ class AcademicPaperRepository:
             AcademicPaper.kb_id == kb_id,
             AcademicPaper.indexed_revision >= AcademicPaper.metadata_revision,
             AcademicPaper.metadata_status.in_(["extracted", "verified"]),
+            AcademicPaper.archived_at.is_(None),
         ]
         if year_from is not None:
             filters.append(AcademicPaper.publication_year >= year_from)
@@ -461,6 +566,7 @@ class AcademicPaperRepository:
             AcademicPaper.kb_id == kb_id,
             AcademicPaper.indexed_revision >= AcademicPaper.metadata_revision,
             AcademicPaper.metadata_status.in_(["extracted", "verified"]),
+            AcademicPaper.archived_at.is_(None),
         ]
         if year_from is not None:
             filters.append(AcademicPaper.publication_year >= year_from)
@@ -563,3 +669,88 @@ class AcademicPaperRepository:
                 )
             )
             return list(result.scalars().all())
+
+    async def list_screenings(self, *, kb_id: str, uid: str) -> dict[str, dict[str, Any]]:
+        async with pg_manager.get_async_session_context() as session:
+            result = await session.execute(
+                select(
+                    AcademicPaperScreening.paper_id,
+                    AcademicPaperScreening.decision,
+                    AcademicPaperScreening.reason,
+                ).where(AcademicPaperScreening.kb_id == kb_id, AcademicPaperScreening.uid == uid)
+            )
+            return {
+                str(paper_id): {"decision": str(decision), "reason": str(reason or "")}
+                for paper_id, decision, reason in result.all()
+            }
+
+    async def count_screening_summary(self, *, kb_id: str, uid: str) -> dict[str, int]:
+        """按库内未归档论文统计识别 / 纳入 / 排除 / 待定数量，不加载论文正文。"""
+        async with pg_manager.get_async_session_context() as session:
+            identified = int(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(AcademicPaper)
+                    .where(AcademicPaper.kb_id == kb_id, AcademicPaper.archived_at.is_(None))
+                )
+                or 0
+            )
+            rows = await session.execute(
+                select(AcademicPaperScreening.decision, func.count())
+                .join(AcademicPaper, AcademicPaper.paper_id == AcademicPaperScreening.paper_id)
+                .where(
+                    AcademicPaperScreening.kb_id == kb_id,
+                    AcademicPaperScreening.uid == uid,
+                    AcademicPaper.kb_id == kb_id,
+                    AcademicPaper.archived_at.is_(None),
+                )
+                .group_by(AcademicPaperScreening.decision)
+            )
+            counts = {"identified": identified, "included": 0, "excluded": 0, "pending": 0}
+            for decision, count in rows.all():
+                if str(decision) in counts:
+                    counts[str(decision)] = int(count)
+            counts["pending"] = max(counts["identified"] - counts["included"] - counts["excluded"], 0)
+            return counts
+
+    async def set_screening(self, *, kb_id: str, paper_id: str, uid: str, decision: str, reason: str) -> None:
+        async with pg_manager.get_async_session_context() as session:
+            stmt = insert(AcademicPaperScreening).values(
+                kb_id=kb_id, paper_id=paper_id, uid=uid, decision=decision, reason=reason
+            )
+            await session.execute(
+                stmt.on_conflict_do_update(
+                    constraint="uq_academic_paper_screenings_identity",
+                    set_={"decision": decision, "reason": reason, "updated_at": func.now()},
+                )
+            )
+
+    async def clear_screenings(self, *, kb_id: str, paper_ids: list[str], uid: str) -> int:
+        if not paper_ids:
+            return 0
+        async with pg_manager.get_async_session_context() as session:
+            result = await session.execute(
+                delete(AcademicPaperScreening).where(
+                    AcademicPaperScreening.kb_id == kb_id,
+                    AcademicPaperScreening.uid == uid,
+                    AcademicPaperScreening.paper_id.in_(paper_ids),
+                )
+            )
+            return int(result.rowcount or 0)
+
+    async def create_metadata_only_batch(
+        self, *, kb_id: str, rows: list[dict[str, Any]]
+    ) -> tuple[list[AcademicPaper], int]:
+        """批量写入仅含元数据的论文记录，返回实际写入与冲突跳过数量。"""
+        if not rows:
+            return [], 0
+        values = [{**row, "kb_id": kb_id} for row in rows]
+        async with pg_manager.get_async_session_context() as session:
+            result = await session.execute(
+                insert(AcademicPaper)
+                .values(values)
+                .on_conflict_do_nothing(index_elements=["kb_id", "paper_id"])
+                .returning(AcademicPaper)
+            )
+            created = list(result.scalars().all())
+        return created, len(values) - len(created)

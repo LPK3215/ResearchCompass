@@ -72,7 +72,7 @@ kb_tools = get_common_kb_tools()
 
 ### 科研工具 (research)
 
-科研工具使用 `@tool(category="research")` 注册，是 ResearchCompass 在 Yuxi 框架之上扩展的核心能力，由 `research-copilot` 主智能体调用，覆盖项目治理、论文检索、证据综述、分析、图谱、评测与交付物导出等科研闭环场景。每个能力都同时具备工作台界面入口与 AI 工具入口（双通道），共 77 个工具。具体工具如下：
+科研工具使用 `@tool(category="research")` 注册，是 ResearchCompass 在 Yuxi 框架之上扩展的核心能力，由 `research-copilot` 主智能体调用，覆盖项目治理、论文检索、证据综述、分析、图谱、评测与交付物导出等科研闭环场景。主流能力同时具备工作台界面入口与 AI 工具入口（双通道），仅管理员可用的工具在表中单独标注；完整数量以 `RESEARCH_TOOLS` 注册表为准，并由单测守卫保持文档同步。具体工具如下：
 
 | 工具 | 说明 |
 |------|------|
@@ -149,10 +149,30 @@ kb_tools = get_common_kb_tools()
 | `research_export_synthesis_topics` | 把综述空白/后续方向/未支持结论整理为选题清单 |
 | `research_create_tasks_from_topics` | 把综述选题批量建为当前项目任务 |
 | `research_find_duplicate_papers` | 检测库内重复论文（DOI/标题，只读不合并） |
+| `research_find_cross_library_duplicates` | 在用户可访问的多个知识库之间检测重复论文（只读，不合并） |
 | `research_export_kb_manifest` | 导出知识库迁移清单（论文元数据 + 图谱统计） |
+| `research_export_kb_bundle` | 导出知识库迁移 ZIP（清单 + 论文表 + 文件清单 + 图谱快照，不含原文与向量） |
+| `research_validate_kb_manifest` | 把迁移清单与当前库论文比对，报告缺失与新增条目（只读，仅比对元数据） |
 | `research_generate_eval_dataset` | 基于知识库自动生成 RAG 评估基准（仅管理员） |
-| `research_merge_duplicate_group` | 按分组归档重复论文（不删文件，可恢复） |
-| `research_restore_archived_papers` | 恢复已归档论文 |
+| `research_merge_duplicate_group` | 按分组归档重复论文（不删文件，可恢复，需审批） |
+| `research_restore_archived_papers` | 恢复已归档论文（需审批） |
+| `research_list_archived_papers` | 列出已归档（合并去重后隐藏）的论文，供核对与恢复 |
+| `research_enrich_paper_metadata` | 按 DOI 或标题从 Crossref / Semantic Scholar 补全缺失元数据（仅管理员，不覆盖已有值） |
+| `research_import_reference_file` | 把 BibTeX / RIS 文件导入知识库，按 DOI 优先、标题兜底去重（仅元数据） |
+| `research_list_related_papers` | 列出某篇论文的参考文献或被引文献，并标注是否已在库内 |
+| `research_import_related_papers` | 把勾选的关联文献纳入本地库（默认仅元数据，开放获取可选全文） |
+| `research_ask_paper_question` | 在单篇论文范围内追问，回答附带 chunk 引用与页码 |
+| `research_translate_paper` | 按片段生成中英对照（带页码与章节）；译文不落库，不能作为引用依据 |
+| `research_list_paper_notes` | 读取当前用户在某篇论文上的阅读笔记与批注 |
+| `research_create_paper_note` | 在单篇论文下记录笔记，批注可附带分块、PDF 页码与字符区间 |
+| `research_update_paper_note` | 修改当前用户自己的论文笔记 |
+| `research_delete_paper_note` | 删除当前用户自己的论文笔记（需审批） |
+| `research_export_paper_notes` | 把某篇论文的笔记导出为 Markdown 并展示下载 |
+| `research_get_paper_screening` | 读取系统综述筛选的纳入 / 排除 / 待定计数与逐篇结果 |
+| `research_set_paper_screening` | 记录用户已明确给出的纳入 / 排除结论（需审批） |
+| `research_export_paper_screening` | 把逐篇筛选结果导出为 CSV |
+| `research_upload_eval_dataset` | 把 JSONL 文本上传为 RAG 评估基准（仅管理员） |
+| `research_create_eval_experiment` | 基于评估基准创建检索消融实验（仅管理员） |
 
 ## 工具组装
 

@@ -35,6 +35,11 @@ def test_sensitive_research_tools_require_approval():
     assert "research_regenerate_synthesis" not in SENSITIVE_BACKEND_TOOLS
 
 
+def test_duplicate_merge_and_restore_require_approval():
+    assert {"research_merge_duplicate_group", "research_restore_archived_papers"} <= SENSITIVE_BACKEND_TOOLS
+    assert "research_list_archived_papers" not in SENSITIVE_BACKEND_TOOLS
+
+
 def test_unknown_tool_approval_mode_is_rejected():
     with pytest.raises(ValueError, match="不支持的 tool_approval_mode"):
         normalize_tool_approval_mode("unknown")

@@ -950,9 +950,9 @@ async def export_academic_graph(
     await _ensure_access(current_user, kb_id)
     if export_format not in GRAPH_EXPORT_FORMATS:
         raise AcademicGraphSyncError("invalid_export_format", "引用图谱只支持 csv 或 graphml 导出")
-    graph = await AcademicGraphRepository().get_graph(kb_id=kb_id, center_paper_id=None, limit=limit)
-    nodes = [item for item in graph.get("nodes") or [] if isinstance(item, dict)]
-    edges = [item for item in graph.get("edges") or [] if isinstance(item, dict)]
+    network = await AcademicGraphService().get_network(kb_id=kb_id, center_paper_id=None, depth=1, limit=limit)
+    nodes = [item for item in network.get("nodes") or [] if isinstance(item, dict)]
+    edges = [item for item in network.get("edges") or [] if isinstance(item, dict)]
     if not nodes:
         raise AcademicGraphSyncError("graph_empty", "引用图谱为空，请先同步引用图谱")
     snapshot = await _latest_sync_snapshot(kb_id)

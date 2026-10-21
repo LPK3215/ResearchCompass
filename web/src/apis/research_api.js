@@ -16,6 +16,8 @@ const buildQuery = (params = {}) => {
 }
 
 export const researchApi = {
+  getOnboardingState: () => apiGet('/api/research/onboarding'),
+
   listProjectTemplates: () => apiGet('/api/research/project-templates'),
 
   listEvidence: (kbId, params = {}) => {
@@ -269,6 +271,12 @@ export const researchApi = {
       { method: 'PATCH', body: JSON.stringify(payload) }
     ),
 
+  enrichPaperMetadata: (kbId, paperId) =>
+    apiRequest(
+      `/api/research/databases/${encodeURIComponent(kbId)}/papers/${encodeURIComponent(paperId)}/metadata/enrich`,
+      { method: 'POST' }
+    ),
+
   searchPapers: (kbId, payload) =>
     apiRequest(
       `/api/research/databases/${encodeURIComponent(kbId)}/search`,
@@ -378,6 +386,12 @@ export const researchApi = {
       { method: 'POST', body: JSON.stringify({ identifier }) }
     ),
 
+  importReferenceFile: (kbId, payload) =>
+    apiRequest(
+      `/api/research/databases/${encodeURIComponent(kbId)}/papers/import-references`,
+      { method: 'POST', body: JSON.stringify(payload) }
+    ),
+
   getAcademicTrends: (kbId, params = {}) => {
     const query = buildQuery(params)
     return apiGet(
@@ -459,6 +473,60 @@ export const researchApi = {
       { method: 'GET' }, true, 'blob'
     ).then((response) => response.blob()),
 
+  askPaperQuestion: (kbId, paperId, payload) =>
+    apiRequest(
+      `/api/research/databases/${encodeURIComponent(kbId)}/papers/${encodeURIComponent(paperId)}/chat`,
+      { method: 'POST', body: JSON.stringify(payload) }
+    ),
+
+  translatePaper: (kbId, paperId, payload = {}) =>
+    apiRequest(
+      `/api/research/databases/${encodeURIComponent(kbId)}/papers/${encodeURIComponent(paperId)}/translate`,
+      { method: 'POST', body: JSON.stringify(payload) }
+    ),
+
+  listPaperNotes: (kbId, paperId) =>
+    apiGet(
+      `/api/research/databases/${encodeURIComponent(kbId)}/papers/${encodeURIComponent(paperId)}/notes`
+    ),
+
+  createPaperNote: (kbId, paperId, payload) =>
+    apiRequest(
+      `/api/research/databases/${encodeURIComponent(kbId)}/papers/${encodeURIComponent(paperId)}/notes`,
+      { method: 'POST', body: JSON.stringify(payload) }
+    ),
+
+  updatePaperNote: (kbId, paperId, noteId, content) =>
+    apiRequest(
+      `/api/research/databases/${encodeURIComponent(kbId)}/papers/${encodeURIComponent(paperId)}/notes/${encodeURIComponent(noteId)}`,
+      { method: 'PATCH', body: JSON.stringify({ content }) }
+    ),
+
+  deletePaperNote: (kbId, paperId, noteId) =>
+    apiRequest(
+      `/api/research/databases/${encodeURIComponent(kbId)}/papers/${encodeURIComponent(paperId)}/notes/${encodeURIComponent(noteId)}`,
+      { method: 'DELETE' }
+    ),
+
+  exportPaperNotes: (kbId, paperId) =>
+    apiRequest(
+      `/api/research/databases/${encodeURIComponent(kbId)}/papers/${encodeURIComponent(paperId)}/notes/export`,
+      { method: 'GET' }, true, 'blob'
+    ).then((response) => response.blob()),
+
+  listRelatedPapers: (kbId, paperId, direction = 'references', limit = 20) => {
+    const query = buildQuery({ direction, limit })
+    return apiGet(
+      `/api/research/databases/${encodeURIComponent(kbId)}/papers/${encodeURIComponent(paperId)}/related?${query}`
+    )
+  },
+
+  importRelatedPapers: (kbId, paperId, payload) =>
+    apiRequest(
+      `/api/research/databases/${encodeURIComponent(kbId)}/papers/${encodeURIComponent(paperId)}/related/import`,
+      { method: 'POST', body: JSON.stringify(payload) }
+    ),
+
   exportAcademicGraph: (kbId, exportFormat = 'csv') =>
     apiRequest(
       `/api/research/databases/${encodeURIComponent(kbId)}/academic-graph/export?format=${encodeURIComponent(exportFormat)}`,
@@ -473,6 +541,42 @@ export const researchApi = {
 
   findDuplicatePapers: (kbId) =>
     apiGet(`/api/research/databases/${encodeURIComponent(kbId)}/duplicates`),
+
+  mergeDuplicateGroup: (kbId, key) =>
+    apiRequest(`/api/research/databases/${encodeURIComponent(kbId)}/duplicates/merge`, {
+      method: 'POST', body: JSON.stringify({ key })
+    }),
+
+  findCrossLibraryDuplicates: () => apiGet('/api/research/duplicates/cross-library'),
+
+  validateKbManifest: (kbId, manifest) =>
+    apiRequest(`/api/research/databases/${encodeURIComponent(kbId)}/export-manifest/validate`, {
+      method: 'POST', body: JSON.stringify({ manifest })
+    }),
+
+  exportKbManifest: (kbId) =>
+    apiRequest(
+      `/api/research/databases/${encodeURIComponent(kbId)}/export-manifest`,
+      { method: 'GET' }, true, 'blob'
+    ).then((response) => response.blob()),
+
+  exportKbBundle: (kbId) =>
+    apiRequest(
+      `/api/research/databases/${encodeURIComponent(kbId)}/export-bundle`,
+      { method: 'GET' }, true, 'blob'
+    ).then((response) => response.blob()),
+
+  listArchivedPapers: (kbId, params = {}) => {
+    const query = buildQuery(params)
+    return apiGet(
+      `/api/research/databases/${encodeURIComponent(kbId)}/papers/archived${query ? `?${query}` : ''}`
+    )
+  },
+
+  restoreArchivedPapers: (kbId, paperIds) =>
+    apiRequest(`/api/research/databases/${encodeURIComponent(kbId)}/duplicates/restore`, {
+      method: 'POST', body: JSON.stringify({ paper_ids: paperIds })
+    }),
 
   exportPaperDiagram: (kbId, paperId, kind = 'method') =>
     apiRequest(
@@ -514,6 +618,24 @@ export const researchApi = {
 
   listUserTags: (kbId) =>
     apiGet(`/api/research/databases/${encodeURIComponent(kbId)}/papers/tags`),
+
+  getPaperScreening: (kbId, params = {}) => {
+    const query = buildQuery(params)
+    return apiGet(
+      `/api/research/databases/${encodeURIComponent(kbId)}/papers/screening${query ? `?${query}` : ''}`
+    )
+  },
+
+  setPaperScreening: (kbId, payload) =>
+    apiRequest(`/api/research/databases/${encodeURIComponent(kbId)}/papers/screening`, {
+      method: 'POST', body: JSON.stringify(payload)
+    }),
+
+  exportPaperScreening: (kbId) =>
+    apiRequest(
+      `/api/research/databases/${encodeURIComponent(kbId)}/papers/screening/export`,
+      { method: 'GET' }, true, 'blob'
+    ).then((response) => response.blob()),
 
   listPaperTags: (kbId, paperId) =>
     apiGet(`/api/research/databases/${encodeURIComponent(kbId)}/papers/${encodeURIComponent(paperId)}/tags`),

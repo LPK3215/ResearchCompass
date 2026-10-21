@@ -759,8 +759,9 @@ class MilvusKB(KnowledgeBase):
                 (
                     metadata.get("paper")
                     for chunk in chunks
-                    if isinstance((metadata := chunk.get("chunk_metadata")), dict)
-                    and metadata.get("document_type") == "academic_paper"
+                    if isinstance(
+                        (metadata := chunk.get("chunk_metadata") or chunk.get("metadata")), dict
+                    )
                     and isinstance(metadata.get("paper"), dict)
                 ),
                 None,

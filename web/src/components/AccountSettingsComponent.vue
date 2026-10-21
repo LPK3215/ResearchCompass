@@ -106,6 +106,23 @@
       </div>
       <UserConfigSettingsCard ref="userConfigRef" />
     </div>
+
+    <div class="account-card security-card">
+      <div class="section-title">安全设置</div>
+      <p class="section-description">修改登录密码，修改后请使用新密码登录。</p>
+      <a-form layout="vertical" class="password-form">
+        <a-form-item label="当前密码">
+          <a-input-password v-model:value="passwordDraft.current" autocomplete="current-password" />
+        </a-form-item>
+        <a-form-item label="新密码">
+          <a-input-password v-model:value="passwordDraft.next" autocomplete="new-password" />
+        </a-form-item>
+        <a-form-item label="确认新密码">
+          <a-input-password v-model:value="passwordDraft.confirm" autocomplete="new-password" />
+        </a-form-item>
+        <a-button type="primary" :loading="passwordSaving" @click="savePassword">更新密码</a-button>
+      </a-form>
+    </div>
   </div>
 </template>
 
@@ -219,6 +236,40 @@ const saveField = async (field) => {
     message.error('更新失败：' + (error.message || '请稍后重试'))
   } finally {
     savingField.value = ''
+  }
+}
+
+const passwordSaving = ref(false)
+const passwordDraft = reactive({ current: '', next: '', confirm: '' })
+
+const savePassword = async () => {
+  if (!passwordDraft.current) {
+    message.error('请输入当前密码')
+    return
+  }
+  if (passwordDraft.next.length < 8) {
+    message.error('新密码至少 8 个字符')
+    return
+  }
+  if (passwordDraft.next !== passwordDraft.confirm) {
+    message.error('两次输入的新密码不一致')
+    return
+  }
+  if (passwordDraft.next === passwordDraft.current) {
+    message.error('新密码不能与当前密码相同')
+    return
+  }
+  passwordSaving.value = true
+  try {
+    await userStore.changePassword(passwordDraft.current, passwordDraft.next)
+    message.success('密码已更新')
+    passwordDraft.current = ''
+    passwordDraft.next = ''
+    passwordDraft.confirm = ''
+  } catch (error) {
+    message.error(error.message || '修改密码失败')
+  } finally {
+    passwordSaving.value = false
   }
 }
 
@@ -473,5 +524,14 @@ watch(() => [userStore.username, userStore.phoneNumber], syncProfileDraft, { imm
   to {
     transform: rotate(360deg);
   }
+}
+.security-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.password-form {
+  max-width: 420px;
 }
 </style>

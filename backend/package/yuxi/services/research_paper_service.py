@@ -41,6 +41,7 @@ def _serialize_paper(paper) -> dict[str, Any]:
         "paper_id": paper.paper_id,
         "kb_id": paper.kb_id,
         "file_id": paper.file_id,
+        "has_fulltext": paper.file_id is not None,
         "title": paper.title,
         "abstract": paper.abstract,
         "authors": paper.authors or [],
@@ -116,8 +117,12 @@ async def get_paper_view(*, kb_id: str, paper_id: str, current_user: User) -> di
     if paper is None:
         raise HTTPException(status_code=404, detail="论文不存在")
 
-    file_record = await KnowledgeFileRepository().get_by_file_id(paper.file_id)
-    academic_chunks = await KnowledgeChunkRepository().list_academic_chunk_metadata_by_file_id(paper.file_id)
+    file_record = await KnowledgeFileRepository().get_by_file_id(paper.file_id) if paper.file_id else None
+    academic_chunks = (
+        await KnowledgeChunkRepository().list_academic_chunk_metadata_by_file_id(paper.file_id)
+        if paper.file_id
+        else []
+    )
     section_counts = Counter(
         str(metadata.get("section_type") or "other") for _, metadata in academic_chunks if isinstance(metadata, dict)
     )
@@ -167,6 +172,8 @@ async def list_paper_chunks_view(
     paper = await AcademicPaperRepository().get_by_paper_id(kb_id=kb_id, paper_id=paper_id)
     if paper is None:
         raise HTTPException(status_code=404, detail="论文不存在")
+    if paper.file_id is None:
+        return {"items": [], "total": 0, "offset": offset, "limit": limit, "has_more": False}
     chunks, total = await KnowledgeChunkRepository().list_academic_by_file_id(
         file_id=paper.file_id,
         section_type=section_type,
@@ -244,18 +251,24 @@ async def update_paper_view(
 ) -> dict[str, Any]:
     await _ensure_access(current_user, kb_id, write=True)
     paper_repo = AcademicPaperRepository()
+    existing = await paper_repo.get_by_paper_id(kb_id=kb_id, paper_id=paper_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="论文不存在")
+    metadata_only = existing.file_id is None
     paper = await paper_repo.update_metadata(
         kb_id=kb_id,
         paper_id=paper_id,
         data={
             **updates,
             "metadata_source": "manual",
-            "metadata_status": "pending_reindex",
+            "metadata_status": "extracted" if metadata_only else "pending_reindex",
             "metadata_error": None,
         },
     )
     if paper is None:
         raise HTTPException(status_code=404, detail="论文不存在")
+    if metadata_only:
+        return {"paper": _serialize_paper(paper), "reindex_task": None}
 
     file_id = str(paper.file_id)
     paper_title = str(paper.title)

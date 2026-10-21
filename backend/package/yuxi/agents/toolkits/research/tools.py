@@ -213,6 +213,55 @@ class GetPaperAnalysisInput(BaseModel):
         return self
 
 
+class AskPaperQuestionInput(BaseModel):
+    paper_id: str = Field(min_length=1, max_length=128, description="当前知识库内的论文 ID")
+    question: str = Field(min_length=1, max_length=2000, description="针对该论文的问题")
+
+
+class TranslatePaperInput(BaseModel):
+    paper_id: str = Field(min_length=1, max_length=128, description="当前知识库内的论文 ID")
+    section_type: str | None = Field(
+        default=None, max_length=64, description="只翻译某一章节，如 abstract / method / experiment"
+    )
+    limit: int = Field(default=6, ge=1, le=12, description="按原文顺序翻译前 N 个片段")
+
+
+class ListPaperNotesInput(BaseModel):
+    paper_id: str = Field(min_length=1, max_length=128, description="当前知识库内的论文 ID")
+
+
+class CreatePaperNoteInput(BaseModel):
+    paper_id: str = Field(min_length=1, max_length=128, description="当前知识库内的论文 ID")
+    content: str = Field(min_length=1, max_length=10_000, description="笔记正文，必须来自用户明确给出的内容")
+    quote: str | None = Field(default=None, max_length=5_000, description="可选：原文引用")
+    chunk_id: str | None = Field(default=None, max_length=128, description="可选：批注对应的分块 ID")
+    page: int | None = Field(default=None, ge=1, description="可选：PDF 页码")
+    start_offset: int | None = Field(default=None, ge=0, description="可选：分块内选区起点")
+    end_offset: int | None = Field(default=None, ge=0, description="可选：分块内选区终点")
+
+
+class UpdatePaperNoteInput(BaseModel):
+    note_id: str = Field(min_length=1, max_length=64, description="笔记 ID")
+    content: str = Field(min_length=1, max_length=10_000, description="修改后的笔记正文")
+
+
+class DeletePaperNoteInput(BaseModel):
+    note_id: str = Field(min_length=1, max_length=64, description="笔记 ID")
+
+
+class ListRelatedPapersInput(BaseModel):
+    paper_id: str = Field(min_length=1, max_length=128, description="当前知识库内的论文 ID")
+    direction: Literal["references", "citations"] = Field(default="references", description="参考文献或被引文献")
+    limit: int = Field(default=20, ge=1, le=50)
+
+
+class ImportRelatedPapersInput(BaseModel):
+    paper_id: str = Field(min_length=1, max_length=128, description="发起滚雪球的库内论文 ID")
+    direction: Literal["references", "citations"]
+    paper_ids: list[str] = Field(min_length=1, max_length=50, description="勾选待导入的 Semantic Scholar 论文 ID")
+    include_full_text: bool = Field(default=False, description="是否对开放获取条目同时下载全文")
+
+
 class ExportProjectReportInput(BaseModel):
     format: Literal["markdown", "docx", "csv"] = Field(default="markdown", description="导出格式")
 
@@ -222,6 +271,11 @@ class ExportPapersInput(BaseModel):
         default="bibtex", description="导出格式，gb7714/apa/ieee 为期刊引文样式"
     )
     paper_ids: list[str] = Field(default_factory=list, max_length=200, description="为空表示导出当前知识库全部论文")
+
+
+class ImportReferenceFileInput(BaseModel):
+    content: str = Field(min_length=1, max_length=200_000, description="BibTeX 或 RIS 文件全文，单次最多 1000 条")
+    format: Literal["bibtex", "ris", "auto"] = Field(default="auto", description="文件格式，auto 表示自动识别")
 
 
 class ListEvidenceInput(BaseModel):
@@ -355,6 +409,36 @@ class RunEvalInput(BaseModel):
     name: str | None = Field(default=None, max_length=100)
 
 
+class UploadEvalDatasetInput(BaseModel):
+    name: str = Field(min_length=1, max_length=100, description="评估基准名称")
+    content: str = Field(
+        min_length=2,
+        max_length=2_000_000,
+        description="JSONL 文本，每行一个对象，至少包含 question 字段，可选 gold_chunks / gold_answer",
+    )
+    description: str = Field(default="", max_length=2000)
+    filename: str = Field(default="agent_eval_dataset.jsonl", max_length=200, description="必须以 .jsonl 结尾")
+
+
+class EvalExperimentVariantInput(BaseModel):
+    name: str = Field(min_length=1, max_length=100, description="变体名称，如 baseline / no_reranker")
+    retrieval_config: dict[str, Any] = Field(
+        default_factory=dict, description="检索参数覆盖，如 top_k / search_mode / use_reranker"
+    )
+    kb_id: str | None = Field(
+        default=None, max_length=80, description="对照知识库；默认当前库，要求已索引语料与嵌入模型完全一致"
+    )
+
+
+class CreateEvalExperimentInput(BaseModel):
+    dataset_id: str = Field(min_length=1, max_length=64)
+    name: str = Field(min_length=1, max_length=100)
+    description: str = Field(default="", max_length=2000)
+    baseline_variant_index: int = Field(default=0, ge=0, description="作为基线的变体序号，从 0 开始")
+    shared_config: dict[str, Any] = Field(default_factory=dict, description="所有变体共享的模型配置")
+    variants: list[EvalExperimentVariantInput] = Field(min_length=2, max_length=8)
+
+
 class EvalRunInput(BaseModel):
     run_id: str = Field(min_length=1, max_length=64)
     page: int = Field(default=1, ge=1)
@@ -433,8 +517,33 @@ class DuplicateMergeInput(BaseModel):
     key: str = Field(min_length=1, max_length=600, description="查重返回的分组 key")
 
 
+class ValidateKbManifestInput(BaseModel):
+    manifest_json: str = Field(
+        min_length=2,
+        max_length=2_000_000,
+        description="知识库迁移清单 JSON 文本（由 research_export_kb_manifest 导出）",
+    )
+
+
 class DuplicateRestoreInput(BaseModel):
     paper_ids: list[str] = Field(min_length=1, max_length=50, description="待恢复的论文 ID")
+
+
+class EnrichPaperMetadataInput(BaseModel):
+    paper_id: str = Field(min_length=1, max_length=64, description="要补全元数据的论文 ID")
+
+
+class GetPaperScreeningInput(BaseModel):
+    decision: Literal["included", "excluded", "pending"] | None = Field(
+        default=None, description="只看某一类筛选结论；不传则返回全部"
+    )
+    limit: int = Field(default=50, ge=1, le=200, description="最多返回多少篇论文")
+
+
+class SetPaperScreeningInput(BaseModel):
+    paper_ids: list[str] = Field(min_length=1, max_length=200, description="要标记的论文 ID 列表")
+    decision: Literal["included", "excluded", "pending"] = Field(description="纳入、排除或退回待定")
+    reason: str = Field(default="", max_length=500, description="筛选理由，来自用户的判断依据")
 
 
 def _research_context(runtime: ToolRuntime) -> dict[str, Any]:
@@ -1131,6 +1240,197 @@ async def research_get_paper_analysis(
 
 @tool(
     category="research",
+    tags=["科研", "分析", "阅读"],
+    display_name="追问单篇论文",
+    args_schema=AskPaperQuestionInput,
+)
+async def research_ask_paper_question(paper_id: str, question: str, runtime: ToolRuntime) -> dict[str, Any]:
+    """在单篇论文范围内追问，回答附带 chunk 引用与页码，与论文分析页对话同一检索范围。"""
+    from yuxi.services.research_paper_chat_service import ask_paper_question
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    return await _call(
+        ask_paper_question(kb_id=context["kb_id"], paper_id=paper_id, question=question, current_user=user)
+    )
+
+
+@tool(
+    category="research",
+    tags=["科研", "阅读", "翻译"],
+    display_name="论文对照翻译",
+    args_schema=TranslatePaperInput,
+)
+async def research_translate_paper(
+    paper_id: str,
+    section_type: str | None,
+    limit: int,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """生成论文片段的逐段中英对照（带页码与章节）；译文不落库，不能当作引用证据。"""
+    from yuxi.services.research_paper_translation_service import translate_paper
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    return await _call(
+        translate_paper(
+            kb_id=context["kb_id"],
+            paper_id=paper_id,
+            current_user=user,
+            section_type=section_type,
+            limit=limit,
+        )
+    )
+
+
+@tool(category="research", tags=["科研", "阅读", "笔记"], display_name="查询论文笔记", args_schema=ListPaperNotesInput)
+async def research_list_paper_notes(paper_id: str, runtime: ToolRuntime) -> dict[str, Any]:
+    """读取当前用户在某篇论文上的阅读笔记与批注。"""
+    from yuxi.services.research_paper_note_service import list_paper_notes
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    return await _call(list_paper_notes(kb_id=context["kb_id"], paper_id=paper_id, current_user=user))
+
+
+@tool(category="research", tags=["科研", "阅读", "笔记"], display_name="记录论文笔记", args_schema=CreatePaperNoteInput)
+async def research_create_paper_note(
+    paper_id: str,
+    content: str,
+    quote: str | None,
+    chunk_id: str | None,
+    page: int | None,
+    start_offset: int | None,
+    end_offset: int | None,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """在单篇论文下记录阅读笔记；批注可附带分块 ID、PDF 页码与分块内字符区间。
+
+    笔记正文必须来自用户明确给出的文字或原文引用，不得替用户编造阅读结论。
+    """
+    from yuxi.services.research_paper_note_service import create_paper_note
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    return await _call(
+        create_paper_note(
+            kb_id=context["kb_id"],
+            paper_id=paper_id,
+            content=content,
+            quote=quote,
+            chunk_id=chunk_id,
+            page=page,
+            start_offset=start_offset,
+            end_offset=end_offset,
+            current_user=user,
+        )
+    )
+
+
+@tool(category="research", tags=["科研", "阅读", "笔记"], display_name="修改论文笔记", args_schema=UpdatePaperNoteInput)
+async def research_update_paper_note(note_id: str, content: str, runtime: ToolRuntime) -> dict[str, Any]:
+    """修改当前用户自己的一条论文笔记。"""
+    from yuxi.services.research_paper_note_service import update_paper_note
+
+    user = await _current_user(runtime)
+    return await _call(update_paper_note(note_id=note_id, content=content, current_user=user))
+
+
+@tool(
+    category="research",
+    tags=["科研", "阅读", "笔记", "敏感"],
+    display_name="删除论文笔记",
+    args_schema=DeletePaperNoteInput,
+)
+async def research_delete_paper_note(note_id: str, runtime: ToolRuntime) -> dict[str, Any]:
+    """删除当前用户自己的一条论文笔记，需审批。"""
+    from yuxi.services.research_paper_note_service import delete_paper_note
+
+    user = await _current_user(runtime)
+    return await _call(delete_paper_note(note_id=note_id, current_user=user))
+
+
+@tool(
+    category="research",
+    tags=["科研", "阅读", "笔记", "导出"],
+    display_name="导出论文笔记",
+    args_schema=ListPaperNotesInput,
+)
+async def research_export_paper_notes(paper_id: str, runtime: ToolRuntime) -> dict[str, Any]:
+    """把当前用户在某篇论文上的笔记导出为 Markdown，并调用 present_artifacts 展示。"""
+    from yuxi.services.research_paper_note_service import export_paper_notes_markdown
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    filename, content, media_type = await _call(
+        export_paper_notes_markdown(kb_id=context["kb_id"], paper_id=paper_id, current_user=user)
+    )
+    artifact_path = await _write_artifact(runtime, filename, content)
+    return {
+        "paper_id": paper_id,
+        "filename": filename,
+        "media_type": media_type,
+        "artifact_path": artifact_path,
+        "message": f"论文笔记已导出为 {filename}，请调用 present_artifacts 工具展示该文件",
+    }
+
+
+@tool(
+    category="research",
+    tags=["科研", "引文", "发现"],
+    display_name="列出关联文献",
+    args_schema=ListRelatedPapersInput,
+)
+async def research_list_related_papers(
+    paper_id: str,
+    direction: str,
+    limit: int,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """列出某篇库内论文的参考文献或被引文献，并标注是否已在库内。"""
+    from yuxi.services.research_citation_snowball_service import list_related_papers
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    return await _call(
+        list_related_papers(
+            kb_id=context["kb_id"], paper_id=paper_id, direction=direction, current_user=user, limit=limit
+        )
+    )
+
+
+@tool(
+    category="research",
+    tags=["科研", "引文", "导入"],
+    display_name="滚雪球导入关联文献",
+    args_schema=ImportRelatedPapersInput,
+)
+async def research_import_related_papers(
+    paper_id: str,
+    direction: str,
+    paper_ids: list[str],
+    include_full_text: bool,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """把勾选的关联文献纳入本地库：默认只写元数据，开放获取条目可选下载全文。"""
+    from yuxi.services.research_citation_snowball_service import import_related_papers
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    return await _call(
+        import_related_papers(
+            kb_id=context["kb_id"],
+            paper_id=paper_id,
+            direction=direction,
+            paper_ids=paper_ids,
+            include_full_text=include_full_text,
+            current_user=user,
+        )
+    )
+
+
+@tool(
+    category="research",
     tags=["科研", "项目", "导出"],
     display_name="导出项目报告",
     args_schema=ExportProjectReportInput,
@@ -1193,6 +1493,100 @@ async def research_export_papers(
         "paper_count": len(paper_ids) if paper_ids else None,
         "artifact_path": artifact_path,
         "message": f"论文元数据已导出为 {filename}，请调用 present_artifacts 工具展示该文件",
+    }
+
+
+@tool(
+    category="research",
+    tags=["科研", "文献", "导入"],
+    display_name="导入参考文献文件",
+    args_schema=ImportReferenceFileInput,
+)
+async def research_import_reference_file(content: str, format: str, runtime: ToolRuntime) -> dict[str, Any]:
+    """把 BibTeX 或 RIS 文件导入当前知识库，按 DOI 优先、标题兜底去重。
+
+    只导入元数据，不下载全文；导入后的论文可在论文库查看，需要全文时按 DOI 导入外部论文。
+    """
+    from yuxi.services.research_reference_import_service import import_references
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    return await _call(
+        import_references(
+            kb_id=context["kb_id"],
+            content=content,
+            reference_format=None if format == "auto" else format,
+            current_user=user,
+        )
+    )
+
+
+@tool(category="research", tags=["科研", "筛选"], display_name="查询文献筛选", args_schema=GetPaperScreeningInput)
+async def research_get_paper_screening(
+    decision: str | None,
+    limit: int,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """读取当前知识库的纳入 / 排除 / 待定计数与逐篇筛选结果。"""
+    from yuxi.services.research_paper_screening_service import get_paper_screening
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    return await _call(get_paper_screening(kb_id=context["kb_id"], current_user=user, decision=decision, limit=limit))
+
+
+@tool(
+    category="research",
+    tags=["科研", "筛选", "敏感"],
+    display_name="记录文献筛选结论",
+    args_schema=SetPaperScreeningInput,
+)
+async def research_set_paper_screening(
+    paper_ids: list[str],
+    decision: str,
+    reason: str,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """按用户已明确给出的结论批量记录纳入 / 排除；不得自行判断论文质量。此操作需要用户审批。"""
+    from yuxi.services.research_paper_screening_service import set_paper_screening
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    return await _call(
+        set_paper_screening(
+            kb_id=context["kb_id"], paper_ids=paper_ids, decision=decision, reason=reason, current_user=user
+        )
+    )
+
+
+@tool(
+    category="research",
+    tags=["科研", "筛选", "导出"],
+    display_name="导出文献筛选结果",
+    args_schema=EmptyInput,
+)
+async def research_export_paper_screening(dummy: str, runtime: ToolRuntime) -> dict[str, Any]:
+    """把当前用户的逐篇筛选结果导出为 CSV，写入交付物目录供用户下载。
+
+    导出完成后应调用 present_artifacts 工具将文件展示给用户。
+    """
+    del dummy
+    from yuxi.services.research_paper_screening_service import (
+        export_screening_csv,
+        get_paper_screening,
+    )
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    filename, content, media_type = await _call(export_screening_csv(kb_id=context["kb_id"], current_user=user))
+    counts = (await _call(get_paper_screening(kb_id=context["kb_id"], current_user=user, limit=1)))["counts"]
+    artifact_path = await _write_artifact(runtime, filename, content)
+    return {
+        "filename": filename,
+        "media_type": media_type,
+        "counts": counts,
+        "artifact_path": artifact_path,
+        "message": f"筛选结果已导出为 {filename}，请调用 present_artifacts 工具展示该文件",
     }
 
 
@@ -1745,7 +2139,7 @@ async def research_get_analysis_evaluation(evaluation_id: str, runtime: ToolRunt
     args_schema=SearchExternalPapersInput,
 )
 async def research_search_external_papers(query: str, limit: int, runtime: ToolRuntime) -> dict[str, Any]:
-    """在 Semantic Scholar 搜索公开论文，返回可导入的候选与开放获取状态。"""
+    """按关键词检索 Semantic Scholar、OpenAlex 与 Crossref 并归并去重，返回候选、来源状态与开放获取情况。"""
     from yuxi.services.academic_paper_import_service import search_external_papers
 
     context = _research_context(runtime)
@@ -1786,6 +2180,94 @@ async def research_list_eval_datasets(dummy: str, runtime: ToolRuntime) -> dict[
     await _call(_ensure_access(user, context["kb_id"]))
     items = await _call(EvaluationService().list_datasets(context["kb_id"]))
     return {"items": items, "total": len(items)}
+
+
+@tool(
+    category="research",
+    tags=["科研", "评估", "上传"],
+    display_name="上传评估基准",
+    args_schema=UploadEvalDatasetInput,
+)
+async def research_upload_eval_dataset(
+    name: str,
+    content: str,
+    description: str,
+    filename: str,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """把 JSONL 文本上传为 RAG 评估基准（仅管理员）；文件名必须以 .jsonl 结尾。"""
+    if not filename.endswith(".jsonl"):
+        raise ToolException("评估基准文件名必须以 .jsonl 结尾")
+    from yuxi.knowledge.eval.service import EvaluationService
+    from yuxi.services.research_paper_service import _ensure_access
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    _require_admin(user)
+    await _call(_ensure_access(user, context["kb_id"], write=True))
+    result = await _call(
+        EvaluationService().upload_dataset(
+            kb_id=context["kb_id"],
+            file_content=content.encode("utf-8"),
+            filename=filename,
+            name=name,
+            description=description,
+            created_by=str(user.uid),
+        )
+    )
+    return {
+        "dataset_id": result.get("dataset_id"),
+        "name": result.get("name") or name,
+        "item_count": result.get("item_count"),
+        "has_gold_chunks": result.get("has_gold_chunks"),
+        "has_gold_answers": result.get("has_gold_answers"),
+        "message": "评估基准已上传，可在 RAG 评估或消融实验中选择该基准",
+    }
+
+
+@tool(
+    category="research",
+    tags=["科研", "评估", "消融"],
+    display_name="创建消融实验",
+    args_schema=CreateEvalExperimentInput,
+)
+async def research_create_eval_experiment(
+    dataset_id: str,
+    name: str,
+    description: str,
+    baseline_variant_index: int,
+    shared_config: dict[str, Any],
+    variants: list[EvalExperimentVariantInput],
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """基于已有评估基准创建检索消融实验（仅管理员）；变体均为 ResearchCompass 执行，外部基线仍在界面创建。"""
+    from yuxi.knowledge.eval.service import EvaluationService
+    from yuxi.services.research_paper_service import _ensure_access
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    _require_admin(user)
+    await _call(_ensure_access(user, context["kb_id"], write=True))
+    result = await _call(
+        EvaluationService().create_experiment(
+            kb_id=context["kb_id"],
+            dataset_id=dataset_id,
+            name=name,
+            description=description,
+            baseline_variant_index=baseline_variant_index,
+            shared_config=shared_config,
+            variants=[variant.model_dump() for variant in variants],
+            created_by=str(user.uid),
+        )
+    )
+    return {
+        "experiment_id": result.get("experiment_id"),
+        "name": result.get("name") or name,
+        "variant_count": len(result.get("variants") or variants),
+        "baseline_variant_index": baseline_variant_index,
+        "status": result.get("status"),
+        "message": "消融实验已创建，请用 research_get_eval_experiment 读取变体对比报告",
+    }
 
 
 @tool(
@@ -2247,6 +2729,22 @@ async def research_find_duplicate_papers(dummy: str, runtime: ToolRuntime) -> di
 
 @tool(
     category="research",
+    tags=["科研", "去重", "跨库"],
+    display_name="跨库查重",
+    args_schema=EmptyInput,
+)
+async def research_find_cross_library_duplicates(dummy: str, runtime: ToolRuntime) -> dict[str, Any]:
+    """在当前用户可访问的多个知识库之间识别重复论文（只读，不合并）。"""
+    del dummy
+    from yuxi.services.research_deliverable_service import find_cross_library_duplicates
+
+    user = await _current_user(runtime)
+    result = await _call(find_cross_library_duplicates(current_user=user))
+    return {**result, "groups": result["groups"][:20]}
+
+
+@tool(
+    category="research",
     tags=["科研", "导出", "迁移"],
     display_name="导出知识库清单",
     args_schema=EmptyInput,
@@ -2272,6 +2770,56 @@ async def research_export_kb_manifest(dummy: str, runtime: ToolRuntime) -> dict[
         "artifact_path": artifact_path,
         "message": f"知识库清单已写入 {filename}，请调用 present_artifacts 工具展示该文件",
     }
+
+
+@tool(
+    category="research",
+    tags=["科研", "迁移", "导出"],
+    display_name="导出知识库迁移包",
+    args_schema=EmptyInput,
+)
+async def research_export_kb_bundle(dummy: str, runtime: ToolRuntime) -> dict[str, Any]:
+    """把迁移清单、论文表、文件清单与图谱快照打包为 ZIP（不含原文与向量）。"""
+    del dummy
+    from yuxi.services.research_deliverable_service import export_kb_bundle
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    filename, content, media_type = await _call(export_kb_bundle(kb_id=context["kb_id"], current_user=user))
+    artifact_path = await _write_artifact(runtime, filename, content)
+    return {
+        "kb_id": context["kb_id"],
+        "filename": filename,
+        "media_type": media_type,
+        "artifact_path": artifact_path,
+        "message": (
+            f"迁移包已写入 {filename}，请调用 present_artifacts 展示；包内不含 PDF 原文与向量，"
+            "恢复后请用 research_validate_kb_manifest 核对"
+        ),
+    }
+
+
+@tool(
+    category="research",
+    tags=["科研", "迁移", "校验"],
+    display_name="校验迁移清单",
+    args_schema=ValidateKbManifestInput,
+)
+async def research_validate_kb_manifest(manifest_json: str, runtime: ToolRuntime) -> dict[str, Any]:
+    """把迁移清单 JSON 与当前库论文比对，报告缺失与新增条目（只读，不修改数据）。"""
+    import json
+
+    from yuxi.services.research_deliverable_service import validate_kb_manifest
+
+    try:
+        manifest = json.loads(manifest_json)
+    except json.JSONDecodeError as exc:
+        raise ToolException("迁移清单不是合法 JSON") from exc
+    if not isinstance(manifest, dict):
+        raise ToolException("迁移清单必须是 JSON 对象")
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    return await _call(validate_kb_manifest(kb_id=context["kb_id"], manifest=manifest, current_user=user))
 
 
 @tool(
@@ -2346,6 +2894,44 @@ async def research_restore_archived_papers(paper_ids: list[str], runtime: ToolRu
     return await _call(restore_archived_papers(kb_id=context["kb_id"], paper_ids=paper_ids, current_user=user))
 
 
+@tool(
+    category="research",
+    tags=["科研", "去重", "归档"],
+    display_name="查询已归档论文",
+    args_schema=EmptyInput,
+)
+async def research_list_archived_papers(dummy: str, runtime: ToolRuntime) -> dict[str, Any]:
+    """列出当前知识库中已归档（合并去重后隐藏）的论文，供核对与恢复。"""
+    del dummy
+    from yuxi.services.research_deliverable_service import list_archived_papers
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    return await _call(list_archived_papers(kb_id=context["kb_id"], current_user=user))
+
+
+@tool(
+    category="research",
+    tags=["科研", "论文", "元数据"],
+    display_name="补全论文元数据",
+    args_schema=EnrichPaperMetadataInput,
+)
+async def research_enrich_paper_metadata(paper_id: str, runtime: ToolRuntime) -> dict[str, Any]:
+    """按 DOI 或标题从 Crossref / Semantic Scholar 补全论文缺失的元数据字段（仅管理员，不覆盖已有值）。"""
+    from yuxi.services.research_paper_metadata_service import enrich_paper_metadata
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    result = await _call(enrich_paper_metadata(kb_id=context["kb_id"], paper_id=paper_id, current_user=user))
+    return {
+        "paper_id": result["paper_id"],
+        "filled": result["filled"],
+        "field_sources": result["field_sources"],
+        "missing_fields": result["missing_fields"],
+        "message": result["message"],
+    }
+
+
 RESEARCH_TOOLS = [
     research_get_context,
     research_list_projects,
@@ -2375,8 +2961,21 @@ RESEARCH_TOOLS = [
     research_unlink_asset_from_plan,
     research_run_paper_analysis,
     research_get_paper_analysis,
+    research_ask_paper_question,
+    research_translate_paper,
+    research_list_paper_notes,
+    research_create_paper_note,
+    research_update_paper_note,
+    research_delete_paper_note,
+    research_export_paper_notes,
+    research_list_related_papers,
+    research_import_related_papers,
     research_export_project_report,
     research_export_papers,
+    research_import_reference_file,
+    research_get_paper_screening,
+    research_set_paper_screening,
+    research_export_paper_screening,
     research_list_evidence,
     research_create_evidence,
     research_verify_evidence,
@@ -2404,6 +3003,8 @@ RESEARCH_TOOLS = [
     research_search_external_papers,
     research_import_external_paper,
     research_list_eval_datasets,
+    research_upload_eval_dataset,
+    research_create_eval_experiment,
     research_run_eval,
     research_get_eval_run,
     research_list_eval_experiments,
@@ -2420,8 +3021,13 @@ RESEARCH_TOOLS = [
     research_export_synthesis_topics,
     research_create_tasks_from_topics,
     research_find_duplicate_papers,
+    research_find_cross_library_duplicates,
     research_export_kb_manifest,
+    research_export_kb_bundle,
+    research_validate_kb_manifest,
     research_generate_eval_dataset,
     research_merge_duplicate_group,
     research_restore_archived_papers,
+    research_list_archived_papers,
+    research_enrich_paper_metadata,
 ]

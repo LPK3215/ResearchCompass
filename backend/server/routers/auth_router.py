@@ -82,6 +82,11 @@ class UserProfileUpdate(BaseModel):
     phone_number: str | None = None
 
 
+class PasswordChangeRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
 class UserResponse(BaseModel):
     id: int
     username: str
@@ -573,6 +578,25 @@ async def update_profile(
         await log_operation(db, current_user.id, "更新个人资料", f"更新个人资料: {', '.join(update_details)}", request)
 
     return current_user.to_dict()
+
+
+# 路由：修改当前用户密码
+@auth.post("/password")
+async def change_password(
+    payload: PasswordChangeRequest,
+    request: Request,
+    current_user: User = Depends(get_required_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """修改当前用户密码，需校验当前密码。"""
+    if not AuthUtils.verify_password(current_user.password_hash, payload.current_password):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="当前密码不正确")
+    if payload.current_password == payload.new_password:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="新密码不能与当前密码相同")
+    current_user.password_hash = AuthUtils.hash_password(payload.new_password)
+    await db.commit()
+    await log_operation(db, current_user.id, "修改密码", "用户修改登录密码", request)
+    return {"message": "密码已更新"}
 
 
 # 路由：创建新用户（管理员权限）

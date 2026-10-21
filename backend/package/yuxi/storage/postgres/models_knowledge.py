@@ -123,7 +123,7 @@ class AcademicPaper(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     paper_id = Column(String(64), nullable=False, index=True)
     kb_id = Column(String(80), ForeignKey("knowledge_bases.kb_id", ondelete="CASCADE"), nullable=False, index=True)
-    file_id = Column(String(64), ForeignKey("knowledge_files.file_id", ondelete="CASCADE"), nullable=False, index=True)
+    file_id = Column(String(64), ForeignKey("knowledge_files.file_id", ondelete="CASCADE"), nullable=True, index=True)
     title = Column(Text, nullable=False)
     abstract = Column(Text)
     authors = Column(JSON_VALUE)
@@ -139,6 +139,33 @@ class AcademicPaper(Base):
     metadata_error = Column(Text)
     metadata_revision = Column(Integer, nullable=False, default=1)
     indexed_revision = Column(Integer, nullable=False, default=0)
+    # 重复合并只写归档时间，不占用 metadata_status；列表、检索、导出与统计均排除归档论文。
+    archived_at = Column(UTCDateTime)
+    created_at = Column(UTCDateTime, default=utc_now_naive)
+    updated_at = Column(UTCDateTime, default=utc_now_naive, onupdate=utc_now_naive)
+
+
+class ResearchPaperNote(Base):
+    """论文级阅读笔记与选区批注，按用户隔离。"""
+
+    __tablename__ = "research_paper_notes"
+    __table_args__ = (
+        UniqueConstraint("note_id", name="uq_research_paper_notes_note_id"),
+        Index("ix_research_paper_notes_kb_paper_created", "kb_id", "paper_id", "created_at"),
+        Index("ix_research_paper_notes_kb_uid", "kb_id", "uid"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    note_id = Column(String(64), nullable=False, unique=True, index=True)
+    kb_id = Column(String(80), ForeignKey("knowledge_bases.kb_id", ondelete="CASCADE"), nullable=False, index=True)
+    paper_id = Column(String(64), nullable=False, index=True)
+    uid = Column(String(64), nullable=False, index=True)
+    content = Column(Text, nullable=False)
+    quote = Column(Text)
+    chunk_id = Column(String(128))
+    page = Column(Integer)
+    start_offset = Column(Integer)
+    end_offset = Column(Integer)
     created_at = Column(UTCDateTime, default=utc_now_naive)
     updated_at = Column(UTCDateTime, default=utc_now_naive, onupdate=utc_now_naive)
 
@@ -964,6 +991,25 @@ class AcademicPaperTag(Base):
     uid = Column(String(64), nullable=False, index=True)
     tag = Column(String(64), nullable=False)
     created_at = Column(UTCDateTime, default=utc_now_naive)
+
+
+class AcademicPaperScreening(Base):
+    """用户在系统综述筛选阶段对论文的纳入 / 排除决定；无记录即待定。"""
+
+    __tablename__ = "academic_paper_screenings"
+    __table_args__ = (
+        UniqueConstraint("kb_id", "paper_id", "uid", name="uq_academic_paper_screenings_identity"),
+        Index("ix_academic_paper_screenings_kb_decision", "kb_id", "decision"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    kb_id = Column(String(80), ForeignKey("knowledge_bases.kb_id", ondelete="CASCADE"), nullable=False, index=True)
+    paper_id = Column(String(64), nullable=False, index=True)
+    uid = Column(String(64), nullable=False, index=True)
+    decision = Column(String(16), nullable=False)
+    reason = Column(Text)
+    created_at = Column(UTCDateTime, default=utc_now_naive)
+    updated_at = Column(UTCDateTime, default=utc_now_naive, onupdate=utc_now_naive)
 
 
 class KnowledgeGraphEntity(Base):

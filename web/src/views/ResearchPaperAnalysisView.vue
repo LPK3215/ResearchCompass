@@ -119,6 +119,52 @@
             </div>
           </section>
         </div>
+
+        <section class="report-card paper-chat-card">
+          <header>
+            <span class="stage-index">CHAT</span>
+            <div>
+              <h2>论文对话</h2>
+              <p>只检索本篇论文的切片，回答带 chunk 引用，可回到 PDF 原文</p>
+            </div>
+          </header>
+          <div class="chat-body">
+            <div v-if="chatMessages.length === 0" class="chat-empty">
+              例如：这篇论文的核心贡献与实验设置是什么？作者报告的局限有哪些？
+            </div>
+            <article v-for="(item, index) in chatMessages" :key="index" class="chat-message" :class="item.role">
+              <strong>{{ item.role === 'user' ? '我' : '论文助手' }}</strong>
+              <MarkdownPreview v-if="item.role === 'assistant'" :content="item.content" compact />
+              <p v-else class="chat-question">{{ item.content }}</p>
+              <div v-if="item.citations?.length" class="chat-citations">
+                <a-button
+                  v-for="citation in item.citations"
+                  :key="citation.chunk_id"
+                  size="small"
+                  :type="citation.cited ? 'primary' : 'default'"
+                  ghost
+                  @click="openCitation(citation)"
+                >
+                  {{ citation.page_start ? `第 ${citation.page_start} 页` : '原文片段' }}
+                  <span v-if="citation.section_title"> · {{ citation.section_title }}</span>
+                </a-button>
+              </div>
+            </article>
+            <a-alert v-if="chatError" type="error" show-icon :message="chatError" />
+            <div class="chat-input-row">
+              <a-textarea
+                v-model:value="chatQuestion"
+                :maxlength="2000"
+                :rows="2"
+                placeholder="针对这篇论文提问，回答只使用本篇论文的片段"
+                @press-enter.exact="askQuestion"
+              />
+              <a-button type="primary" :loading="chatLoading" :disabled="!chatQuestion.trim()" @click="askQuestion">
+                追问
+              </a-button>
+            </div>
+          </div>
+        </section>
       </template>
     </main>
   </div>
@@ -133,6 +179,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { ChevronDown } from 'lucide-vue-next'
+import MarkdownPreview from '@/components/common/MarkdownPreview.vue'
 import PageHeader from '@/components/shared/PageHeader.vue'
 import { researchApi } from '@/apis/research_api'
 
@@ -147,6 +194,10 @@ const starting = ref(false)
 const exporting = ref(false)
 const briefing = ref(false)
 const diagramLoading = ref(false)
+const chatMessages = ref([])
+const chatQuestion = ref('')
+const chatLoading = ref(false)
+const chatError = ref('')
 const error = ref('')
 let pollTimer = null
 
@@ -273,6 +324,31 @@ const exportDiagram = async ({ key: kind }) => {
   }
 }
 
+const askQuestion = async () => {
+  const question = chatQuestion.value.trim()
+  if (!question || chatLoading.value) return
+  const history = chatMessages.value.slice(-6).map(({ role, content }) => ({ role, content }))
+  chatLoading.value = true
+  chatError.value = ''
+  try {
+    const result = await researchApi.askPaperQuestion(kbId, paperId, { question, history })
+    chatMessages.value.push({ role: 'user', content: question })
+    chatMessages.value.push({ role: 'assistant', content: result.answer, citations: result.citations || [] })
+    chatQuestion.value = ''
+  } catch (err) {
+    chatError.value = err.message || '论文对话失败'
+  } finally {
+    chatLoading.value = false
+  }
+}
+
+const openCitation = (citation) => {
+  router.push({
+    name: 'ResearchCompass',
+    query: { kbId, paperId, chunkId: citation.chunk_id }
+  })
+}
+
 onMounted(loadReport)
 onBeforeUnmount(clearPolling)
 </script>
@@ -302,6 +378,14 @@ h1 { margin: 0; color: var(--color-text); font-size: 25px; line-height: 1.35; }
 .innovation-item .ant-tag, .gap-item .ant-tag { position: absolute; top: 12px; right: 12px; margin: 0; }
 .method-block + .method-block { padding-top: 4px; }
 .future-direction-block { padding-top: 4px; }
+.paper-chat-card .chat-body { display: flex; flex-direction: column; gap: 12px; padding-top: 16px; }
+.chat-empty { color: var(--color-text-tertiary); font-size: 13px; }
+.chat-message { padding: 10px 12px; border-radius: 8px; background: var(--gray-30); }
+.chat-message.user { background: var(--main-30); }
+.chat-message strong { display: block; margin-bottom: 6px; color: var(--color-text-secondary); font-size: 12px; }
+.chat-question { margin: 0; white-space: pre-wrap; }
+.chat-citations { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.chat-input-row { display: flex; gap: 10px; align-items: flex-end; }
 
 @media (max-width: 900px) {
   .report-grid { grid-template-columns: 1fr; }

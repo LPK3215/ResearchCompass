@@ -10,7 +10,12 @@ from pydantic import ValidationError
 from yuxi.agents.toolkits.registry import get_extra_metadata
 from yuxi.agents.toolkits.research import tools as research_tools
 from yuxi.repositories.agent_repository import RESEARCH_COPILOT_TOOL_SLUGS
-from yuxi.services import research_project_service, research_search_service, research_synthesis_service
+from yuxi.services import (
+    research_paper_service,
+    research_project_service,
+    research_search_service,
+    research_synthesis_service,
+)
 
 
 def _runtime(*, project_id: str | None = "project-1") -> SimpleNamespace:
@@ -317,6 +322,107 @@ async def test_export_synthesis_writes_file_and_returns_artifact_path(monkeypatc
     assert result["artifact_path"].endswith("/research_synthesis_run1.md")
     assert (tmp_path / "research_synthesis_run1.md").read_bytes() == b"# Markdown content"
     assert captured["export"]["export_format"] == "markdown"
+
+
+@pytest.mark.asyncio
+async def test_upload_eval_dataset_rejects_non_jsonl_filename(monkeypatch):
+    async def get_current_user(_runtime):
+        return SimpleNamespace(uid="admin-1", role="admin")
+
+    monkeypatch.setattr(research_tools, "_current_user", get_current_user)
+
+    with pytest.raises(ToolException, match="jsonl"):
+        await research_tools.research_upload_eval_dataset.coroutine(
+            name="基准",
+            content='{"question":"q"}',
+            description="",
+            filename="benchmark.csv",
+            runtime=_runtime(),
+        )
+
+
+@pytest.mark.asyncio
+async def test_upload_eval_dataset_forwards_jsonl_bytes(monkeypatch):
+    from yuxi.knowledge.eval import service as eval_service
+
+    captured = {}
+
+    class FakeEvaluationService:
+        async def upload_dataset(self, **kwargs):
+            captured.update(kwargs)
+            return {
+                "dataset_id": "dataset-1",
+                "name": kwargs["name"],
+                "item_count": 2,
+                "has_gold_chunks": False,
+                "has_gold_answers": True,
+            }
+
+    async def get_current_user(_runtime):
+        return SimpleNamespace(uid="admin-1", role="admin")
+
+    async def allow_access(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(research_tools, "_current_user", get_current_user)
+    monkeypatch.setattr(eval_service, "EvaluationService", FakeEvaluationService)
+    monkeypatch.setattr(research_paper_service, "_ensure_access", allow_access)
+
+    result = await research_tools.research_upload_eval_dataset.coroutine(
+        name="基准",
+        content='{"question":"q1"}\n{"question":"q2","gold_answer":"a"}',
+        description="说明",
+        filename="benchmark.jsonl",
+        runtime=_runtime(),
+    )
+
+    assert result["dataset_id"] == "dataset-1"
+    assert result["item_count"] == 2
+    assert captured["file_content"].startswith(b'{"question":"q1"}')
+    assert captured["created_by"] == "admin-1"
+
+
+@pytest.mark.asyncio
+async def test_create_eval_experiment_dumps_variant_models(monkeypatch):
+    from yuxi.knowledge.eval import service as eval_service
+
+    captured = {}
+
+    class FakeEvaluationService:
+        async def create_experiment(self, **kwargs):
+            captured.update(kwargs)
+            return {"experiment_id": "experiment-1", "name": kwargs["name"], "status": "queued", "variants": []}
+
+    async def get_current_user(_runtime):
+        return SimpleNamespace(uid="admin-1", role="admin")
+
+    async def allow_access(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(research_tools, "_current_user", get_current_user)
+    monkeypatch.setattr(eval_service, "EvaluationService", FakeEvaluationService)
+    monkeypatch.setattr(research_paper_service, "_ensure_access", allow_access)
+
+    result = await research_tools.research_create_eval_experiment.coroutine(
+        dataset_id="dataset-1",
+        name="消融",
+        description="",
+        baseline_variant_index=0,
+        shared_config={"temperature": 0},
+        variants=[
+            research_tools.EvalExperimentVariantInput(name="baseline"),
+            research_tools.EvalExperimentVariantInput(name="no_reranker", retrieval_config={"use_reranker": False}),
+        ],
+        runtime=_runtime(),
+    )
+
+    assert result["experiment_id"] == "experiment-1"
+    assert captured["variants"][1] == {
+        "name": "no_reranker",
+        "retrieval_config": {"use_reranker": False},
+        "kb_id": None,
+    }
+    assert captured["created_by"] == "admin-1"
 
 
 def test_research_copilot_registers_the_complete_tool_set():

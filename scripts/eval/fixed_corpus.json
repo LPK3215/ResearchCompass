@@ -1,0 +1,97 @@
+{
+  "name": "ResearchCompass 固定语料 v1",
+  "version": "2026-10-21",
+  "description": "28 篇开放获取论文与 10 个金标准问题，用于检索、综述、分析对比与用户评测的可复现基线。",
+  "papers": [
+    {"identifier": "arXiv:1706.03762", "title": "Attention Is All You Need", "year": 2017, "topic": "Transformer"},
+    {"identifier": "arXiv:1810.04805", "title": "BERT: Pre-training of Deep Bidirectional Transformers", "year": 2018, "topic": "预训练"},
+    {"identifier": "arXiv:2005.14165", "title": "Language Models are Few-Shot Learners", "year": 2020, "topic": "大模型"},
+    {"identifier": "arXiv:2005.11401", "title": "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks", "year": 2020, "topic": "RAG"},
+    {"identifier": "arXiv:2004.04906", "title": "Dense Passage Retrieval for Open-Domain Question Answering", "year": 2020, "topic": "检索"},
+    {"identifier": "arXiv:2007.01282", "title": "Leveraging Passage Retrieval with Generative Models for Open Domain Question Answering", "year": 2020, "topic": "RAG"},
+    {"identifier": "arXiv:2002.08909", "title": "REALM: Retrieval-Augmented Language Model Pre-Training", "year": 2020, "topic": "RAG"},
+    {"identifier": "arXiv:2004.12832", "title": "ColBERT: Efficient and Effective Passage Search via Contextualized Late Interaction over BERT", "year": 2020, "topic": "检索"},
+    {"identifier": "arXiv:1908.10084", "title": "Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks", "year": 2019, "topic": "嵌入"},
+    {"identifier": "arXiv:1702.08734", "title": "Billion-scale similarity search with GPUs", "year": 2017, "topic": "向量检索"},
+    {"identifier": "arXiv:1603.09320", "title": "Efficient and robust approximate nearest neighbor search using Hierarchical Navigable Small World graphs", "year": 2016, "topic": "向量检索"},
+    {"identifier": "arXiv:2104.08663", "title": "BEIR: A Heterogeneous Benchmark for Zero-shot Evaluation of Information Retrieval Models", "year": 2021, "topic": "评测"},
+    {"identifier": "arXiv:2210.07316", "title": "MTEB: Massive Text Embedding Benchmark", "year": 2022, "topic": "评测"},
+    {"identifier": "arXiv:2310.11511", "title": "Self-RAG: Learning to Retrieve, Generate, and Critique through Self-Reflection", "year": 2023, "topic": "RAG"},
+    {"identifier": "arXiv:2401.15884", "title": "Corrective Retrieval Augmented Generation", "year": 2024, "topic": "RAG"},
+    {"identifier": "arXiv:2404.16130", "title": "From Local to Global: A Graph RAG Approach to Query-Focused Summarization", "year": 2024, "topic": "GraphRAG"},
+    {"identifier": "arXiv:2401.18059", "title": "RAPTOR: Recursive Abstractive Processing for Tree-Organized Retrieval", "year": 2024, "topic": "RAG"},
+    {"identifier": "arXiv:2307.03172", "title": "Lost in the Middle: How Language Models Use Long Contexts", "year": 2023, "topic": "长上下文"},
+    {"identifier": "arXiv:2201.11903", "title": "Chain-of-Thought Prompting Elicits Reasoning in Large Language Models", "year": 2022, "topic": "推理"},
+    {"identifier": "arXiv:2210.03629", "title": "ReAct: Synergizing Reasoning and Acting in Language Models", "year": 2022, "topic": "智能体"},
+    {"identifier": "arXiv:2302.04761", "title": "Toolformer: Language Models Can Teach Themselves to Use Tools", "year": 2023, "topic": "智能体"},
+    {"identifier": "arXiv:2106.09685", "title": "LoRA: Low-Rank Adaptation of Large Language Models", "year": 2021, "topic": "高效微调"},
+    {"identifier": "arXiv:2203.02155", "title": "Training language models to follow instructions with human feedback", "year": 2022, "topic": "对齐"},
+    {"identifier": "arXiv:2302.13971", "title": "LLaMA: Open and Efficient Foundation Language Models", "year": 2023, "topic": "大模型"},
+    {"identifier": "arXiv:2010.11929", "title": "An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale", "year": 2020, "topic": "视觉"},
+    {"identifier": "arXiv:2103.00020", "title": "Learning Transferable Visual Models From Natural Language Supervision", "year": 2021, "topic": "多模态"},
+    {"identifier": "arXiv:2006.11239", "title": "Denoising Diffusion Probabilistic Models", "year": 2020, "topic": "生成模型"},
+    {"identifier": "arXiv:1903.10676", "title": "SciBERT: A Pretrained Language Model for Scientific Text", "year": 2019, "topic": "科学文本"}
+  ],
+  "questions": [
+    {
+      "id": "q01",
+      "question": "RAG 的基本流程由哪两部分组成？",
+      "gold_paper_identifiers": ["arXiv:2005.11401"],
+      "gold_points": ["检索器检索相关文档", "生成器以检索结果为条件生成答案", "检索与生成可端到端训练"]
+    },
+    {
+      "id": "q02",
+      "question": "稠密检索与 BM25 稀疏检索的主要差异是什么？",
+      "gold_paper_identifiers": ["arXiv:2004.04906", "arXiv:2104.08663"],
+      "gold_points": ["稠密检索学习语义向量表示", "BM25 依赖词项匹配与统计权重", "稠密检索在零样本场景需要基准评测"]
+    },
+    {
+      "id": "q03",
+      "question": "如何系统评估检索增强生成系统？",
+      "gold_paper_identifiers": ["arXiv:2104.08663", "arXiv:2210.07316"],
+      "gold_points": ["检索侧使用 Recall@K、nDCG 等指标", "生成侧评估答案正确性与证据一致性", "需要异构零样本基准与嵌入模型评测"]
+    },
+    {
+      "id": "q04",
+      "question": "Self-RAG 如何决定何时检索以及如何评估生成内容？",
+      "gold_paper_identifiers": ["arXiv:2310.11511"],
+      "gold_points": ["使用反思标记控制是否检索", "对检索内容与生成内容进行自我批判", "按需检索而非固定检索"]
+    },
+    {
+      "id": "q05",
+      "question": "GraphRAG 与普通 RAG 的核心区别是什么？",
+      "gold_paper_identifiers": ["arXiv:2404.16130"],
+      "gold_points": ["构建实体与关系图", "对图做社区划分与摘要", "面向全局问题的查询聚焦摘要"]
+    },
+    {
+      "id": "q06",
+      "question": "长上下文模型中，关键信息的位置会带来什么影响？",
+      "gold_paper_identifiers": ["arXiv:2307.03172"],
+      "gold_points": ["信息位于中间时利用率下降", "模型存在首尾偏好", "更长的上下文不等于更有效的利用"]
+    },
+    {
+      "id": "q07",
+      "question": "有哪些方法可以降低 RAG 的幻觉？",
+      "gold_paper_identifiers": ["arXiv:2310.11511", "arXiv:2401.15884"],
+      "gold_points": ["自反思与生成批判", "检索质量纠正", "要求结论绑定证据"]
+    },
+    {
+      "id": "q08",
+      "question": "RAPTOR 如何提升长文档的检索与问答？",
+      "gold_paper_identifiers": ["arXiv:2401.18059"],
+      "gold_points": ["递归聚类与摘要构建树结构", "支持多粒度检索", "提升长文档全局理解"]
+    },
+    {
+      "id": "q09",
+      "question": "双塔检索与交叉编码器检索各有什么取舍？",
+      "gold_paper_identifiers": ["arXiv:1908.10084", "arXiv:2004.12832"],
+      "gold_points": ["双塔可预计算、延迟低", "交叉编码器精度高但计算昂贵", "ColBERT 使用延迟交互折中"]
+    },
+    {
+      "id": "q10",
+      "question": "RAG 与工具调用智能体的关系是什么？",
+      "gold_paper_identifiers": ["arXiv:2005.11401", "arXiv:2210.03629", "arXiv:2302.04761"],
+      "gold_points": ["检索可以被视为一种工具", "ReAct 交替推理与行动", "Toolformer 让模型学习调用工具"]
+    }
+  ]
+}

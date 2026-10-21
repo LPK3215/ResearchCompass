@@ -27,6 +27,7 @@ yarn-error.log*
 log
 logs
 *.log.*
+test-results/
 *.db
 *.lock
 !uv.lock

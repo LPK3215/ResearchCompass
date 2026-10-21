@@ -19,6 +19,11 @@ from yuxi.knowledge.runtime import knowledge_base
 from yuxi.repositories.academic_paper_repository import AcademicPaperRepository
 from yuxi.repositories.knowledge_file_repository import KnowledgeFileRepository
 from yuxi.repositories.user_repository import UserRepository
+from yuxi.services.external_academic_search_service import (
+    ExternalSearchSourceError,
+    _semantic_scholar_item,
+    search_multi_source,
+)
 from yuxi.services.research_paper_service import _ensure_access
 from yuxi.services.semantic_scholar_service import (
     SemanticScholarClient,
@@ -30,6 +35,9 @@ from yuxi.storage.minio.client import MinIOClient, get_minio_client
 from yuxi.storage.postgres.models_business import User
 from yuxi.utils import hashstr, logger
 from yuxi.knowledge.utils import calculate_content_hash
+
+
+EXTERNAL_PAPER_IMPORT_TIMEOUT_SECONDS = 15 * 60
 
 
 class AcademicPaperImportError(PublicTaskError):
@@ -147,56 +155,43 @@ def _paper_metadata(paper: dict[str, Any]) -> dict[str, Any]:
 
 
 def _open_access_url(paper: dict[str, Any]) -> str | None:
-    open_access = paper.get("openAccessPdf")
-    if isinstance(open_access, dict):
-        url = str(open_access.get("url") or "").strip()
-        if url:
-            return url
-    # Fallback: 从 externalIds 构造 arXiv PDF URL
+    # 优先使用 arXiv 直链：Semantic Scholar 的 openAccessPdf 有时指向摘要页或出版社落地页，
+    # 下载后不是 PDF；arXiv 直链更稳定。
     external_ids = paper.get("externalIds")
     if isinstance(external_ids, dict):
         arxiv_id = str(external_ids.get("ArXiv") or "").strip()
         if arxiv_id:
             return f"https://arxiv.org/pdf/{arxiv_id}.pdf"
+    open_access = paper.get("openAccessPdf")
+    if isinstance(open_access, dict):
+        url = str(open_access.get("url") or "").strip()
+        if url:
+            return url
     return None
 
 
 async def search_external_papers(*, kb_id: str, current_user: User, query: str, limit: int) -> dict[str, Any]:
+    """检索外部论文：标识符走 Semantic Scholar 精确解析，关键词走多源检索并归并。"""
     await _ensure_access(current_user, kb_id)
-    try:
-        client = SemanticScholarClient()
-        papers = [await client.get_paper(query)] if is_paper_identifier(query) else await client.search(query, limit)
-    except SemanticScholarError as exc:
-        retryable = exc.error_type.startswith("semantic_scholar_") or exc.error_type in {
-            "paper_pdf_timeout", "paper_pdf_download_failed"
+    if is_paper_identifier(query):
+        try:
+            paper = await SemanticScholarClient().get_paper(query)
+        except SemanticScholarError as exc:
+            retryable = exc.error_type.startswith("semantic_scholar_")
+            raise AcademicPaperImportError(
+                exc.error_type, exc.message, retryable=retryable, dependency="semantic_scholar" if retryable else None
+            ) from exc
+        return {
+            "items": [_semantic_scholar_item(paper)],
+            "sources": [{"source": "semantic_scholar", "label": "Semantic Scholar", "status": "ok", "count": 1}],
+            "partial": False,
         }
+    try:
+        return await search_multi_source(query, limit)
+    except ExternalSearchSourceError as exc:
         raise AcademicPaperImportError(
-            exc.error_type, exc.message, retryable=retryable, dependency="semantic_scholar" if retryable else None
+            "external_search_unavailable", exc.message, retryable=True, dependency="external_search"
         ) from exc
-    return {
-        "items": [
-            {
-                "paper_id": paper.get("paperId"),
-                "title": paper.get("title"),
-                "abstract": paper.get("abstract"),
-                "authors": [
-                    author.get("name")
-                    for author in paper.get("authors") or []
-                    if isinstance(author, dict) and author.get("name")
-                ],
-                "publication_year": paper.get("year"),
-                "venue": paper.get("venue"),
-                "doi": (paper.get("externalIds") or {}).get("DOI")
-                if isinstance(paper.get("externalIds"), dict)
-                else None,
-                "citation_count": paper.get("citationCount"),
-                "is_open_access": bool(paper.get("isOpenAccess")),
-                "open_access_url": _open_access_url(paper),
-                "external_ids": paper.get("externalIds") or {},
-            }
-            for paper in papers
-        ]
-    }
 
 
 async def _run_import_task(
@@ -375,6 +370,7 @@ async def import_external_paper(*, identifier: str, kb_id: str, current_user: Us
             },
             payload_match={"kb_id": kb_id, "identifier": identifier},
             statuses={"pending", "running"},
+            timeout_seconds=EXTERNAL_PAPER_IMPORT_TIMEOUT_SECONDS,
             coroutine=_resume_external_paper_import_task,
         )
     except Exception as exc:
@@ -407,8 +403,10 @@ async def _stage_external_paper_import(
             paper_id=paper_metadata["paper_id"],
             doi=paper_metadata.get("doi"),
             external_ids=paper_metadata.get("external_ids"),
+            title=paper_metadata["title"],
+            year=paper_metadata.get("publication_year"),
         )
-        if existing is not None:
+        if existing is not None and existing.file_id is not None:
             raise AcademicPaperImportError("paper_already_imported", "该论文已经存在于当前知识库")
         pdf_url = _open_access_url(paper)
         if not pdf_url:
@@ -417,7 +415,8 @@ async def _stage_external_paper_import(
         pdf_bytes, final_url = await client.download_open_access_pdf(pdf_url)
     except SemanticScholarError as exc:
         retryable = exc.error_type.startswith("semantic_scholar_") or exc.error_type in {
-            "paper_pdf_timeout", "paper_pdf_download_failed"
+            "paper_pdf_timeout",
+            "paper_pdf_download_failed",
         }
         raise AcademicPaperImportError(
             exc.error_type, exc.message, retryable=retryable, dependency="semantic_scholar" if retryable else None
@@ -436,13 +435,18 @@ async def _stage_external_paper_import(
     minio_client = get_minio_client()
     try:
         upload_result = await minio_client.aupload_file(
-            bucket_name=MinIOClient.KB_BUCKETS["documents"], object_name=object_name,
-            data=pdf_bytes, content_type="application/pdf"
+            bucket_name=MinIOClient.KB_BUCKETS["documents"],
+            object_name=object_name,
+            data=pdf_bytes,
+            content_type="application/pdf",
         )
         params = {
-            "content_type": "file", "content_hashes": {upload_result.url: content_hash},
-            "file_sizes": {upload_result.url: len(pdf_bytes)}, "source_path": filename,
-            "chunk_preset_id": "academic", "chunk_parser_config": {"paper_metadata": paper_metadata},
+            "content_type": "file",
+            "content_hashes": {upload_result.url: content_hash},
+            "file_sizes": {upload_result.url: len(pdf_bytes)},
+            "source_path": filename,
+            "chunk_preset_id": "academic",
+            "chunk_parser_config": {"paper_metadata": paper_metadata},
             "external_import": {"provider": "semantic_scholar", "identifier": paper_id, "source_url": final_url},
         }
         file_meta = await knowledge_base.add_file_record(
@@ -574,6 +578,7 @@ async def recover_external_paper_imports() -> int:
                     },
                     payload_match={"kb_id": record.kb_id, "file_id": record.file_id},
                     statuses={"pending", "running"},
+                    timeout_seconds=EXTERNAL_PAPER_IMPORT_TIMEOUT_SECONDS,
                     coroutine=_resume_external_paper_import_task,
                 )
             except Exception as exc:

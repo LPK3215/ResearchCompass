@@ -344,6 +344,12 @@ class PostgresManager(metaclass=SingletonMeta):
                 "ON research_search_runs (kb_id, uid, is_pinned, created_at)"
             ),
             "ALTER TABLE IF EXISTS academic_papers ADD COLUMN IF NOT EXISTS metadata_error TEXT",
+            "ALTER TABLE IF EXISTS academic_papers ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ",
+            (
+                "UPDATE academic_papers SET archived_at = COALESCE(archived_at, NOW()),"
+                " indexed_revision = GREATEST(indexed_revision, metadata_revision),"
+                " metadata_status = 'extracted' WHERE metadata_status = 'archived'"
+            ),
             "ALTER TABLE IF EXISTS academic_paper_analysis_runs ADD COLUMN IF NOT EXISTS strategy VARCHAR(32)",
             (
                 "ALTER TABLE IF EXISTS academic_graph_sync_runs ADD COLUMN IF NOT EXISTS "
@@ -1159,6 +1165,24 @@ class PostgresManager(metaclass=SingletonMeta):
             ON agent_run_requests(uid, agent_slug, conversation_thread_id, status, created_at, id)
             """,
             "CREATE INDEX IF NOT EXISTS ix_agent_run_requests_dispatched_run_id ON agent_run_requests(dispatched_run_id)",  # noqa: E501
+            "ALTER TABLE IF EXISTS academic_papers ALTER COLUMN file_id DROP NOT NULL",
+            """CREATE TABLE IF NOT EXISTS research_paper_notes (
+                id SERIAL PRIMARY KEY,
+                note_id VARCHAR(64) UNIQUE NOT NULL,
+                kb_id VARCHAR(80) NOT NULL REFERENCES knowledge_bases(kb_id) ON DELETE CASCADE,
+                paper_id VARCHAR(64) NOT NULL,
+                uid VARCHAR(64) NOT NULL,
+                content TEXT NOT NULL,
+                quote TEXT,
+                chunk_id VARCHAR(128),
+                page INTEGER,
+                start_offset INTEGER,
+                end_offset INTEGER,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )""",
+            "CREATE INDEX IF NOT EXISTS ix_research_paper_notes_kb_paper_created ON research_paper_notes (kb_id, paper_id, created_at)",
+            "CREATE INDEX IF NOT EXISTS ix_research_paper_notes_kb_uid ON research_paper_notes (kb_id, uid)",
         ]
         async with self.async_engine.begin() as conn:
             # 历史未绑定用户的 API Key 会在下方迁移语句里被静默删除，先计数告警

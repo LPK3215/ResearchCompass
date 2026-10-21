@@ -70,6 +70,10 @@ from yuxi.services.research_evidence_service import (
     transition_evidence,
 )
 from yuxi.services.research_paper_export_service import EXPORT_FORMATS, export_papers_document
+from yuxi.services.research_paper_metadata_service import (
+    ResearchPaperMetadataError,
+    enrich_paper_metadata,
+)
 from yuxi.services.research_paper_service import (
     add_paper_tag_view,
     export_papers_bibtex,
@@ -82,6 +86,38 @@ from yuxi.services.research_paper_service import (
     remove_paper_tag_view,
     update_paper_view,
 )
+from yuxi.services.research_paper_screening_service import (
+    ResearchScreeningError,
+    export_screening_csv,
+    get_paper_screening,
+    set_paper_screening,
+)
+from yuxi.services.research_reference_import_service import (
+    ResearchReferenceImportError,
+    import_references,
+)
+from yuxi.services.research_paper_chat_service import (
+    ResearchPaperChatError,
+    ask_paper_question,
+)
+from yuxi.services.research_paper_translation_service import (
+    ResearchPaperTranslationError,
+    translate_paper,
+)
+from yuxi.services.research_citation_snowball_service import (
+    ResearchCitationSnowballError,
+    import_related_papers,
+    list_related_papers,
+)
+from yuxi.services.research_paper_note_service import (
+    ResearchPaperNoteError,
+    create_paper_note,
+    delete_paper_note,
+    export_paper_notes_markdown,
+    list_paper_notes,
+    update_paper_note,
+)
+from yuxi.services.research_onboarding_service import get_onboarding_state
 from yuxi.services.research_search_service import (
     DEFAULT_RESEARCH_SEARCH_MODE,
     LOCAL_HYBRID_MODE,
@@ -144,10 +180,14 @@ from yuxi.services.research_deliverable_service import (
     build_topic_list,
     create_tasks_from_topics,
     export_kb_manifest,
+    export_kb_bundle,
+    find_cross_library_duplicates,
     find_duplicate_papers,
+    list_archived_papers,
     merge_duplicate_group,
     restore_archived_papers,
     render_brief_markdown,
+    validate_kb_manifest,
 )
 from yuxi.services.academic_paper_analysis_evaluation_service import (
     AcademicPaperAnalysisEvaluationError,
@@ -217,6 +257,64 @@ class PaperTagRequest(BaseModel):
         if not normalized:
             raise ValueError("标签不能为空")
         return normalized
+
+
+class PaperScreeningRequest(BaseModel):
+    paper_ids: list[str] = Field(..., min_length=1, max_length=200)
+    decision: str = Field(..., pattern=r"^(included|excluded|pending)$")
+    reason: str = Field(default="", max_length=500)
+
+    @field_validator("paper_ids")
+    @classmethod
+    def normalize_screening_paper_ids(cls, value: list[str]) -> list[str]:
+        normalized = [item.strip() for item in value]
+        if any(not item or len(item) > 64 for item in normalized):
+            raise ValueError("论文标识无效")
+        return list(dict.fromkeys(normalized))
+
+    @field_validator("reason")
+    @classmethod
+    def normalize_screening_reason(cls, value: str) -> str:
+        return value.strip()
+
+
+class PaperChatMessage(BaseModel):
+    role: str = Field(pattern=r"^(user|assistant)$")
+    content: str = Field(..., min_length=1, max_length=4000)
+
+
+class PaperChatRequest(BaseModel):
+    question: str = Field(..., min_length=1, max_length=2000)
+    history: list[PaperChatMessage] = Field(default_factory=list, max_length=6)
+    chat_model: str | None = Field(default=None, max_length=512)
+
+    @field_validator("question")
+    @classmethod
+    def normalize_paper_chat_question(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("问题不能为空")
+        return normalized
+
+
+class ImportRelatedPapersRequest(BaseModel):
+    direction: str = Field(..., pattern=r"^(references|citations)$")
+    paper_ids: list[str] = Field(..., min_length=1, max_length=50)
+    include_full_text: bool = False
+
+    @field_validator("paper_ids")
+    @classmethod
+    def normalize_related_paper_ids(cls, value: list[str]) -> list[str]:
+        normalized = [item.strip() for item in value]
+        if any(not item or len(item) > 64 for item in normalized):
+            raise ValueError("关联文献标识无效")
+        return list(dict.fromkeys(normalized))
+
+
+class PaperTranslationRequest(BaseModel):
+    section_type: str | None = Field(default=None, max_length=64)
+    limit: int = Field(default=6, ge=1, le=12)
+    model_spec: str | None = Field(default=None, max_length=512)
 
 
 class CreateResearchProjectRequest(BaseModel):
@@ -768,6 +866,47 @@ _OPPORTUNITY_STATUS_MAP = {
     "invalid_filter": 422,
 }
 
+_SCREENING_STATUS_MAP = {
+    "paper_not_found": 404,
+    "screening_decision_invalid": 422,
+    "screening_paper_ids_empty": 422,
+    "screening_batch_too_large": 422,
+    "screening_reason_too_long": 422,
+}
+
+_PAPER_CHAT_STATUS_MAP = {
+    "paper_not_found": 404,
+    "paper_chunk_missing": 409,
+    "paper_chat_invalid_question": 422,
+    "paper_chat_history_invalid": 422,
+    "paper_chat_model_unavailable": 409,
+    "paper_chat_retrieval_failed": 502,
+    "paper_chat_model_failed": 502,
+    "paper_chat_empty_answer": 502,
+}
+
+_PAPER_TRANSLATION_STATUS_MAP = {
+    "paper_not_found": 404,
+    "paper_chunk_missing": 409,
+    "translation_model_unavailable": 409,
+    "translation_model_failed": 502,
+    "translation_invalid_json": 502,
+    "translation_invalid_schema": 502,
+}
+
+_SNOWBALL_STATUS_MAP = {
+    "paper_not_found": 404,
+    "snowball_invalid_direction": 422,
+    "snowball_selection_empty": 422,
+    "snowball_selection_too_large": 422,
+    "snowball_selection_invalid": 422,
+    "semantic_scholar_unavailable": 502,
+    "paper_match_not_found": 404,
+    "paper_match_ambiguous": 409,
+    "paper_title_conflict": 409,
+    "paper_year_conflict": 409,
+}
+
 _PAPER_IMPORT_STATUS_MAP = {
     "forbidden": 403,
     "paper_already_imported": 409,
@@ -778,6 +917,24 @@ _PAPER_IMPORT_STATUS_MAP = {
     "paper_import_enqueue_failed": 503,
     "paper_import_record_failed": 502,
     "invalid_search_query": 422,
+}
+
+_REFERENCE_IMPORT_STATUS_MAP = {
+    "forbidden": 403,
+    "reference_content_empty": 422,
+    "reference_content_too_large": 413,
+    "reference_format_unknown": 422,
+    "reference_entries_too_many": 422,
+    "reference_entries_empty": 422,
+    "reference_syntax_error": 422,
+}
+
+_PAPER_NOTE_STATUS_MAP = {
+    "paper_not_found": 404,
+    "note_not_found": 404,
+    "note_forbidden": 403,
+    "note_content_invalid": 422,
+    "note_annotation_invalid": 422,
 }
 
 _USER_STUDY_STATUS_MAP = {
@@ -874,6 +1031,11 @@ async def create_project(
         )
     except ResearchProjectError as exc:
         raise _to_http_error(exc, _PROJECT_STATUS_MAP) from exc
+
+
+@research.get("/onboarding")
+async def research_onboarding(current_user: User = Depends(get_required_user)):
+    return await get_onboarding_state(current_user=current_user)
 
 
 @research.get("/project-templates")
@@ -1524,6 +1686,28 @@ async def import_external_paper_route(
         raise _to_http_error(exc, _PAPER_IMPORT_STATUS_MAP) from exc
 
 
+class ReferenceImportRequest(BaseModel):
+    content: str = Field(..., min_length=1, max_length=5_000_000)
+    format: str | None = Field(default=None, pattern=r"^(bibtex|ris)$")
+
+
+@research.post("/databases/{kb_id}/papers/import-references")
+async def import_reference_file_route(
+    kb_id: str,
+    payload: ReferenceImportRequest,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await import_references(
+            kb_id=kb_id,
+            content=payload.content,
+            reference_format=payload.format,
+            current_user=current_user,
+        )
+    except ResearchReferenceImportError as exc:
+        raise _to_http_error(exc, _REFERENCE_IMPORT_STATUS_MAP) from exc
+
+
 @research.post("/databases/{kb_id}/search")
 async def research_search(
     kb_id: str,
@@ -1838,6 +2022,84 @@ async def list_user_tags(kb_id: str, current_user: User = Depends(get_required_u
     return await list_user_tags_view(kb_id=kb_id, current_user=current_user)
 
 
+@research.get("/databases/{kb_id}/papers/archived")
+async def list_research_archived_papers(
+    kb_id: str,
+    limit: int = Query(default=100, ge=1, le=500),
+    current_user: User = Depends(get_required_user),
+):
+    return await list_archived_papers(kb_id=kb_id, current_user=current_user, limit=limit)
+
+
+@research.get("/databases/{kb_id}/papers/cards")
+async def export_research_paper_cards(
+    kb_id: str,
+    paper_ids: str | None = Query(default=None, max_length=4000),
+    format: str = Query(default="markdown", pattern=r"^(markdown|json)$"),
+    current_user: User = Depends(get_required_user),
+):
+    ids = [item.strip() for item in paper_ids.split(",") if item.strip()] if paper_ids else None
+    try:
+        filename, content, media_type = await export_paper_cards(
+            kb_id=kb_id, current_user=current_user, paper_ids=ids, export_format=format
+        )
+    except ResearchDeliverableError as exc:
+        raise _to_http_error(exc, _DELIVERABLE_STATUS_MAP) from exc
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@research.get("/databases/{kb_id}/papers/screening")
+async def get_papers_screening(
+    kb_id: str,
+    decision: str | None = Query(default=None, pattern=r"^(included|excluded|pending)$"),
+    paper_ids: str | None = Query(default=None, max_length=8000),
+    limit: int = Query(default=50, ge=1, le=200),
+    current_user: User = Depends(get_required_user),
+):
+    ids = [pid.strip() for pid in paper_ids.split(",") if pid.strip()] if paper_ids else None
+    try:
+        return await get_paper_screening(
+            kb_id=kb_id, current_user=current_user, decision=decision, paper_ids=ids, limit=limit
+        )
+    except ResearchScreeningError as exc:
+        raise _to_http_error(exc, _SCREENING_STATUS_MAP) from exc
+
+
+@research.post("/databases/{kb_id}/papers/screening")
+async def update_papers_screening(
+    kb_id: str,
+    payload: PaperScreeningRequest,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await set_paper_screening(
+            kb_id=kb_id,
+            paper_ids=payload.paper_ids,
+            decision=payload.decision,
+            reason=payload.reason,
+            current_user=current_user,
+        )
+    except ResearchScreeningError as exc:
+        raise _to_http_error(exc, _SCREENING_STATUS_MAP) from exc
+
+
+@research.get("/databases/{kb_id}/papers/screening/export")
+async def export_papers_screening(kb_id: str, current_user: User = Depends(get_required_user)):
+    try:
+        filename, content, media_type = await export_screening_csv(kb_id=kb_id, current_user=current_user)
+    except ResearchScreeningError as exc:
+        raise _to_http_error(exc, _SCREENING_STATUS_MAP) from exc
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @research.get("/databases/{kb_id}/papers/{paper_id}")
 async def get_paper(kb_id: str, paper_id: str, current_user: User = Depends(get_required_user)):
     return await get_paper_view(kb_id=kb_id, paper_id=paper_id, current_user=current_user)
@@ -1898,6 +2160,82 @@ async def paper_analysis_run(run_id: str, current_user: User = Depends(get_requi
         return await get_paper_analysis_run(run_id=run_id, current_user=current_user)
     except AcademicPaperAnalysisError as exc:
         raise _to_http_error(exc, _ANALYSIS_STATUS_MAP) from exc
+
+
+@research.post("/databases/{kb_id}/papers/{paper_id}/chat")
+async def chat_with_paper(
+    kb_id: str,
+    paper_id: str,
+    payload: PaperChatRequest,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await ask_paper_question(
+            kb_id=kb_id,
+            paper_id=paper_id,
+            question=payload.question,
+            current_user=current_user,
+            history=[message.model_dump() for message in payload.history],
+            chat_model=payload.chat_model,
+        )
+    except ResearchPaperChatError as exc:
+        raise _to_http_error(exc, _PAPER_CHAT_STATUS_MAP) from exc
+
+
+@research.post("/databases/{kb_id}/papers/{paper_id}/translate")
+async def translate_paper_paragraphs(
+    kb_id: str,
+    paper_id: str,
+    payload: PaperTranslationRequest,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await translate_paper(
+            kb_id=kb_id,
+            paper_id=paper_id,
+            current_user=current_user,
+            section_type=payload.section_type,
+            limit=payload.limit,
+            model_spec=payload.model_spec,
+        )
+    except ResearchPaperTranslationError as exc:
+        raise _to_http_error(exc, _PAPER_TRANSLATION_STATUS_MAP) from exc
+
+
+@research.get("/databases/{kb_id}/papers/{paper_id}/related")
+async def list_paper_related(
+    kb_id: str,
+    paper_id: str,
+    direction: str = Query(default="references", pattern=r"^(references|citations)$"),
+    limit: int = Query(default=20, ge=1, le=50),
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await list_related_papers(
+            kb_id=kb_id, paper_id=paper_id, direction=direction, current_user=current_user, limit=limit
+        )
+    except ResearchCitationSnowballError as exc:
+        raise _to_http_error(exc, _SNOWBALL_STATUS_MAP) from exc
+
+
+@research.post("/databases/{kb_id}/papers/{paper_id}/related/import")
+async def import_paper_related(
+    kb_id: str,
+    paper_id: str,
+    payload: ImportRelatedPapersRequest,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await import_related_papers(
+            kb_id=kb_id,
+            paper_id=paper_id,
+            direction=payload.direction,
+            paper_ids=payload.paper_ids,
+            include_full_text=payload.include_full_text,
+            current_user=current_user,
+        )
+    except ResearchCitationSnowballError as exc:
+        raise _to_http_error(exc, _SNOWBALL_STATUS_MAP) from exc
 
 
 @research.get("/databases/{kb_id}/papers/{paper_id}/analysis/latest")
@@ -2017,6 +2355,96 @@ async def remove_paper_tag(
     return await remove_paper_tag_view(kb_id=kb_id, paper_id=paper_id, tag=tag, current_user=current_user)
 
 
+class PaperNoteCreateRequest(BaseModel):
+    content: str = Field(..., min_length=1, max_length=10_000)
+    quote: str | None = Field(default=None, max_length=5_000)
+    chunk_id: str | None = Field(default=None, max_length=128)
+    page: int | None = Field(default=None, ge=1)
+    start_offset: int | None = Field(default=None, ge=0)
+    end_offset: int | None = Field(default=None, ge=0)
+
+
+class PaperNoteUpdateRequest(BaseModel):
+    content: str = Field(..., min_length=1, max_length=10_000)
+
+
+@research.get("/databases/{kb_id}/papers/{paper_id}/notes")
+async def list_paper_notes_route(kb_id: str, paper_id: str, current_user: User = Depends(get_required_user)):
+    try:
+        return await list_paper_notes(kb_id=kb_id, paper_id=paper_id, current_user=current_user)
+    except ResearchPaperNoteError as exc:
+        raise _to_http_error(exc, _PAPER_NOTE_STATUS_MAP) from exc
+
+
+@research.post("/databases/{kb_id}/papers/{paper_id}/notes")
+async def create_paper_note_route(
+    kb_id: str,
+    paper_id: str,
+    payload: PaperNoteCreateRequest,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await create_paper_note(
+            kb_id=kb_id,
+            paper_id=paper_id,
+            content=payload.content,
+            quote=payload.quote,
+            chunk_id=payload.chunk_id,
+            page=payload.page,
+            start_offset=payload.start_offset,
+            end_offset=payload.end_offset,
+            current_user=current_user,
+        )
+    except ResearchPaperNoteError as exc:
+        raise _to_http_error(exc, _PAPER_NOTE_STATUS_MAP) from exc
+
+
+@research.patch("/databases/{kb_id}/papers/{paper_id}/notes/{note_id}")
+async def update_paper_note_route(
+    kb_id: str,
+    paper_id: str,
+    note_id: str,
+    payload: PaperNoteUpdateRequest,
+    current_user: User = Depends(get_required_user),
+):
+    del kb_id
+    try:
+        return await update_paper_note(
+            note_id=note_id, content=payload.content, current_user=current_user, paper_id=paper_id
+        )
+    except ResearchPaperNoteError as exc:
+        raise _to_http_error(exc, _PAPER_NOTE_STATUS_MAP) from exc
+
+
+@research.delete("/databases/{kb_id}/papers/{paper_id}/notes/{note_id}")
+async def delete_paper_note_route(
+    kb_id: str,
+    paper_id: str,
+    note_id: str,
+    current_user: User = Depends(get_required_user),
+):
+    del kb_id
+    try:
+        return await delete_paper_note(note_id=note_id, current_user=current_user, paper_id=paper_id)
+    except ResearchPaperNoteError as exc:
+        raise _to_http_error(exc, _PAPER_NOTE_STATUS_MAP) from exc
+
+
+@research.get("/databases/{kb_id}/papers/{paper_id}/notes/export")
+async def export_paper_notes_route(kb_id: str, paper_id: str, current_user: User = Depends(get_required_user)):
+    try:
+        filename, content, media_type = await export_paper_notes_markdown(
+            kb_id=kb_id, paper_id=paper_id, current_user=current_user
+        )
+    except ResearchPaperNoteError as exc:
+        raise _to_http_error(exc, _PAPER_NOTE_STATUS_MAP) from exc
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @research.patch("/databases/{kb_id}/papers/{paper_id}")
 async def update_paper(
     kb_id: str,
@@ -2030,6 +2458,25 @@ async def update_paper(
         current_user=current_user,
         updates=payload.model_dump(exclude_unset=True),
     )
+
+
+_PAPER_METADATA_STATUS_MAP = {
+    "paper_not_found": 404,
+    "metadata_not_found": 409,
+    "metadata_reindex_enqueue_failed": 502,
+}
+
+
+@research.post("/databases/{kb_id}/papers/{paper_id}/metadata/enrich")
+async def enrich_research_paper_metadata(
+    kb_id: str,
+    paper_id: str,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await enrich_paper_metadata(kb_id=kb_id, paper_id=paper_id, current_user=current_user)
+    except ResearchPaperMetadataError as exc:
+        raise _to_http_error(exc, _PAPER_METADATA_STATUS_MAP) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -2057,6 +2504,10 @@ _DELIVERABLE_STATUS_MAP = {
     "graph_empty": 409,
     "synthesis_not_success": 409,
     "topic_no_data": 409,
+    "manifest_invalid": 422,
+    "manifest_empty": 422,
+    "manifest_too_large": 422,
+    "cross_library_insufficient": 409,
     "forbidden": 403,
 }
 
@@ -2069,27 +2520,6 @@ class PresentationPackRequest(BaseModel):
     paper_ids: list[str] = Field(..., min_length=1, max_length=10)
     model_spec: str | None = Field(default=None, max_length=512)
     format: str = Field(default="markdown", pattern=r"^(markdown|html)$")
-
-
-@research.get("/databases/{kb_id}/papers/cards")
-async def export_research_paper_cards(
-    kb_id: str,
-    paper_ids: str | None = Query(default=None, max_length=4000),
-    format: str = Query(default="markdown", pattern=r"^(markdown|json)$"),
-    current_user: User = Depends(get_required_user),
-):
-    ids = [item.strip() for item in paper_ids.split(",") if item.strip()] if paper_ids else None
-    try:
-        filename, content, media_type = await export_paper_cards(
-            kb_id=kb_id, current_user=current_user, paper_ids=ids, export_format=format
-        )
-    except ResearchDeliverableError as exc:
-        raise _to_http_error(exc, _DELIVERABLE_STATUS_MAP) from exc
-    return Response(
-        content=content,
-        media_type=media_type,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
 
 
 @research.get("/paper-analysis-runs/{run_id}/export")
@@ -2311,6 +2741,14 @@ async def create_tasks_from_synthesis_topics(
         raise _to_http_error(exc, _DELIVERABLE_STATUS_MAP) from exc
 
 
+@research.get("/duplicates/cross-library")
+async def list_cross_library_duplicates(current_user: User = Depends(get_required_user)):
+    try:
+        return await find_cross_library_duplicates(current_user=current_user)
+    except ResearchDeliverableError as exc:
+        raise _to_http_error(exc, _DELIVERABLE_STATUS_MAP) from exc
+
+
 @research.get("/databases/{kb_id}/duplicates")
 async def list_duplicate_papers(
     kb_id: str,
@@ -2320,6 +2758,22 @@ async def list_duplicate_papers(
         return await find_duplicate_papers(kb_id=kb_id, current_user=current_user)
     except ResearchDeliverableError as exc:
         raise _to_http_error(exc, _DELIVERABLE_STATUS_MAP) from exc
+
+
+@research.get("/databases/{kb_id}/export-bundle")
+async def export_research_kb_bundle(
+    kb_id: str,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        filename, content, media_type = await export_kb_bundle(kb_id=kb_id, current_user=current_user)
+    except ResearchDeliverableError as exc:
+        raise _to_http_error(exc, _DELIVERABLE_STATUS_MAP) from exc
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @research.get("/databases/{kb_id}/export-manifest")
@@ -2347,6 +2801,29 @@ class DuplicateMergeRequest(BaseModel):
     key: str = Field(..., min_length=1, max_length=600)
 
 
+class ValidateManifestRequest(BaseModel):
+    manifest: dict[str, Any]
+
+    @field_validator("manifest")
+    @classmethod
+    def require_manifest_papers(cls, value: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(value.get("papers"), list):
+            raise ValueError("迁移清单缺少 papers 数组")
+        return value
+
+
+@research.post("/databases/{kb_id}/export-manifest/validate")
+async def validate_research_kb_manifest(
+    kb_id: str,
+    payload: ValidateManifestRequest,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await validate_kb_manifest(kb_id=kb_id, manifest=payload.manifest, current_user=current_user)
+    except ResearchDeliverableError as exc:
+        raise _to_http_error(exc, _DELIVERABLE_STATUS_MAP) from exc
+
+
 class DuplicateRestoreRequest(BaseModel):
     paper_ids: list[str] = Field(..., min_length=1, max_length=50)
 
@@ -2370,8 +2847,6 @@ async def restore_archived_papers_route(
     current_user: User = Depends(get_required_user),
 ):
     try:
-        return await restore_archived_papers(
-            kb_id=kb_id, paper_ids=payload.paper_ids, current_user=current_user
-        )
+        return await restore_archived_papers(kb_id=kb_id, paper_ids=payload.paper_ids, current_user=current_user)
     except ResearchDeliverableError as exc:
         raise _to_http_error(exc, _DELIVERABLE_STATUS_MAP) from exc

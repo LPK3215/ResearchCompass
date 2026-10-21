@@ -551,3 +551,33 @@ async def test_same_tasker_restart_requeues_queued_resumable_task_once():
         assert resume_calls == 1
     finally:
         await tasker.shutdown()
+
+
+async def test_resumable_task_timeout_is_persisted_and_reused_on_restart():
+    repo = FakeRepo()
+
+    async def handler(ctx):
+        return None
+
+    tasker = Tasker(worker_count=1, default_timeout_seconds=600)
+    tasker._repo = repo
+    tasker.register_resumable_handler("resumable_demo", handler)
+    task = await tasker.enqueue(
+        name="demo",
+        task_type="resumable_demo",
+        payload={"value": 1},
+        coroutine=handler,
+        timeout_seconds=42,
+    )
+
+    stored = repo.records[task.id]
+    assert stored["payload"][task_service.RESUMABLE_TIMEOUT_KEY] == 42
+
+    restarted = Tasker(worker_count=1, default_timeout_seconds=600)
+    restarted._repo = repo
+    restarted.register_resumable_handler("resumable_demo", handler)
+    await restarted._load_state()
+
+    queued_task_id, _, queued_timeout = restarted._queue.get_nowait()
+    assert queued_task_id == task.id
+    assert queued_timeout == 42

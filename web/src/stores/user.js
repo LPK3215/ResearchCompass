@@ -371,6 +371,30 @@ export const useUserStore = defineStore('user', () => {
     }
   }
 
+  // 修改密码
+  async function changePassword(currentPassword, newPassword) {
+    try {
+      const response = await fetch('/api/auth/password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
+        },
+        body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.detail || '修改密码失败')
+      }
+
+      return await response.json()
+    } catch (error) {
+      console.error('修改密码错误:', error)
+      throw error
+    }
+  }
+
   return {
     // 状态
     token,
@@ -401,7 +425,8 @@ export const useUserStore = defineStore('user', () => {
     validateUsernameAndGenerateUid,
     uploadAvatar,
     getCurrentUser,
-    updateProfile
+    updateProfile,
+    changePassword
   }
 })
 
