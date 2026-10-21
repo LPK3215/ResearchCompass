@@ -168,3 +168,34 @@ async def test_find_duplicates_prefers_fulltext_then_earliest_year(monkeypatch):
     group = result["groups"][0]
     assert group["recommended_paper_id"] == "full-2017"
     assert group["merge_preview"]["keep"]["paper_id"] == "full-2017"
+
+
+@pytest.mark.asyncio
+async def test_find_duplicates_groups_doi_and_title_only_records(monkeypatch):
+    class DuplicateRepository:
+        async def iter_export_batches(self, *, kb_id, batch_size=200):
+            yield [
+                SimpleNamespace(
+                    paper_id="doi-only",
+                    title="Same Paper",
+                    doi="10.1/x",
+                    publication_year=2024,
+                    file_id=None,
+                ),
+                SimpleNamespace(
+                    paper_id="full-title-only",
+                    title="Same Paper",
+                    doi=None,
+                    publication_year=2024,
+                    file_id="file-1",
+                ),
+            ]
+
+    _patch(monkeypatch, DuplicateRepository())
+
+    result = await service.find_duplicate_papers(kb_id="kb-1", current_user=SimpleNamespace(uid="user-1"))
+
+    assert result["duplicate_group_count"] == 1
+    group = result["groups"][0]
+    assert group["count"] == 2
+    assert group["recommended_paper_id"] == "full-title-only"

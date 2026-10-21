@@ -1162,12 +1162,61 @@ async def create_tasks_from_topics(
     return {"created": len(created), "tasks": created, "source_run_id": run_id}
 
 
-def _duplicate_key(paper: Any) -> str:
-    doi = str(getattr(paper, "doi", "") or "").strip().lower()
+def _duplicate_keys(item: Any) -> list[str]:
+    """返回条目的所有可用去重标识；DOI 与归一化标题可同时存在。"""
+
+    def _value(field: str) -> Any:
+        return item.get(field) if isinstance(item, dict) else getattr(item, field, None)
+
+    keys: list[str] = []
+    doi = str(_value("doi") or "").strip().lower()
     if doi:
-        return f"doi:{doi}"
-    title = re.sub(r"[^0-9a-z\u4e00-\u9fff]+", "", str(getattr(paper, "title", "") or "").lower())
-    return f"title:{title[:80]}" if title else ""
+        keys.append(f"doi:{doi}")
+    title = re.sub(r"[^0-9a-z\u4e00-\u9fff]+", "", str(_value("title") or "").lower())
+    if title:
+        keys.append(f"title:{title[:80]}")
+    return keys
+
+
+def _group_duplicate_items(items: list[Any]) -> list[tuple[str, list[Any]]]:
+    """按 DOI/标题连通关系分组，避免有 DOI 的条目与同标题无 DOI 条目漏配。"""
+    parent = list(range(len(items)))
+
+    def _find(index: int) -> int:
+        while parent[index] != index:
+            parent[index] = parent[parent[index]]
+            index = parent[index]
+        return index
+
+    def _union(left: int, right: int) -> None:
+        left_root, right_root = _find(left), _find(right)
+        if left_root != right_root:
+            parent[right_root] = left_root
+
+    key_owner: dict[str, int] = {}
+    keys_by_index: list[list[str]] = []
+    for index, item in enumerate(items):
+        keys = _duplicate_keys(item)
+        keys_by_index.append(keys)
+        for key in keys:
+            if key in key_owner:
+                _union(index, key_owner[key])
+            else:
+                key_owner[key] = index
+
+    grouped: dict[int, list[int]] = {}
+    for index, keys in enumerate(keys_by_index):
+        if keys:
+            grouped.setdefault(_find(index), []).append(index)
+
+    result: list[tuple[str, list[Any]]] = []
+    for indices in grouped.values():
+        if len(indices) < 2:
+            continue
+        group_keys = {key for index in indices for key in keys_by_index[index]}
+        representative_key = sorted(group_keys, key=lambda key: (not key.startswith("doi:"), key))[0]
+        result.append((representative_key, [items[index] for index in indices]))
+    return result
 
 
 async def find_cross_library_duplicates(*, current_user: User, max_libraries: int = 10) -> dict[str, Any]:
@@ -1192,14 +1241,11 @@ async def find_cross_library_duplicates(*, current_user: User, max_libraries: in
     if len(libraries) < 2:
         raise ResearchDeliverableError("cross_library_insufficient", "跨库查重至少需要两个可访问的论文知识库")
 
-    groups: dict[str, list[dict[str, Any]]] = {}
+    collected: list[dict[str, Any]] = []
     for kb in libraries:
         async for batch in AcademicPaperRepository().iter_export_batches(kb_id=str(kb.kb_id)):
             for paper in batch:
-                key = _duplicate_key(paper)
-                if not key:
-                    continue
-                groups.setdefault(key, []).append(
+                collected.append(
                     {
                         "kb_id": str(kb.kb_id),
                         "kb_name": str(kb.name or kb.kb_id),
@@ -1211,7 +1257,7 @@ async def find_cross_library_duplicates(*, current_user: User, max_libraries: in
                 )
 
     duplicates = []
-    for key, items in groups.items():
+    for key, items in _group_duplicate_items(collected):
         library_ids = {item["kb_id"] for item in items}
         if len(library_ids) < 2:
             continue
@@ -1243,13 +1289,8 @@ async def find_duplicate_papers(*, kb_id: str, current_user: User) -> dict[str, 
     papers: list[Any] = []
     async for batch in repo.iter_export_batches(kb_id=kb_id):
         papers.extend(batch)
-    groups: dict[str, list[Any]] = {}
-    for paper in papers:
-        key = _duplicate_key(paper)
-        if key:
-            groups.setdefault(key, []).append(paper)
     duplicates = []
-    for key, items in groups.items():
+    for key, items in _group_duplicate_items(papers):
         if len(items) < 2:
             continue
         def _rank(item: Any) -> tuple[bool, bool, int]:
