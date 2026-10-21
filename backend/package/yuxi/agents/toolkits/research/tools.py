@@ -385,6 +385,11 @@ class PresentationPackInput(BaseModel):
     model_spec: str | None = Field(default=None, max_length=512, description="生成模型；省略时使用默认模型")
 
 
+class ExportAcademicGraphInput(BaseModel):
+    format: Literal["csv", "graphml"] = Field(default="csv", description="导出格式")
+    limit: int = Field(default=500, ge=1, le=500, description="最多导出的图谱节点数")
+
+
 def _research_context(runtime: ToolRuntime) -> dict[str, Any]:
     context = getattr(runtime, "context", None)
     research_context = getattr(context, "research_context", None)
@@ -1967,6 +1972,38 @@ async def research_generate_presentation_pack(
     }
 
 
+@tool(
+    category="research",
+    tags=["科研", "图谱", "导出"],
+    display_name="导出引用图谱",
+    args_schema=ExportAcademicGraphInput,
+)
+async def research_export_academic_graph(
+    format: str,
+    limit: int,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """把当前知识库的引用图谱快照导出为 CSV 或 GraphML，包含节点、边与最近一次同步运行标识。
+
+    导出完成后应调用 present_artifacts 工具将文件展示给用户。
+    """
+    from yuxi.services.academic_graph_sync_service import export_academic_graph
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    filename, content, media_type = await _call(
+        export_academic_graph(kb_id=context["kb_id"], current_user=user, export_format=format, limit=limit)
+    )
+    artifact_path = await _write_artifact(runtime, filename, content)
+    return {
+        "filename": filename,
+        "format": format,
+        "media_type": media_type,
+        "artifact_path": artifact_path,
+        "message": f"引用图谱已导出为 {filename}，请调用 present_artifacts 工具展示该文件",
+    }
+
+
 RESEARCH_TOOLS = [
     research_get_context,
     research_list_projects,
@@ -2033,4 +2070,5 @@ RESEARCH_TOOLS = [
     research_export_paper_analysis,
     research_generate_paper_brief,
     research_generate_presentation_pack,
+    research_export_academic_graph,
 ]

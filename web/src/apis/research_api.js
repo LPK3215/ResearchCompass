@@ -451,6 +451,12 @@ export const researchApi = {
       { method: 'GET' }, true, 'blob'
     ).then((response) => response.blob()),
 
+  exportAcademicGraph: (kbId, exportFormat = 'csv') =>
+    apiRequest(
+      `/api/research/databases/${encodeURIComponent(kbId)}/academic-graph/export?format=${encodeURIComponent(exportFormat)}`,
+      { method: 'GET' }, true, 'blob'
+    ).then((response) => response.blob()),
+
   generatePaperBrief: (kbId, paperId, payload = {}) =>
     apiRequest(
       `/api/research/databases/${encodeURIComponent(kbId)}/papers/${encodeURIComponent(paperId)}/brief`,

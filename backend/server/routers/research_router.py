@@ -111,6 +111,7 @@ from yuxi.services.academic_paper_analysis_service import (
 from yuxi.services.academic_graph_sync_service import (
     AcademicGraphSyncError,
     enqueue_academic_graph_sync,
+    export_academic_graph,
     get_academic_graph_relations,
     get_academic_graph_network,
     get_academic_graph_sync_run,
@@ -709,6 +710,8 @@ _GRAPH_STATUS_MAP = {
     "sync_run_not_found": 404,
     "task_enqueue_failed": 503,
     "graph_sync_active": 409,
+    "graph_empty": 409,
+    "invalid_export_format": 422,
 }
 
 _ANALYSIS_STATUS_MAP = {
@@ -2119,3 +2122,23 @@ async def create_presentation_pack(
         "pack": pack,
         "content": content.decode("utf-8"),
     }
+
+
+@research.get("/databases/{kb_id}/academic-graph/export")
+async def export_research_academic_graph(
+    kb_id: str,
+    format: str = Query(default="csv", pattern=r"^(csv|graphml)$"),
+    limit: int = Query(default=500, ge=1, le=500),
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        filename, content, media_type = await export_academic_graph(
+            kb_id=kb_id, current_user=current_user, export_format=format, limit=limit
+        )
+    except AcademicGraphSyncError as exc:
+        raise _to_http_error(exc, _GRAPH_STATUS_MAP) from exc
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

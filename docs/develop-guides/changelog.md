@@ -96,6 +96,7 @@
 - 研究域能力双通道补齐：为原先只能在科研罗盘工作台点击的能力补上 AI 工具，`research_*` 工具由 26 个扩到 61 个，新增论文分析（运行/读取）、项目报告与论文元数据导出、证据列表/录入/验证/审计、引用图谱同步与网络/两跳关系/冲突查询、趋势与机会、风险登记与状态流转/活动、任务依赖增删、用户评测列表/创建/报告/关闭/CSV 导出、分析对比创建与报告、外部论文搜索与导入、RAG 评估基准与结果查询及发起评估（仅管理员）。工具与 HTTP 路由共用同一 service 与同一套权限校验，导出类工具统一写入沙箱 outputs 并提示调用 `present_artifacts` 交付；证据验证、风险状态流转、依赖移除、评测关闭四类不可逆操作纳入默认审批清单。research-copilot 工具清单与系统提示同步更新，`docs/agents/tools-system.md` 补齐工具表，能力矩阵状态回填 G-01 至 G-09、G-11 为已接入，G-10 部分完成（基准创建与消融实验创建仍待补）。
 - 新增科研交付物服务与四个双通道入口：`research_deliverable_service` 统一渲染文献卡片（元数据 + 最新分析摘要，Markdown/JSON）、论文分析报告 Markdown、单篇论文分层摘要（一句话/一段/一页，模型生成）与组会汇报包（大纲、对比表、讲稿要点，Markdown/单页 HTML）；HTTP 新增 `GET /papers/cards`、`GET /paper-analysis-runs/{id}/export`、`POST /papers/{id}/brief`、`POST /presentation-packs`，工具新增 `research_export_paper_cards`、`research_export_paper_analysis`、`research_generate_paper_brief`、`research_generate_presentation_pack`（工具总数 61 到 65）。界面在论文库导出下拉新增卡片与汇报包入口，在论文分析页新增“导出 Markdown”与“分层摘要”；分析导出同时兼容 `stage_results` 与 `result` 两种运行快照结构，缺字段时显式写“未明确提供”。
 - 论文导出新增期刊引文样式：在 BibTeX/RIS/Markdown/CSV/纯文本之外，支持 GB/T 7714、APA、IEEE 三种参考文献样式。`EXPORT_FORMATS` 新增 `gb7714/apa/ieee` 并统一由 `render_papers_citation` 按存储元数据渲染，作者姓名按原文输出、不做缩写与机构推断，缺失字段直接省略；论文库导出下拉与 `research_export_papers` 工具同步支持三种样式。
+- 引用图谱支持快照导出：新增 `GET /api/research/databases/{kb_id}/academic-graph/export`（`format=csv|graphml`，`limit` 最大 500）与 `research_export_academic_graph` 工具，导出节点（论文/作者/主题）、边（CITES / AUTHORED / HAS_TOPIC）以及最近一次同步运行标识；CSV 用 `record_type` 列区分节点与边并对公式样式单元格加前导单引号，GraphML 对标识与文本转义；界面顶部工具栏新增“导出图谱”下拉。
 
 ## v0.10.0
 

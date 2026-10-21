@@ -41,6 +41,25 @@
           <template #icon><Network :size="15" /></template>
           同步引用图谱
         </a-button>
+        <a-dropdown :trigger="['click']" :disabled="!selectedKbId">
+          <a-button
+            class="lucide-icon-btn"
+            title="导出引用图谱"
+            aria-label="导出引用图谱"
+            :loading="graphExportLoading"
+            :disabled="!selectedKbId"
+          >
+            <template #icon><Download :size="15" /></template>
+            导出图谱
+            <ChevronDown :size="14" />
+          </a-button>
+          <template #overlay>
+            <a-menu @click="exportGraphSnapshot">
+              <a-menu-item key="csv">CSV（节点与边）</a-menu-item>
+              <a-menu-item key="graphml">GraphML</a-menu-item>
+            </a-menu>
+          </template>
+        </a-dropdown>
         <a-button
           class="lucide-icon-btn"
           title="刷新论文库"
@@ -1291,6 +1310,7 @@ const evidencePdfPreviewRef = ref(null)
 const evidencePdfCanvasRef = ref(null)
 const evidencePdfAspectRatio = ref('')
 const exportLoading = ref(false)
+const graphExportLoading = ref(false)
 const externalImportOpen = ref(false)
 const externalImportQuery = ref('')
 const externalPapers = ref([])
@@ -2337,6 +2357,21 @@ const saveBlob = (blob, filename) => {
   a.download = filename
   a.click()
   URL.revokeObjectURL(url)
+}
+
+const exportGraphSnapshot = async ({ key: exportFormat }) => {
+  if (!selectedKbId.value) return
+  const kbId = selectedKbId.value
+  graphExportLoading.value = true
+  try {
+    const blob = await researchApi.exportAcademicGraph(kbId, exportFormat)
+    saveBlob(blob, `research_citation_graph_${kbId}.${exportFormat === 'graphml' ? 'xml' : 'csv'}`)
+    message.success('引用图谱已导出')
+  } catch (error) {
+    message.error(error.message || '引用图谱导出失败')
+  } finally {
+    graphExportLoading.value = false
+  }
 }
 
 const exportAllPapers = async ({ key: exportFormat }) => {

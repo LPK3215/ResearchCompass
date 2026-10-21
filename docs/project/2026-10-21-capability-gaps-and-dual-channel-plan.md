@@ -118,7 +118,7 @@
 | G-23 | 研究空白转选题 | 综述空白无法落地 | P2 | 待修复 | 从综述未支持结论/空白生成选题清单，并批量建为项目任务 |
 | G-30 | 引文样式缺失 | 参考文献只输出数据库字段，不能按期刊格式渲染 | P2 | 已接入，待验收 | 支持 GB/T 7714、APA、IEEE 等至少三种样式，可导出且与项目报告一致 |
 | G-31 | 评估与统计结果不可导出 | 评估/消融/趋势/机会只能用界面看 | P2 | 待修复 | 评估运行、消融报告、趋势与机会统计可导出 CSV/JSON，带数据指纹 |
-| G-32 | 引用图谱数据不可导出 | 图谱只能看不能带走 | P2 | 待修复 | 支持导出节点/边为 CSV 与 GraphML，含同步快照标识 |
+| G-32 | 引用图谱数据不可导出 | 图谱只能看不能带走 | P2 | 已接入，待验收 | 支持导出节点/边为 CSV 与 GraphML，含同步快照标识 |
 
 ### 5.3 生态与写作（G-24 至 G-29、G-33 至 G-34，需单独立项）
 
@@ -162,6 +162,7 @@
 | 2026-10-21 | 核对产出物清单并补全缺口 | 9 项产出物中：4 项已具备、3 项真实缺失、2 项部分或不做；新发现 G-30 至 G-34（引文样式/评估统计导出/图谱导出/笔记批注/整库迁移）；第 2、3 节表格补入核对结论与缺口映射 | 路由、service 与 `EXPORT_FORMATS` 逐项核对 | 是 |
 | 2026-10-21 | 批次 1：交付物服务（G-12、G-13、G-17、G-18、G-19） | 新增 `research_deliverable_service` 与 4 个接口、4 个工具、论文库导出下拉与论文分析页入口；工具总数 61 到 65；`ruff check`、`ruff format`、ESLint 无新增问题；相关单测 30 项通过（未覆盖新增服务本身），未做真实调用 | `backend/package/yuxi/services/research_deliverable_service.py`、`backend/server/routers/research_router.py`、`backend/package/yuxi/agents/toolkits/research/tools.py`、`web/src/apis/research_api.js`、`web/src/views/ResearchCompassView.vue`、`web/src/views/ResearchPaperAnalysisView.vue` | 是（G-12/13/17/18/19 标记已接入，待验收） |
 | 2026-10-21 | 批次 2 第 1 项：G-30 引文样式 | `EXPORT_FORMATS` 新增 gb7714/apa/ieee，`render_papers_citation` 按元数据渲染；论文库导出下拉与 `research_export_papers` 工具同步支持；未运行测试与真实调用 | `backend/package/yuxi/services/research_paper_export_service.py`、`web/src/views/ResearchCompassView.vue`、`toolkits/research/tools.py` | 是（G-30 标记已接入，待验收） |
+| 2026-10-21 | 批次 2 第 2 项：G-32 引用图谱导出 | 新增 `GET /academic-graph/export`（csv/graphml，limit ≤ 500）与 `research_export_academic_graph` 工具，含节点/边与最近同步运行标识；顶部工具栏新增导出下拉；工具总数 65 到 66；未运行测试与真实调用 | `backend/package/yuxi/services/academic_graph_sync_service.py`、`server/routers/research_router.py`、`toolkits/research/tools.py`、`web/src/views/ResearchCompassView.vue`、`web/src/apis/research_api.js` | 是（G-32 标记已接入，待验收） |
 
 ## 8. 明确不做与边界
 
@@ -190,6 +191,7 @@
 | 2026-10-21 | 产出物核对：第 2、3 节补核对结论；新增 G-30 至 G-34，总数达 34 项 |
 | 2026-10-21 | 批次 1 落地：新增交付物服务与 4 个双通道入口（文献卡片/分析报告导出/分层摘要/汇报包），G-12、G-13、G-17、G-18、G-19 转“已接入，待验收” |
 | 2026-10-21 | 批次 2 第 1 项：新增 GB/T 7714、APA、IEEE 三种引文样式，G-30 转“已接入，待验收” |
+| 2026-10-21 | 批次 2 第 2 项：引用图谱支持 CSV/GraphML 快照导出，G-32 转“已接入，待验收” |
 
 ## 附录 A：本轮文档重整的落地与验证（2026-10-21）
 

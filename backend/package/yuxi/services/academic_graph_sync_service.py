@@ -804,3 +804,162 @@ __all__ = [
     "list_academic_graph_conflicts",
     "recover_academic_graph_sync_runs",
 ]
+
+
+GRAPH_EXPORT_FORMATS = {
+    "csv": ("csv", "text/csv; charset=utf-8"),
+    "graphml": ("xml", "application/xml; charset=utf-8"),
+}
+
+
+def _graph_node_label(node: dict[str, Any]) -> str:
+    return str(node.get("title") or node.get("name") or node.get("label") or "").strip()
+
+
+def _graph_cell(value: Any) -> str:
+    text = "" if value is None else str(value)
+    if text.lstrip().startswith(("=", "+", "-", "@")):
+        return f"'{text}"
+    return text
+
+
+def _render_graph_csv(nodes: list[dict[str, Any]], edges: list[dict[str, Any]], *, kb_id: str, snapshot: str) -> str:
+    import csv
+    import io
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(
+        [
+            "record_type",
+            "id",
+            "node_type",
+            "source",
+            "target",
+            "edge_type",
+            "label",
+            "year",
+            "venue",
+            "doi",
+            "citation_count",
+            "kb_id",
+            "snapshot",
+        ]
+    )
+    for node in nodes:
+        year = node.get("year") or node.get("publication_year") or ""
+        writer.writerow(
+            [
+                "node",
+                _graph_cell(node.get("id")),
+                _graph_cell(node.get("type")),
+                "",
+                "",
+                "",
+                _graph_cell(_graph_node_label(node)),
+                _graph_cell(year),
+                _graph_cell(node.get("venue")),
+                _graph_cell(node.get("doi")),
+                _graph_cell(node.get("citation_count")),
+                _graph_cell(kb_id),
+                _graph_cell(snapshot),
+            ]
+        )
+    for edge in edges:
+        writer.writerow(
+            [
+                "edge",
+                _graph_cell(edge.get("id")),
+                "",
+                _graph_cell(edge.get("source")),
+                _graph_cell(edge.get("target")),
+                _graph_cell(edge.get("type")),
+                "",
+                "",
+                "",
+                "",
+                "",
+                _graph_cell(kb_id),
+                _graph_cell(snapshot),
+            ]
+        )
+    return buffer.getvalue()
+
+
+def _render_graph_graphml(
+    nodes: list[dict[str, Any]], edges: list[dict[str, Any]], *, kb_id: str, snapshot: str
+) -> str:
+    from xml.sax.saxutils import escape
+
+    lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<graphml xmlns="http://graphml.graphdrawing.org/xmlns">',
+        '  <key id="label" for="node" attr.name="label" attr.type="string"/>',
+        '  <key id="node_type" for="node" attr.name="node_type" attr.type="string"/>',
+        '  <key id="year" for="node" attr.name="year" attr.type="int"/>',
+        '  <key id="edge_type" for="edge" attr.name="edge_type" attr.type="string"/>',
+        f'  <graph id="{escape(kb_id)}" edgedefault="directed">',
+        f"    <desc>snapshot={escape(snapshot)}</desc>",
+    ]
+    for node in nodes:
+        node_id = str(node.get("id") or "")
+        if not node_id:
+            continue
+        lines.append(f'    <node id="{escape(node_id)}">')
+        lines.append(f'      <data key="label">{escape(_graph_node_label(node))}</data>')
+        lines.append(f'      <data key="node_type">{escape(str(node.get("type") or ""))}</data>')
+        year = node.get("year") or node.get("publication_year")
+        if isinstance(year, int):
+            lines.append(f'      <data key="year">{year}</data>')
+        lines.append("    </node>")
+    for edge in edges:
+        edge_id = str(edge.get("id") or "")
+        source = str(edge.get("source") or "")
+        target = str(edge.get("target") or "")
+        if not (edge_id and source and target):
+            continue
+        lines.append(f'    <edge id="{escape(edge_id)}" source="{escape(source)}" target="{escape(target)}">')
+        lines.append(f'      <data key="edge_type">{escape(str(edge.get("type") or ""))}</data>')
+        lines.append("    </edge>")
+    lines.extend(["  </graph>", "</graphml>"])
+    return "\n".join(lines)
+
+
+async def _latest_sync_snapshot(kb_id: str) -> str:
+    from sqlalchemy import select
+
+    from yuxi.storage.postgres.manager import pg_manager
+    from yuxi.storage.postgres.models_knowledge import AcademicGraphSyncRun
+
+    async with pg_manager.get_async_session_context() as session:
+        row = await session.scalar(
+            select(AcademicGraphSyncRun)
+            .where(AcademicGraphSyncRun.kb_id == kb_id)
+            .order_by(AcademicGraphSyncRun.created_at.desc())
+            .limit(1)
+        )
+    return str(getattr(row, "run_id", "") or "")
+
+
+async def export_academic_graph(
+    *, kb_id: str, current_user: User, export_format: str, limit: int = 500
+) -> tuple[str, bytes, str]:
+    """导出引用图谱快照（节点与边），支持 CSV 与 GraphML，并记录最近一次同步运行标识。"""
+    from yuxi.utils.datetime_utils import utc_now_naive
+
+    await _ensure_access(current_user, kb_id)
+    if export_format not in GRAPH_EXPORT_FORMATS:
+        raise AcademicGraphSyncError("invalid_export_format", "引用图谱只支持 csv 或 graphml 导出")
+    graph = await AcademicGraphRepository().get_graph(kb_id=kb_id, center_paper_id=None, limit=limit)
+    nodes = [item for item in graph.get("nodes") or [] if isinstance(item, dict)]
+    edges = [item for item in graph.get("edges") or [] if isinstance(item, dict)]
+    if not nodes:
+        raise AcademicGraphSyncError("graph_empty", "引用图谱为空，请先同步引用图谱")
+    snapshot = await _latest_sync_snapshot(kb_id)
+    if export_format == "csv":
+        content = _render_graph_csv(nodes, edges, kb_id=kb_id, snapshot=snapshot)
+    else:
+        content = _render_graph_graphml(nodes, edges, kb_id=kb_id, snapshot=snapshot)
+    ext, media_type = GRAPH_EXPORT_FORMATS[export_format]
+    filename = f"research_citation_graph_{kb_id}_{utc_now_naive().strftime('%Y%m%d%H%M')}.{ext}"
+    return filename, content.encode("utf-8"), media_type
