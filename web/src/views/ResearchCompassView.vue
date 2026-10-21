@@ -142,7 +142,7 @@
           </div>
           <a-spin v-if="duplicatesLoading" />
           <template v-else>
-            <a-empty v-if="duplicateGroups.length === 0" description="未发现重复论文" />
+            <a-empty v-if="duplicateGroups.length === 0 && !crossLibraryResult" description="未发现重复论文" />
             <div v-for="group in duplicateGroups" :key="group.key" style="margin-bottom: 14px;">
               <p style="margin: 0 0 4px;"><strong>{{ group.key }}</strong> · {{ group.count }} 篇</p>
               <p v-if="group.merge_preview && group.merge_preview.keep" style="margin: 0 0 4px;">
@@ -2921,8 +2921,8 @@ const maybeOpenOnboarding = async () => {
   await openOnboarding()
 }
 const onboardingActions = {
-  create_knowledge_base: openKnowledgeManagement,
-  upload_paper: openKnowledgeManagement,
+  create_knowledge_base: () => openKnowledgeManagement(),
+  upload_paper: () => openKnowledgeManagement(),
   run_search: () => {
     activeMode.value = 'search'
   },
