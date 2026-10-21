@@ -180,6 +180,8 @@ RESEARCH_COPILOT_TOOL_SLUGS = [
     "research_find_duplicate_papers",
     "research_export_kb_manifest",
     "research_generate_eval_dataset",
+    "research_merge_duplicate_group",
+    "research_restore_archived_papers",
 ]
 RESEARCH_COPILOT_SYSTEM_PROMPT = """你是 ResearchCompass 的 AI 研究助手。
 

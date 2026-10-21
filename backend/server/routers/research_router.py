@@ -145,6 +145,8 @@ from yuxi.services.research_deliverable_service import (
     create_tasks_from_topics,
     export_kb_manifest,
     find_duplicate_papers,
+    merge_duplicate_group,
+    restore_archived_papers,
     render_brief_markdown,
 )
 from yuxi.services.academic_paper_analysis_evaluation_service import (
@@ -2339,3 +2341,37 @@ async def export_research_kb_manifest(
         media_type="application/json; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+class DuplicateMergeRequest(BaseModel):
+    key: str = Field(..., min_length=1, max_length=600)
+
+
+class DuplicateRestoreRequest(BaseModel):
+    paper_ids: list[str] = Field(..., min_length=1, max_length=50)
+
+
+@research.post("/databases/{kb_id}/duplicates/merge")
+async def merge_duplicate_group_route(
+    kb_id: str,
+    payload: DuplicateMergeRequest,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await merge_duplicate_group(kb_id=kb_id, key=payload.key, current_user=current_user)
+    except ResearchDeliverableError as exc:
+        raise _to_http_error(exc, _DELIVERABLE_STATUS_MAP) from exc
+
+
+@research.post("/databases/{kb_id}/duplicates/restore")
+async def restore_archived_papers_route(
+    kb_id: str,
+    payload: DuplicateRestoreRequest,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await restore_archived_papers(
+            kb_id=kb_id, paper_ids=payload.paper_ids, current_user=current_user
+        )
+    except ResearchDeliverableError as exc:
+        raise _to_http_error(exc, _DELIVERABLE_STATUS_MAP) from exc

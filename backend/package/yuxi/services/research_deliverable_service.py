@@ -1216,3 +1216,40 @@ async def export_kb_manifest(*, kb_id: str, current_user: User) -> dict[str, Any
         "graph_counts": graph_counts,
         "note": "本清单只含元数据与图谱统计；原文文件、向量与图数据由备份链路（Postgres + docker volumes）负责。",
     }
+
+
+async def merge_duplicate_group(*, kb_id: str, key: str, current_user: User) -> dict[str, Any]:
+    """按重复分组做归档式合并：保留建议条目，其余置为 archived，可恢复。"""
+    await _ensure_access(current_user, kb_id)
+    result = await find_duplicate_papers(kb_id=kb_id, current_user=current_user)
+    group = next((item for item in result["groups"] if item["key"] == key), None)
+    if group is None:
+        raise ResearchDeliverableError("duplicate_group_not_found", "该重复分组不存在或已被处理")
+    keep_id = group["recommended_paper_id"]
+    archived: list[str] = []
+    repo = AcademicPaperRepository()
+    for paper in group["papers"]:
+        paper_id = paper["paper_id"]
+        if paper_id == keep_id:
+            continue
+        updated = await repo.update_metadata(kb_id=kb_id, paper_id=paper_id, data={"metadata_status": "archived"})
+        if updated is not None:
+            archived.append(paper_id)
+    return {
+        "key": key,
+        "kept_paper_id": keep_id,
+        "archived_paper_ids": archived,
+        "message": "重复条目已归档（metadata_status=archived），原文文件与向量未删除，可调用恢复接口撤销",
+    }
+
+
+async def restore_archived_papers(*, kb_id: str, paper_ids: list[str], current_user: User) -> dict[str, Any]:
+    """恢复被归档的论文条目，重新参与检索与导出。"""
+    await _ensure_access(current_user, kb_id)
+    repo = AcademicPaperRepository()
+    restored: list[str] = []
+    for paper_id in paper_ids:
+        updated = await repo.update_metadata(kb_id=kb_id, paper_id=paper_id, data={"metadata_status": "extracted"})
+        if updated is not None:
+            restored.append(paper_id)
+    return {"restored_paper_ids": restored, "count": len(restored)}

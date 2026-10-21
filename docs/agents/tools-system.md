@@ -72,7 +72,7 @@ kb_tools = get_common_kb_tools()
 
 ### 科研工具 (research)
 
-科研工具使用 `@tool(category="research")` 注册，是 ResearchCompass 在 Yuxi 框架之上扩展的核心能力，由 `research-copilot` 主智能体调用，覆盖项目治理、论文检索、证据综述、分析、图谱、评测与交付物导出等科研闭环场景。每个能力都同时具备工作台界面入口与 AI 工具入口（双通道），共 75 个工具。具体工具如下：
+科研工具使用 `@tool(category="research")` 注册，是 ResearchCompass 在 Yuxi 框架之上扩展的核心能力，由 `research-copilot` 主智能体调用，覆盖项目治理、论文检索、证据综述、分析、图谱、评测与交付物导出等科研闭环场景。每个能力都同时具备工作台界面入口与 AI 工具入口（双通道），共 77 个工具。具体工具如下：
 
 | 工具 | 说明 |
 |------|------|
@@ -151,6 +151,8 @@ kb_tools = get_common_kb_tools()
 | `research_find_duplicate_papers` | 检测库内重复论文（DOI/标题，只读不合并） |
 | `research_export_kb_manifest` | 导出知识库迁移清单（论文元数据 + 图谱统计） |
 | `research_generate_eval_dataset` | 基于知识库自动生成 RAG 评估基准（仅管理员） |
+| `research_merge_duplicate_group` | 按分组归档重复论文（不删文件，可恢复） |
+| `research_restore_archived_papers` | 恢复已归档论文 |
 
 ## 工具组装
 

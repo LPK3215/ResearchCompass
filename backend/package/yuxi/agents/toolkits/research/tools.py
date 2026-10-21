@@ -429,6 +429,14 @@ class GenerateEvalDatasetInput(BaseModel):
     description: str = Field(default="", max_length=500, description="基准说明")
 
 
+class DuplicateMergeInput(BaseModel):
+    key: str = Field(min_length=1, max_length=600, description="查重返回的分组 key")
+
+
+class DuplicateRestoreInput(BaseModel):
+    paper_ids: list[str] = Field(min_length=1, max_length=50, description="待恢复的论文 ID")
+
+
 def _research_context(runtime: ToolRuntime) -> dict[str, Any]:
     context = getattr(runtime, "context", None)
     research_context = getattr(context, "research_context", None)
@@ -2308,6 +2316,36 @@ async def research_generate_eval_dataset(
     }
 
 
+@tool(
+    category="research",
+    tags=["科研", "去重", "整理"],
+    display_name="合并重复论文（归档式）",
+    args_schema=DuplicateMergeInput,
+)
+async def research_merge_duplicate_group(key: str, runtime: ToolRuntime) -> dict[str, Any]:
+    """按重复分组归档除保留条目以外的论文（不删文件，可恢复）。需先调用查重拿分组 key。"""
+    from yuxi.services.research_deliverable_service import merge_duplicate_group
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    return await _call(merge_duplicate_group(kb_id=context["kb_id"], key=key, current_user=user))
+
+
+@tool(
+    category="research",
+    tags=["科研", "去重", "恢复"],
+    display_name="恢复归档论文",
+    args_schema=DuplicateRestoreInput,
+)
+async def research_restore_archived_papers(paper_ids: list[str], runtime: ToolRuntime) -> dict[str, Any]:
+    """把已归档的论文恢复为正常状态，重新参与检索与导出。"""
+    from yuxi.services.research_deliverable_service import restore_archived_papers
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    return await _call(restore_archived_papers(kb_id=context["kb_id"], paper_ids=paper_ids, current_user=user))
+
+
 RESEARCH_TOOLS = [
     research_get_context,
     research_list_projects,
@@ -2384,4 +2422,6 @@ RESEARCH_TOOLS = [
     research_find_duplicate_papers,
     research_export_kb_manifest,
     research_generate_eval_dataset,
+    research_merge_duplicate_group,
+    research_restore_archived_papers,
 ]
