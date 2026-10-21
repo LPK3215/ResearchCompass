@@ -1438,6 +1438,9 @@
           {{ source.label }}：{{ source.status === 'ok' ? `可用 ${source.count} 条` : source.message || '暂不可用' }}
         </a-tag>
       </div>
+      <p v-if="externalSearchPerformed && !externalSearchLoading && externalPapers.length" class="external-result-summary">
+        共 {{ externalPapers.length }} 条可导入结果
+      </p>
       <a-spin v-if="externalSearchLoading" />
       <a-empty v-else-if="externalSearchPerformed && !externalPapers.length" description="没有找到可导入的论文" />
       <div v-else class="external-paper-results">
@@ -4858,6 +4861,12 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   gap: 6px;
   margin: 10px 0;
+}
+
+.external-result-summary {
+  margin: 0 0 8px;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
 }
 
 .papers-loading,

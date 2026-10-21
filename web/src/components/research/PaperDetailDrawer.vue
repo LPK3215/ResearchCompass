@@ -258,10 +258,19 @@
           </div>
         </div>
         <a-alert v-if="translationError" type="error" show-icon :message="translationError" />
+        <p
+          v-if="translationLoading"
+          class="translation-loading-hint"
+          role="status"
+          aria-live="polite"
+        >
+          正在逐段翻译，约需 1–2 分钟，请保持页面打开。
+        </p>
         <div v-if="translationResult?.paragraphs?.length" class="translation-list">
           <article v-for="item in translationResult.paragraphs" :key="item.chunk_id" class="translation-item">
             <header>
               <a-tag v-if="item.page_start">第 {{ item.page_start }} 页</a-tag>
+              <a-tag v-else color="default">页码未提供</a-tag>
               <span v-if="item.section_title">{{ item.section_title }}</span>
             </header>
             <p class="translation-source">{{ item.source }}</p>
@@ -1134,6 +1143,7 @@ const translatePaper = async () => {
   if (!props.paperId || translationLoading.value) return
   translationLoading.value = true
   translationError.value = ''
+  translationResult.value = null
   try {
     translationResult.value = await researchApi.translatePaper(props.kbId, props.paperId, {
       section_type: translationSection.value || null,
@@ -1278,6 +1288,12 @@ onBeforeUnmount(() => {
   margin-top: 14px;
   color: var(--color-text-secondary);
   font-size: 13px;
+}
+
+.translation-loading-hint {
+  margin: 8px 0 0;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
 }
 
 .translation-list {
