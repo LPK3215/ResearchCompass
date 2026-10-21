@@ -471,6 +471,9 @@ export const researchApi = {
       { method: 'GET' }, true, 'blob'
     ).then((response) => response.blob()),
 
+  findDuplicatePapers: (kbId) =>
+    apiGet(`/api/research/databases/${encodeURIComponent(kbId)}/duplicates`),
+
   exportPaperDiagram: (kbId, paperId, kind = 'method') =>
     apiRequest(
       `/api/research/databases/${encodeURIComponent(kbId)}/papers/${encodeURIComponent(paperId)}/structure-diagram?kind=${encodeURIComponent(kind)}`,

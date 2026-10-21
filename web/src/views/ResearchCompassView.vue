@@ -84,6 +84,34 @@
         </a-dropdown>
         <a-button
           class="lucide-icon-btn"
+          :loading="duplicatesLoading"
+          :disabled="!selectedKbId"
+          @click="checkDuplicates"
+        >
+          查重
+        </a-button>
+        <a-modal v-model:open="duplicatesOpen" title="重复论文检测" :footer="null" width="720px">
+          <a-spin v-if="duplicatesLoading" />
+          <template v-else>
+            <a-empty v-if="duplicateGroups.length === 0" description="未发现重复论文" />
+            <div v-for="group in duplicateGroups" :key="group.key" style="margin-bottom: 14px;">
+              <p style="margin: 0 0 4px;"><strong>{{ group.key }}</strong> · {{ group.count }} 篇</p>
+              <p v-if="group.merge_preview && group.merge_preview.keep" style="margin: 0 0 4px;">
+                建议保留：{{ group.merge_preview.keep.title || group.merge_preview.keep.paper_id }}
+              </p>
+              <ul style="margin: 0 0 0 18px; padding: 0;">
+                <li v-for="item in group.papers" :key="item.paper_id">
+                  {{ item.title || item.paper_id }}（{{ item.publication_year || '年份未知' }}）
+                </li>
+              </ul>
+            </div>
+            <p v-if="duplicateGroups.length" style="color: var(--color-text-tertiary); font-size: 12px;">
+              仅报告与建议，不会自动合并。
+            </p>
+          </template>
+        </a-modal>
+        <a-button
+          class="lucide-icon-btn"
           title="刷新论文库"
           aria-label="刷新论文库"
           :loading="loading"
@@ -2418,6 +2446,22 @@ const saveBlob = (blob, filename) => {
 }
 
 const dataExportLoading = ref(false)
+const duplicatesOpen = ref(false)
+const duplicatesLoading = ref(false)
+const duplicateGroups = ref([])
+const checkDuplicates = async () => {
+  if (!selectedKbId.value) return
+  duplicatesOpen.value = true
+  duplicatesLoading.value = true
+  try {
+    const result = await researchApi.findDuplicatePapers(selectedKbId.value)
+    duplicateGroups.value = result.groups || []
+  } catch (error) {
+    message.error(error.message || '重复检测失败')
+  } finally {
+    duplicatesLoading.value = false
+  }
+}
 const exportResearchData = async ({ key }) => {
   const kbId = selectedKbId.value
   if (!kbId) return
