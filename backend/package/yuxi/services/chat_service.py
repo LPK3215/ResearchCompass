@@ -1120,7 +1120,10 @@ async def stream_agent_chat(
         yield make_chunk(status="interrupted", message="对话已中断", meta=meta)
 
     except Exception as exc:
-        logger.error(f"Agent chat stream failed (error_type={type(exc).__name__})")
+        # 只记异常类型与运行标识：上游供应商报错文本可能带密钥，约定不入日志。
+        logger.error(
+            f"智能体运行失败: thread_id={thread_id}, run_id={meta.get('run_id')}, error_type={type(exc).__name__}"
+        )
 
         error_msg = CHAT_STREAM_FAILED_MESSAGE
         error_type = "unexpected_error"
@@ -1339,7 +1342,9 @@ async def stream_agent_resume(
         yield make_resume_chunk(status="interrupted", message="对话恢复已中断", meta=meta)
 
     except Exception as exc:
-        logger.error(f"Agent chat resume failed (error_type={type(exc).__name__})")
+        logger.error(
+            f"对话恢复失败: thread_id={thread_id}, run_id={meta.get('run_id')}, error_type={type(exc).__name__}"
+        )
 
         async with pg_manager.get_async_session_context() as new_db:
             new_conv_repo = ConversationRepository(new_db)

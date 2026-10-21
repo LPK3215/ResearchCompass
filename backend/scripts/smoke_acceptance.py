@@ -20,6 +20,7 @@ import httpx
 ROOT = Path(__file__).resolve().parents[2]
 BASE_URL = os.getenv("SMOKE_BASE_URL", "http://127.0.0.1:5050").rstrip("/")
 REPORT_DIR = ROOT / "test-results"
+RESEARCH_COPILOT_AGENT_SLUG = "research-copilot"
 SMOKE_REFERENCE = """
 @article{smoke_acceptance_ref,
   title = {Smoke Acceptance Reference},
@@ -199,6 +200,24 @@ async def _poll_agent_run(client: httpx.AsyncClient, run_id: str, timeout_second
                 return status, error
         await asyncio.sleep(2)
     return status, f"{error} last_http={last_http}".strip()
+
+
+async def _resume_paused_queue(client: httpx.AsyncClient, *, thread_id: str) -> str:
+    """上一次运行失败后线程队列会停在 paused 态，新请求只入队不派发。
+
+    按产品语义点一次「继续」，返回派发出的 run_id；不可恢复时返回空串。
+    """
+    try:
+        response = await client.post(
+            f"/api/agent/thread/{thread_id}/requests/continue",
+            params={"agent_slug": RESEARCH_COPILOT_AGENT_SLUG},
+        )
+    except Exception as exc:  # noqa: BLE001 - smoke report must record any failure
+        print(f"queue resume request failed (error_type={type(exc).__name__})")
+        return ""
+    if response.status_code != 200:
+        return ""
+    return str(response.json().get("run_id") or "")
 
 
 async def main() -> int:
@@ -498,7 +517,7 @@ async def main() -> int:
             "GET",
             f"/api/research/databases/{kb_id}/external-papers/search",
             params={"query": "retrieval augmented generation", "limit": 3},
-            timeout=120,
+            timeout=180,
         )
 
         reference_kb = str(reference_database["kb_id"]) if reference_database else kb_id
@@ -531,20 +550,27 @@ async def main() -> int:
                 "POST",
                 "/api/agent/runs",
                 json={
-                    "agent_slug": "research-copilot",
+                    "agent_slug": RESEARCH_COPILOT_AGENT_SLUG,
                     "thread_id": thread_id,
                     "query": "请用一句话说明当前知识库的论文总数，并说明你调用了哪个工具。",
                 },
             )
             run_id = str(response.json().get("run_id") or "") if ok and response is not None else ""
+            resumed = False
+            if not run_id and response is not None and response.json().get("status") == "queued":
+                run_id = await _resume_paused_queue(client, thread_id=thread_id)
+                resumed = bool(run_id)
             if run_id:
                 status, error = await _poll_agent_run(client, run_id)
+                detail = f"status={status} {error}".strip()
+                if resumed:
+                    detail = f"{detail} resumed=paused-queue".strip()
                 run.record(
                     "ai",
                     "run-complete",
                     status == "completed",
                     200,
-                    f"status={status} {error}".strip(),
+                    detail,
                 )
             else:
                 run.record("ai", "run-complete", False, None, "未拿到 run_id")

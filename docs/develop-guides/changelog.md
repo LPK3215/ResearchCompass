@@ -10,6 +10,8 @@
 
 ## v0.11.0 (current)
 
+- 冒烟验收脚本加固（`backend/scripts/smoke_acceptance.py`）：多源检索超时从 120 秒放宽到 180 秒（实测 123.7 秒，旧阈值会把正常结果误判为失败）；上一次运行失败或取消会让线程队列停在 `paused`，此时新提交只入队不派发、脚本取不到 `run_id`，现在改为自动调用 `POST /api/agent/thread/{id}/requests/continue` 恢复派发后再等真实 run 跑完。真实用产品接口制造 `paused` 态验证：报告 `test-results/smoke-acceptance-20261022-021515.md`，54 项通过 / 0 失败，AI 项证据 `status=completed resumed=paused-queue`。
+- 智能体运行失败日志补运行标识：`chat_service` 的运行失败/恢复失败日志原来只有异常类型，无法定位是哪一次运行；现在补上 `thread_id` 与 `run_id`。上游供应商报错原文仍不入日志（代码库已有回归测试守护），根因排查走 Langfuse 追踪与 `raise ... from exc` 异常链。
 - 修复宿主机直跑读不到仓库根 `.env`：`backend/package/yuxi/__init__.py` 原先按当前工作目录加载 `.env`，从 `backend/` 直跑时只能拿到 `backend/.env`，根目录 `.env` 里的模型密钥、`RERANK_TIMEOUT_SECONDS`、`EMBEDDING_TIMEOUT`、`LLM_TIMEOUT` 全部缺失——表现为混合检索 502（重排按默认 30 秒超时）与智能体运行失败。改为按仓库路径固定加载 `backend/.env` 与根 `.env`（`override=False`，真实环境变量优先），与 Docker Compose 的 `env_file: .env` 保持一致。真实复测：本地混合检索 3 条命中（27.4 秒，含重排），智能体 run `completed`。
 - 冒烟验收复跑 **54 项通过 / 0 失败**（报告 `test-results/smoke-acceptance-20261022-014947.md`）；后端单测 1674 通过 / 5 跳过；`ruff check package server scripts test/unit/scripts` 与 import 排序均为 0。
 - 新增「演示数据包（体验验证版本）」：新增 `backend/scripts/export_demo_data.py` 与 `backend/scripts/import_demo_data.py`（共享表结构定义在 `backend/scripts/demo_data_spec.py`）。导出把知识库的论文元数据、PDF 原文、chunk 正文与页码定位元数据、以及 17 张业务表的快照固化到仓库 `demo_data/`；导入在新环境一键重建——建演示库、上传 PDF、按快照重建 chunk、用目标环境自己的 embedding 模型重算向量、把业务主键与跨表引用重新映射后写回业务快照。**只增不删**：不覆盖也不删除目标环境已有数据；用户不存在时自动执行 `seed_initial_users.py` 初始化标准账号。`.gitignore` 对 `demo_data/**/*.pdf` 放开，PDF 原文随仓库分发，换机器/重建 Docker 后不再是空库。真实导入验证：11 篇/336 chunk 与 6 篇/139 chunk 两个库导入后，论文、chunk、检索、证据、评测、项目行数与导出快照逐项一致，检索命中分数与源环境一致。
