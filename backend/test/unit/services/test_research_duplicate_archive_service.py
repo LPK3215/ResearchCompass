@@ -143,3 +143,28 @@ async def test_list_archived_papers_reports_archive_time_and_metadata_status(mon
             "archived_at": archived_at.isoformat(),
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_find_duplicates_prefers_fulltext_then_earliest_year(monkeypatch):
+    class DuplicateRepository:
+        async def iter_export_batches(self, *, kb_id, batch_size=200):
+            yield [
+                SimpleNamespace(
+                    paper_id="meta", title="Same Paper", doi=None, publication_year=None, file_id=None
+                ),
+                SimpleNamespace(
+                    paper_id="full-2020", title="Same Paper", doi=None, publication_year=2020, file_id="file-2020"
+                ),
+                SimpleNamespace(
+                    paper_id="full-2017", title="Same Paper", doi=None, publication_year=2017, file_id="file-2017"
+                ),
+            ]
+
+    _patch(monkeypatch, DuplicateRepository())
+
+    result = await service.find_duplicate_papers(kb_id="kb-1", current_user=SimpleNamespace(uid="user-1"))
+
+    group = result["groups"][0]
+    assert group["recommended_paper_id"] == "full-2017"
+    assert group["merge_preview"]["keep"]["paper_id"] == "full-2017"
