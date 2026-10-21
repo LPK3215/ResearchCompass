@@ -61,6 +61,27 @@
             </a-menu>
           </template>
         </a-dropdown>
+        <a-dropdown :trigger="['click']" :disabled="!selectedKbId">
+          <a-button
+            class="lucide-icon-btn"
+            title="导出数据"
+            aria-label="导出数据"
+            :loading="dataExportLoading"
+            :disabled="!selectedKbId"
+          >
+            <template #icon><Download :size="15" /></template>
+            导出数据
+            <ChevronDown :size="14" />
+          </a-button>
+          <template #overlay>
+            <a-menu @click="exportResearchData">
+              <a-menu-item key="trends:json">趋势数据（JSON）</a-menu-item>
+              <a-menu-item key="trends:csv">趋势数据（CSV）</a-menu-item>
+              <a-menu-item key="opportunities:json">机会数据（JSON）</a-menu-item>
+              <a-menu-item key="opportunities:csv">机会数据（CSV）</a-menu-item>
+            </a-menu>
+          </template>
+        </a-dropdown>
         <a-button
           class="lucide-icon-btn"
           title="刷新论文库"
@@ -322,6 +343,18 @@
                 <template #icon><RotateCcw :size="14" /></template>
                 重新生成
               </a-button>
+              <a-dropdown :trigger="['click']">
+                <a-button :disabled="!canExportSynthesis">
+                  转选题
+                  <ChevronDown :size="14" />
+                </a-button>
+                <template #overlay>
+                  <a-menu @click="handleSynthesisTopics">
+                    <a-menu-item key="export">导出选题清单</a-menu-item>
+                    <a-menu-item key="tasks">建为当前项目任务</a-menu-item>
+                  </a-menu>
+                </template>
+              </a-dropdown>
               <a-button
                 :disabled="!canExportSynthesis"
                 :loading="synthesisExporting === 'markdown'"
@@ -1958,6 +1991,28 @@ const refreshSelectedSynthesis = async () => {
   await loadSynthesisRun(selectedSynthesisRunId.value)
 }
 
+const handleSynthesisTopics = async ({ key }) => {
+  const runId = selectedSynthesisRun.value?.run_id
+  if (!runId) return
+  try {
+    if (key === 'export') {
+      const blob = await researchApi.exportSynthesisTopics(runId)
+      saveBlob(blob, `research_topics_${runId}.md`)
+      message.success('选题清单已导出')
+      return
+    }
+    const projectId = selectedProject.value?.project_id
+    if (!projectId) {
+      message.warning('请先在左侧选择研究项目')
+      return
+    }
+    const result = await researchApi.createTasksFromTopics(runId, projectId)
+    message.success(`已创建 ${result.created} 个选题任务`)
+  } catch (error) {
+    message.error(error.message || '选题处理失败')
+  }
+}
+
 const cancelSelectedSynthesis = async () => {
   const runId = selectedSynthesisRun.value?.run_id
   if (!runId || !canCancelSynthesis.value || synthesisCancelling.value) return
@@ -2360,6 +2415,23 @@ const saveBlob = (blob, filename) => {
   a.download = filename
   a.click()
   URL.revokeObjectURL(url)
+}
+
+const dataExportLoading = ref(false)
+const exportResearchData = async ({ key }) => {
+  const kbId = selectedKbId.value
+  if (!kbId) return
+  const [kind, format] = String(key).split(':')
+  dataExportLoading.value = true
+  try {
+    const blob = await researchApi.exportResearchData(kbId, kind, format)
+    saveBlob(blob, `research_${kind}_${kbId}.${format}`)
+    message.success('数据已导出')
+  } catch (error) {
+    message.error(error.message || '数据导出失败')
+  } finally {
+    dataExportLoading.value = false
+  }
 }
 
 const exportGraphSnapshot = async ({ key: exportFormat }) => {

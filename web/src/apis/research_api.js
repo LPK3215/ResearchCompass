@@ -489,6 +489,24 @@ export const researchApi = {
       { method: 'POST', body: JSON.stringify(payload) }
     ),
 
+  exportResearchData: (kbId, kind, exportFormat = 'json') =>
+    apiRequest(
+      `/api/research/databases/${encodeURIComponent(kbId)}/exports/${encodeURIComponent(kind)}?format=${encodeURIComponent(exportFormat)}`,
+      { method: 'GET' }, true, 'blob'
+    ).then((response) => response.blob()),
+
+  exportSynthesisTopics: (runId) =>
+    apiRequest(
+      `/api/research/synthesis-runs/${encodeURIComponent(runId)}/topics`,
+      { method: 'GET' }, true, 'blob'
+    ).then((response) => response.blob()),
+
+  createTasksFromTopics: (runId, projectId, limit = 10) =>
+    apiRequest(
+      `/api/research/synthesis-runs/${encodeURIComponent(runId)}/topics/tasks`,
+      { method: 'POST', body: JSON.stringify({ project_id: projectId, limit }) }
+    ),
+
   listUserTags: (kbId) =>
     apiGet(`/api/research/databases/${encodeURIComponent(kbId)}/papers/tags`),
 

@@ -115,9 +115,9 @@
 | G-20 | 结构图生成 | 方法与引用脉络无可视产出 | P2 | 已接入，待验收 | 生成方法流程 / 引用脉络 / 主题聚类图（SVG 或 HTML），工作区可预览与下载 |
 | G-21 | 文献对比矩阵 | 多维对比靠人工拼表 | P2 | 已接入，待验收 | 多篇 × 多字段自动成表，导出 CSV/MD，缺证据字段显式标注 |
 | G-22 | 引用网络洞察报告 | 图谱只能看不能讲 | P2 | 已接入，待验收 | 输出枢纽论文、研究谱系与断层叙事（MD），每条结论带引用 |
-| G-23 | 研究空白转选题 | 综述空白无法落地 | P2 | 部分完成（接口 + AI 工具；界面入口待补） | 从综述未支持结论/空白生成选题清单，并批量建为项目任务 |
+| G-23 | 研究空白转选题 | 综述空白无法落地 | P2 | 已接入，待验收 | 从综述未支持结论/空白生成选题清单，并批量建为项目任务 |
 | G-30 | 引文样式缺失 | 参考文献只输出数据库字段，不能按期刊格式渲染 | P2 | 已接入，待验收 | 支持 GB/T 7714、APA、IEEE 等至少三种样式，可导出且与项目报告一致 |
-| G-31 | 评估与统计结果不可导出 | 评估/消融/趋势/机会只能用界面看 | P2 | 部分完成（接口 + AI 工具；界面入口待补） | 评估运行、消融报告、趋势与机会统计可导出 CSV/JSON，带数据指纹 |
+| G-31 | 评估与统计结果不可导出 | 评估/消融/趋势/机会只能用界面看 | P2 | 已接入，待验收（趋势/机会界面已接；评估逐条导出为待选项） | 评估运行、消融报告、趋势与机会统计可导出 CSV/JSON，带数据指纹 |
 | G-32 | 引用图谱数据不可导出 | 图谱只能看不能带走 | P2 | 已接入，待验收 | 支持导出节点/边为 CSV 与 GraphML，含同步快照标识 |
 
 ### 5.3 生态与写作（G-24 至 G-29、G-33 至 G-34，需单独立项）
@@ -168,6 +168,7 @@
 | 2026-10-21 | 批次 3 第 2 项：G-21 文献对比矩阵 | 新增 `GET /comparison-matrix` 与 `research_export_comparison_matrix` 工具，2 到 20 篇论文按论文/年份/来源/研究问题/方法/数据集/结论/局限成表，Markdown 与 CSV，缺分析单元格标注“证据不足”；论文库导出下拉新增两项；工具总数 68 到 69；未运行测试 | `backend/package/yuxi/services/research_deliverable_service.py`、`server/routers/research_router.py`、`toolkits/research/tools.py`、`web/src/views/ResearchCompassView.vue`、`web/src/apis/research_api.js` | 是（G-21 标记已接入，待验收） |
 | 2026-10-21 | 批次 3 第 3 项：G-22 引用网络洞察 + G-20 引用脉络图 | 新增 `GET /citation-insight` 与 `research_generate_citation_insight`，输出枢纽论文/研究谱系/孤立节点与数据边界；结构图新增 `kind=citation`（枢纽论文为中心）；界面在导出图谱下拉与结构图下拉各增一项；工具总数 69 到 70；未运行测试 | `backend/package/yuxi/services/research_deliverable_service.py`、`server/routers/research_router.py`、`toolkits/research/tools.py`、`web/src/views/ResearchCompassView.vue`、`web/src/views/ResearchPaperAnalysisView.vue` | 是（G-22 已接入；G-20 补齐引用脉络） |
 | 2026-10-21 | 批次 3 第 4 项：G-23 综述转选题（部分） | 新增 `GET /synthesis-runs/{run_id}/topics`（选题清单 Markdown）与 `POST /synthesis-runs/{run_id}/topics/tasks`（批量建任务）；工具 `research_export_synthesis_topics` / `research_create_tasks_from_topics`（总数 70 到 72）；只接受验证成功的综述；界面入口待补；未运行测试 | `backend/package/yuxi/services/research_deliverable_service.py`、`server/routers/research_router.py`、`toolkits/research/tools.py` | 是（G-23 标记部分完成） |
+| 2026-10-21 | 补齐 G-23/G-31 界面入口 | 综述页新增“转选题”下拉（导出清单 / 建为当前项目任务）；工具栏新增“导出数据”下拉（趋势/机会 JSON·CSV）；ESLint 通过；评估运行与消融实验的逐条导出按钮列为待选项（接口与 AI 工具已覆盖） | `web/src/views/ResearchCompassView.vue`、`web/src/apis/research_api.js` | 是（G-23、G-31 转“已接入，待验收”） |
 
 ## 8. 明确不做与边界
 
