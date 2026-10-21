@@ -169,7 +169,7 @@
 - 后端全量：`pytest test/unit` **1649 项通过、5 项跳过**（4 个 Windows 符号链接测试 + 1 个 MinerU 不可用），0 失败
 - 后端相关套件：笔记 8、参考文献导入 13、图谱 8、tasker 18、改密 7、筛选 6、论文对话 5、翻译 6、导入工具 35、导入服务 9、汇报包渲染 2、上下文提示词 3、路由顺序 1，全部通过
 - 工具守卫：`python scripts/check_research_tool_parity.py` → `defined=97 enabled=97 parity ok`
-- 静态检查：`ruff check package server scripts` 全仓 0 错误；本轮清理 26 处 E501 + 3 处 F841/F401，并移除 summary 中间件未使用的 token 计数调用
+- 静态检查：`ruff check package server scripts` 全仓 0 错误；本轮清理 25 处 E501 + 3 处 F841 + 1 处 F401，并移除 summary 中间件未使用的 token 计数调用
 
 ### 4.3 真实数据验证
 
