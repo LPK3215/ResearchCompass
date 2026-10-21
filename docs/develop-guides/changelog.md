@@ -10,6 +10,8 @@
 
 ## v0.11.0 (current)
 
+- 验收补齐：G-37 归档审批分层验证；REST 恢复真实通过，restore 已注册敏感工具，研究 copilot 强制 default 审批，审批/interrupt 相关 33 项测试通过；未跑真实模型审批 E2E，列入风险。
+- 验收补齐：G-36 元数据补全；备选库导入真实 DOI 的 ResNet 参考条目，Crossref 补齐作者、CVPR venue、引用数；abstract/keywords 缺项如实返回，未覆盖已有字段。
 - 验收补齐：G-25 归档恢复；烟测参考文献先临时归档，归档列表 1 篇，`duplicates/restore` 返回 1 篇，数据库回到 active，未删除论文。
 - 验收补齐：G-31 评估/消融/趋势/机会导出；趋势/机会浏览器已验，`eval_run` 221,764 B、`eval_experiment` 4,581 B，JSON 含 fingerprint，均 API 200。
 - 交付物稳定性：模型调用/JSON 瞬时失败自动重试一次；选题清单跳过缺失标题并格式化方向对象，修复导出出现 `None`；G-13 汇报包（含讲稿要点）、G-19 讲稿要点、G-23 选题清单验收通过。
