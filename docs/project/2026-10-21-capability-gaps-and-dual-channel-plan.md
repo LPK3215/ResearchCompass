@@ -166,8 +166,8 @@
 
 - 前端：`pnpm test:unit` **91 项通过**；ESLint、生产构建通过
 - 前端 API 层：幂等 GET/HEAD 瞬时网络失败自动重试 1 次（300ms），POST 不重试；新增 2 项单测
-- 后端全量：`pytest test/unit` **1645 项通过、5 项跳过**（4 个 Windows 符号链接测试 + 1 个 MinerU 不可用），0 失败
-- 后端相关套件：笔记 8、参考文献导入 13、图谱 8、tasker 18、改密 4、筛选 6、论文对话 5、翻译 6、导入工具 35、导入服务 9、汇报包渲染 2、路由顺序 1，全部通过
+- 后端全量：`pytest test/unit` **1648 项通过、5 项跳过**（4 个 Windows 符号链接测试 + 1 个 MinerU 不可用），0 失败
+- 后端相关套件：笔记 8、参考文献导入 13、图谱 8、tasker 18、改密 4、筛选 6、论文对话 5、翻译 6、导入工具 35、导入服务 9、汇报包渲染 2、上下文提示词 3、路由顺序 1，全部通过
 - 工具守卫：`python scripts/check_research_tool_parity.py` → `defined=97 enabled=97 parity ok`
 - 静态检查：`ruff check` 通过
 
@@ -195,6 +195,7 @@
 | `/research` 白屏：`onboardingActions` 在 `openKnowledgeManagement` 初始化前引用（TDZ） | 改为惰性箭头函数；浏览器复测页面正常渲染，0 控制台错误 |
 | 跨库查重有结果时仍显示“未发现重复论文” | 空状态增加 `!crossLibraryResult` 条件；复测矛盾提示消失 |
 | 重复合并推荐保留仅元数据条目，可能归档全文论文 | 排序改为优先全文、再 DOI、再最早年份；新增回归测试；浏览器实际合并验证保留全文条目 |
+| 研究助手只向模型提供库/项目/工作区，未把当前选中的论文/检索/综述告诉模型 | 提示词补工作区中文标签、当前选中对象与指代规则；真实运行验证返回选中论文标题 |
 
 ## 5. 固定语料与基线
 
@@ -261,6 +262,7 @@
 - [x] 首轮发现并修复：`/research` TDZ 白屏；跨库查重有结果时仍显示“未发现重复论文”
 - [x] 可见窗口下用真实 Chrome 复看：引导自动打开/关闭/重开、选区批注与高亮、笔记创建/删除、清单实际下载（12 篇 JSON）、实际合并、稳定加载 0 控制台错误
 - [x] 实际合并验证：保留有全文原条目，归档临时重复条目；临时数据已清理
+- [x] 研究助手上下文：选中 Attention 后提问，真实运行返回“Attention is All you Need”
 - 截图：`test-results/ui-research.png`、`ui-onboarding.png`、`ui-notes.png`、`ui-manifest.png`、`ui-duplicate.png`、`ui-merged.png`
 
 浏览器验收重点：

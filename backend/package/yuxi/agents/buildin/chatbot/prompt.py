@@ -97,6 +97,27 @@ def _research_context_prompt(context) -> str:
     if not isinstance(research_context, dict) or not research_context.get("kb_id"):
         return ""
 
+    surface_labels = {
+        "projects": "研究项目",
+        "library": "论文库",
+        "search": "智能检索",
+        "synthesis": "证据综述",
+        "graph": "引用图谱",
+        "trends": "研究趋势",
+        "opportunities": "研究机会",
+        "analysis-evaluations": "分析对比",
+        "user-studies": "用户评测",
+    }
+    selection_labels = {
+        "paper": "论文",
+        "search_run": "检索运行",
+        "synthesis_run": "证据综述",
+        "analysis_run": "分析运行",
+        "milestone": "里程碑",
+        "task": "任务",
+        "project_asset": "项目成果",
+    }
+
     scope = [f"知识库 ID: {research_context['kb_id']}"]
     if research_context.get("kb_name"):
         scope.append(f"知识库: {research_context['kb_name']}")
@@ -104,8 +125,17 @@ def _research_context_prompt(context) -> str:
         scope.append(f"项目 ID: {research_context['project_id']}")
     if research_context.get("project_title"):
         scope.append(f"项目: {research_context['project_title']}")
-    if research_context.get("surface"):
-        scope.append(f"当前工作区: {research_context['surface']}")
+    surface = str(research_context.get("surface") or "").strip()
+    if surface:
+        scope.append(f"当前工作区: {surface_labels.get(surface, surface)}")
+    selection = research_context.get("selection")
+    if isinstance(selection, dict) and str(selection.get("id") or "").strip():
+        selection_type = str(selection.get("type") or "").strip()
+        selection_title = str(selection.get("title") or "").strip()
+        selection_label = selection_labels.get(selection_type, selection_type or "对象")
+        scope.append(
+            f"当前选中: {selection_label} {selection_title or selection['id']}（ID: {selection['id']}）"
+        )
 
     return """
 <research_compass_context>
@@ -115,6 +145,9 @@ def _research_context_prompt(context) -> str:
 规则：
 - 研究项目、执行计划、检索、综述和成果状态必须通过 ResearchCompass 工具读取，以工具结果为事实来源。
 - 默认在当前知识库和当前项目内工作；需要离开当前项目时先明确说明并取得用户同意。
+- 用户说“这篇论文 / 当前检索 / 当前综述 / 这个节点 / 它”时，默认指当前选中对象；
+  先调用 research_get_context 或对应读取工具确认，不要只凭标题猜测。
+- 当前选中对象只提供作用域提示，不能替代真实数据读取；写入前必须校验对象归属。
 - 工具写入的数据会出现在结构化工作台中。完成写操作后，简要说明变更对象和下一步，不要在聊天中维护第二份项目状态。
 - 不得编造论文、证据、项目、任务、成果或运行状态；异步任务只报告工具返回的真实状态和标识。
 </research_compass_context>
