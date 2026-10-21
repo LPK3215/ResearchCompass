@@ -72,7 +72,7 @@ kb_tools = get_common_kb_tools()
 
 ### 科研工具 (research)
 
-科研工具使用 `@tool(category="research")` 注册，是 ResearchCompass 在 Yuxi 框架之上扩展的核心能力，由 `research-copilot` 主智能体调用，覆盖项目治理、论文检索、证据综述、产物管理等科研闭环场景。具体工具如下：
+科研工具使用 `@tool(category="research")` 注册，是 ResearchCompass 在 Yuxi 框架之上扩展的核心能力，由 `research-copilot` 主智能体调用，覆盖项目治理、论文检索、证据综述、分析、图谱、评测与交付物导出等科研闭环场景。每个能力都同时具备工作台界面入口与 AI 工具入口（双通道），共 61 个工具。具体工具如下：
 
 | 工具 | 说明 |
 |------|------|
@@ -102,6 +102,41 @@ kb_tools = get_common_kb_tools()
 | `research_remove_project_asset` | 移除项目资产 |
 | `research_link_asset_to_plan` | 将资产关联到里程碑或任务 |
 | `research_unlink_asset_from_plan` | 解除资产与计划项的关联 |
+| `research_run_paper_analysis` | 对单篇论文发起结构化分析（单 Agent / 四阶段多 Agent） |
+| `research_get_paper_analysis` | 读取指定分析运行或某篇论文最近一次分析结果 |
+| `research_export_project_report` | 将项目导出为 Markdown / Word / CSV 报告 |
+| `research_export_papers` | 将论文元数据导出为 BibTeX / Markdown / RIS / CSV |
+| `research_list_evidence` | 查询当前知识库已录入证据与验证状态 |
+| `research_create_evidence` | 将知识片段录入为待验证证据 |
+| `research_verify_evidence` | 验证、作废或归档证据（综述失败时的补救入口） |
+| `research_get_evidence_audit` | 读取证据的状态活动、综述引用与项目影响 |
+| `research_sync_academic_graph` | 把知识库论文同步到引用图谱，返回同步运行 ID |
+| `research_get_academic_graph` | 读取引用图谱网络，可按中心论文展开 |
+| `research_get_graph_relations` | 读取某篇图谱论文的可解释两跳引用关系 |
+| `research_list_graph_conflicts` | 读取一次同步运行中的元数据冲突 |
+| `research_get_trends` | 统计发表趋势、关键词演进与新兴方向 |
+| `research_get_opportunities` | 给出研究机会排序与判断依据 |
+| `research_list_project_risks` | 查询项目风险登记项与处置状态 |
+| `research_create_project_risk` | 在当前项目登记风险 |
+| `research_transition_project_risk` | 推进风险处置状态（需审批） |
+| `research_list_project_risk_activities` | 读取一条风险的处置活动记录 |
+| `research_add_task_dependency` | 声明任务依赖，循环依赖会被拒绝 |
+| `research_remove_task_dependency` | 移除任务依赖（需审批） |
+| `research_list_user_studies` | 查询用户评测、参与人数与回收情况 |
+| `research_create_user_study` | 创建匿名单次邀请的用户评测（需审批） |
+| `research_get_user_study_report` | 读取 SUS、任务评分与匿名原始响应 |
+| `research_close_user_study` | 关闭用户评测（需审批） |
+| `research_export_user_study` | 导出用户评测 CSV |
+| `research_create_analysis_evaluation` | 创建单/多 Agent 分析对比，供人工 A/B 盲审 |
+| `research_list_analysis_evaluations` | 查询分析对比实验与状态 |
+| `research_get_analysis_evaluation` | 读取分析对比汇总报告（仅统计真实人工评分） |
+| `research_search_external_papers` | 在 Semantic Scholar 搜索公开论文 |
+| `research_import_external_paper` | 按标题或 DOI 导入公开论文（需审批） |
+| `research_list_eval_datasets` | 查询 RAG 评估基准（仅管理员） |
+| `research_run_eval` | 基于评估基准发起 RAG 评估（仅管理员） |
+| `research_get_eval_run` | 读取评估逐题结果与指标（仅管理员） |
+| `research_list_eval_experiments` | 查询消融实验（仅管理员） |
+| `research_get_eval_experiment` | 读取消融实验报告与指纹（仅管理员） |
 
 ## 工具组装
 

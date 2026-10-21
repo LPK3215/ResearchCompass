@@ -197,6 +197,172 @@ class UnlinkAssetInput(ProjectReferenceInput):
     link_id: str = Field(min_length=1, max_length=64)
 
 
+class RunPaperAnalysisInput(BaseModel):
+    paper_id: str = Field(min_length=1, max_length=128, description="论文 ID，可从检索结果或论文库获得")
+    model_spec: str | None = Field(default=None, max_length=512, description="分析模型；省略时使用当前会话模型")
+
+
+class GetPaperAnalysisInput(BaseModel):
+    paper_id: str | None = Field(default=None, max_length=128, description="读取该论文最近一次分析")
+    run_id: str | None = Field(default=None, max_length=64, description="读取指定分析运行")
+
+    @model_validator(mode="after")
+    def require_target(self):
+        if bool(self.paper_id) == bool(self.run_id):
+            raise ValueError("必须且只能提供 paper_id 或 run_id")
+        return self
+
+
+class ExportProjectReportInput(BaseModel):
+    format: Literal["markdown", "docx", "csv"] = Field(default="markdown", description="导出格式")
+
+
+class ExportPapersInput(BaseModel):
+    format: Literal["bibtex", "markdown", "ris", "csv"] = Field(default="bibtex", description="导出格式")
+    paper_ids: list[str] = Field(default_factory=list, max_length=200, description="为空表示导出当前知识库全部论文")
+
+
+class ListEvidenceInput(BaseModel):
+    status: Literal["unverified", "verified", "invalid", "archived"] | None = Field(
+        default=None, description="按状态筛选"
+    )
+    limit: int = Field(default=50, ge=1, le=200)
+
+
+class CreateEvidenceInput(BaseModel):
+    chunk_id: str = Field(min_length=1, max_length=128, description="知识片段 ID")
+
+
+class TransitionEvidenceInput(BaseModel):
+    evidence_id: str = Field(min_length=1, max_length=64)
+    status: Literal["verified", "invalid", "archived"]
+    reason: str | None = Field(default=None, max_length=2000)
+
+
+class EvidenceReferenceInput(BaseModel):
+    evidence_id: str = Field(min_length=1, max_length=64)
+
+
+class SyncAcademicGraphInput(BaseModel):
+    paper_ids: list[str] = Field(default_factory=list, max_length=500, description="为空表示同步当前知识库全部论文")
+    citation_limit: int = Field(default=100, ge=0, le=5000, description="每篇论文的引用上限；0 表示仅同步节点")
+    reference_limit: int = Field(default=100, ge=0, le=5000, description="每篇论文的参考文献上限；0 表示仅同步节点")
+
+
+class GraphNetworkInput(BaseModel):
+    center_paper_id: str | None = Field(default=None, max_length=128, description="中心论文 ID；省略时返回整体网络")
+    depth: int = Field(default=2, ge=1, le=3)
+    limit: int = Field(default=200, ge=1, le=1000)
+
+
+class GraphRelationsInput(BaseModel):
+    graph_paper_id: str = Field(min_length=1, max_length=128, description="图谱论文节点 ID")
+    limit: int = Field(default=20, ge=1, le=100)
+
+
+class GraphConflictsInput(BaseModel):
+    run_id: str = Field(min_length=1, max_length=64, description="图谱同步运行 ID")
+    resolution_status: str | None = Field(default=None, max_length=32)
+    limit: int = Field(default=50, ge=1, le=200)
+
+
+class TrendsInput(BaseModel):
+    year_from: int | None = Field(default=None, ge=1500)
+    year_to: int | None = Field(default=None, ge=1500)
+    top_keywords: int = Field(default=10, ge=1, le=50)
+    limit: int = Field(default=20, ge=1, le=100)
+
+
+class OpportunitiesInput(BaseModel):
+    year_from: int | None = Field(default=None, ge=1500)
+    year_to: int | None = Field(default=None, ge=1500)
+    limit: int = Field(default=10, ge=1, le=50)
+
+
+class ListRisksInput(ProjectReferenceInput):
+    limit: int = Field(default=50, ge=1, le=100)
+
+
+class CreateRiskInput(ProjectReferenceInput):
+    title: str = Field(min_length=1, max_length=255)
+    description: str = Field(default="", max_length=12000)
+    severity: Literal["low", "medium", "high", "critical"] = "medium"
+    owner_uid: str | None = Field(default=None, max_length=64, description="责任人 UID；省略时为当前用户")
+    mitigation: str = Field(default="", max_length=12000)
+    due_date: date | None = None
+
+
+class TransitionRiskInput(ProjectReferenceInput):
+    risk_id: str = Field(min_length=1, max_length=64)
+    status: Literal["open", "mitigating", "accepted", "resolved", "closed"]
+    mitigation: str | None = Field(default=None, max_length=12000)
+    reason: str | None = Field(default=None, max_length=2000)
+
+
+class RiskReferenceInput(ProjectReferenceInput):
+    risk_id: str = Field(min_length=1, max_length=64)
+
+
+class AddTaskDependencyInput(ProjectReferenceInput):
+    task_id: str = Field(min_length=1, max_length=64)
+    depends_on_task_id: str = Field(min_length=1, max_length=64)
+
+
+class TaskDependencyInput(ProjectReferenceInput):
+    dependency_id: str = Field(min_length=1, max_length=64)
+
+
+class CreateUserStudyInput(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    description: str = Field(default="", max_length=4000)
+    participant_count: int = Field(default=5, ge=3, le=20)
+    consent_text: str | None = Field(default=None, max_length=4000)
+
+
+class UserStudyInput(BaseModel):
+    study_id: str = Field(min_length=1, max_length=64)
+
+
+class UserStudyReportInput(UserStudyInput):
+    page: int = Field(default=1, ge=1)
+    page_size: int = Field(default=50, ge=1, le=200)
+
+
+class CreateAnalysisEvaluationInput(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    description: str = Field(default="", max_length=4000)
+    paper_ids: list[str] = Field(min_length=2, max_length=20)
+    model_spec: str | None = Field(default=None, max_length=512, description="对比所用模型；省略时使用当前会话模型")
+
+
+class AnalysisEvaluationInput(BaseModel):
+    evaluation_id: str = Field(min_length=1, max_length=64)
+
+
+class SearchExternalPapersInput(BaseModel):
+    query: str = Field(min_length=1, max_length=1000, description="标题、DOI 或关键词")
+    limit: int = Field(default=5, ge=1, le=20)
+
+
+class ImportExternalPaperInput(BaseModel):
+    identifier: str = Field(min_length=1, max_length=500, description="论文标题或 DOI")
+
+
+class RunEvalInput(BaseModel):
+    dataset_id: str = Field(min_length=1, max_length=64)
+    name: str | None = Field(default=None, max_length=100)
+
+
+class EvalRunInput(BaseModel):
+    run_id: str = Field(min_length=1, max_length=64)
+    page: int = Field(default=1, ge=1)
+    page_size: int = Field(default=20, ge=1, le=100)
+
+
+class EvalExperimentInput(BaseModel):
+    experiment_id: str = Field(min_length=1, max_length=64)
+
+
 def _research_context(runtime: ToolRuntime) -> dict[str, Any]:
     context = getattr(runtime, "context", None)
     research_context = getattr(context, "research_context", None)
@@ -250,6 +416,33 @@ async def _call(operation: Awaitable[Any]) -> Any:
     except HTTPException as exc:
         detail = exc.detail.get("message") if isinstance(exc.detail, dict) else exc.detail
         raise ToolException(str(detail or "ResearchCompass 操作失败")) from exc
+    except ValueError as exc:
+        raise ToolException(str(exc)) from exc
+    except Exception as exc:
+        message = getattr(exc, "message", None)
+        if isinstance(message, str) and message.strip():
+            raise ToolException(message) from exc
+        raise
+
+
+async def _write_artifact(runtime: ToolRuntime, filename: str, content: bytes) -> str:
+    from yuxi.agents.backends.sandbox.paths import ensure_thread_dirs, sandbox_outputs_dir
+    from yuxi.utils.paths import VIRTUAL_PATH_OUTPUTS
+
+    context = getattr(runtime, "context", None)
+    thread_id = getattr(context, "file_thread_id", None) or getattr(context, "thread_id", None)
+    uid = getattr(context, "uid", None)
+    if not thread_id or not uid:
+        raise ToolException("当前运行时缺少线程或用户标识，无法保存导出文件")
+    ensure_thread_dirs(thread_id, str(uid))
+    file_path = sandbox_outputs_dir(thread_id) / filename
+    file_path.write_bytes(content)
+    return f"{VIRTUAL_PATH_OUTPUTS}/{filename}"
+
+
+def _require_admin(user: Any) -> None:
+    if str(getattr(user, "role", "") or "") not in {"admin", "superadmin"}:
+        raise ToolException("RAG 评估相关操作仅管理员可用")
 
 
 @tool(category="research", tags=["科研", "上下文"], display_name="读取研究上下文", args_schema=EmptyInput)
@@ -814,6 +1007,803 @@ async def research_unlink_asset_from_plan(
     return {"deleted": True, "project_id": resolved, "link_id": link_id}
 
 
+@tool(category="research", tags=["科研", "分析"], display_name="运行论文分析", args_schema=RunPaperAnalysisInput)
+async def research_run_paper_analysis(
+    paper_id: str,
+    model_spec: str | None,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """对当前知识库中的单篇论文发起结构化分析，返回可跟踪的运行 ID。"""
+    from yuxi.services.academic_paper_analysis_service import enqueue_paper_analysis
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    model = (
+        (model_spec or "").strip() or str(getattr(getattr(runtime, "context", None), "model", "") or "").strip() or None
+    )
+    return await _call(
+        enqueue_paper_analysis(
+            kb_id=context["kb_id"],
+            paper_id=paper_id,
+            current_user=user,
+            model_spec=model,
+        )
+    )
+
+
+@tool(category="research", tags=["科研", "分析"], display_name="读取论文分析", args_schema=GetPaperAnalysisInput)
+async def research_get_paper_analysis(
+    paper_id: str | None,
+    run_id: str | None,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """读取指定分析运行，或某篇论文最近一次分析结果。"""
+    from yuxi.services.academic_paper_analysis_service import (
+        get_latest_paper_analysis,
+        get_paper_analysis_run,
+    )
+
+    user = await _current_user(runtime)
+    if run_id:
+        result = await _call(get_paper_analysis_run(run_id=run_id, current_user=user))
+        _ensure_context_kb(runtime, result.get("kb_id"), "论文分析运行")
+        return result
+    context = _research_context(runtime)
+    latest = await _call(get_latest_paper_analysis(kb_id=context["kb_id"], paper_id=paper_id, current_user=user))
+    if latest is None:
+        return {"run": None, "message": "该论文还没有分析运行，可先调用 research_run_paper_analysis"}
+    return latest
+
+
+@tool(
+    category="research",
+    tags=["科研", "项目", "导出"],
+    display_name="导出项目报告",
+    args_schema=ExportProjectReportInput,
+)
+async def research_export_project_report(format: str, runtime: ToolRuntime) -> dict[str, Any]:
+    """将当前研究项目导出为 Markdown、Word 或 CSV 报告，写入交付物目录供用户下载。
+
+    导出完成后应调用 present_artifacts 工具将文件展示给用户。
+    """
+    from yuxi.services.research_project_report_service import export_research_project_report
+
+    user = await _current_user(runtime)
+    project_id = await _project_id(runtime, None, user)
+    filename, content, media_type = await _call(
+        export_research_project_report(project_id=project_id, current_user=user, export_format=format)
+    )
+    artifact_path = await _write_artifact(runtime, filename, content)
+    return {
+        "project_id": project_id,
+        "filename": filename,
+        "format": format,
+        "media_type": media_type,
+        "artifact_path": artifact_path,
+        "message": f"项目报告已导出为 {filename}，请调用 present_artifacts 工具展示该文件",
+    }
+
+
+@tool(
+    category="research",
+    tags=["科研", "论文", "导出"],
+    display_name="导出论文元数据",
+    args_schema=ExportPapersInput,
+)
+async def research_export_papers(
+    format: str,
+    paper_ids: list[str],
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """将当前知识库论文导出为 BibTeX、Markdown、RIS 或 CSV，写入交付物目录供用户下载。
+
+    导出完成后应调用 present_artifacts 工具将文件展示给用户。
+    """
+    from yuxi.services.research_paper_export_service import export_papers_document
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    filename, content, media_type = await _call(
+        export_papers_document(
+            kb_id=context["kb_id"],
+            current_user=user,
+            paper_ids=paper_ids or None,
+            export_format=format,
+        )
+    )
+    artifact_path = await _write_artifact(runtime, filename, content)
+    return {
+        "filename": filename,
+        "format": format,
+        "media_type": media_type,
+        "paper_count": len(paper_ids) if paper_ids else None,
+        "artifact_path": artifact_path,
+        "message": f"论文元数据已导出为 {filename}，请调用 present_artifacts 工具展示该文件",
+    }
+
+
+@tool(category="research", tags=["科研", "证据"], display_name="查询证据", args_schema=ListEvidenceInput)
+async def research_list_evidence(
+    status: str | None,
+    limit: int,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """查询当前知识库已录入的证据及其验证状态。"""
+    from yuxi.services.research_evidence_service import list_evidence
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    items = await _call(list_evidence(kb_id=context["kb_id"], status=status, current_user=user))
+    return {"items": items[:limit], "total": len(items)}
+
+
+@tool(category="research", tags=["科研", "证据"], display_name="录入证据", args_schema=CreateEvidenceInput)
+async def research_create_evidence(chunk_id: str, runtime: ToolRuntime) -> dict[str, Any]:
+    """把一个知识片段录入为待验证证据；录入后需调用 research_verify_evidence 完成验证。"""
+    from yuxi.services.research_evidence_service import create_evidence
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    return await _call(create_evidence(kb_id=context["kb_id"], chunk_id=chunk_id, current_user=user))
+
+
+@tool(
+    category="research",
+    tags=["科研", "证据", "敏感"],
+    display_name="变更证据状态",
+    args_schema=TransitionEvidenceInput,
+)
+async def research_verify_evidence(
+    evidence_id: str,
+    status: str,
+    reason: str | None,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """验证、作废或归档一条证据；证据综述失败于证据校验时可用该工具补齐。此操作需要用户审批。"""
+    from yuxi.services.research_evidence_service import transition_evidence
+
+    user = await _current_user(runtime)
+    return await _call(transition_evidence(evidence_id=evidence_id, status=status, reason=reason, current_user=user))
+
+
+@tool(category="research", tags=["科研", "证据"], display_name="读取证据审计", args_schema=EvidenceReferenceInput)
+async def research_get_evidence_audit(evidence_id: str, runtime: ToolRuntime) -> dict[str, Any]:
+    """读取一条证据的状态活动、被综述引用记录与项目影响范围。"""
+    from yuxi.services.research_evidence_service import (
+        list_evidence_activities,
+        list_evidence_citations,
+        list_evidence_impacts,
+    )
+
+    user = await _current_user(runtime)
+    activities = await _call(list_evidence_activities(evidence_id=evidence_id, current_user=user))
+    citations = await _call(list_evidence_citations(evidence_id=evidence_id, current_user=user))
+    impacts = await _call(list_evidence_impacts(evidence_id=evidence_id, current_user=user))
+    return {"evidence_id": evidence_id, "activities": activities, "citations": citations, "impacts": impacts}
+
+
+@tool(
+    category="research",
+    tags=["科研", "图谱"],
+    display_name="同步引用图谱",
+    args_schema=SyncAcademicGraphInput,
+)
+async def research_sync_academic_graph(
+    paper_ids: list[str],
+    citation_limit: int,
+    reference_limit: int,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """把当前知识库论文同步到学术引用图谱，返回可跟踪的同步运行 ID。"""
+    from yuxi.services.academic_graph_sync_service import enqueue_academic_graph_sync
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    return await _call(
+        enqueue_academic_graph_sync(
+            kb_id=context["kb_id"],
+            current_user=user,
+            paper_ids=paper_ids,
+            citation_limit=citation_limit,
+            reference_limit=reference_limit,
+        )
+    )
+
+
+@tool(category="research", tags=["科研", "图谱"], display_name="读取引用图谱", args_schema=GraphNetworkInput)
+async def research_get_academic_graph(
+    center_paper_id: str | None,
+    depth: int,
+    limit: int,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """读取当前知识库的引用图谱网络，可按中心论文展开指定深度。"""
+    from yuxi.services.academic_graph_sync_service import get_academic_graph_network
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    return await _call(
+        get_academic_graph_network(
+            kb_id=context["kb_id"],
+            current_user=user,
+            center_paper_id=center_paper_id,
+            depth=depth,
+            limit=limit,
+        )
+    )
+
+
+@tool(
+    category="research",
+    tags=["科研", "图谱"],
+    display_name="读取两跳引用关系",
+    args_schema=GraphRelationsInput,
+)
+async def research_get_graph_relations(
+    graph_paper_id: str,
+    limit: int,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """读取某篇图谱论文的可解释两跳引用关系（含中间节点与边方向）。"""
+    from yuxi.services.academic_graph_sync_service import get_academic_graph_relations
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    return await _call(
+        get_academic_graph_relations(
+            kb_id=context["kb_id"],
+            current_user=user,
+            graph_paper_id=graph_paper_id,
+            limit=limit,
+        )
+    )
+
+
+@tool(
+    category="research",
+    tags=["科研", "图谱"],
+    display_name="读取图谱同步冲突",
+    args_schema=GraphConflictsInput,
+)
+async def research_list_graph_conflicts(
+    run_id: str,
+    resolution_status: str | None,
+    limit: int,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """读取一次图谱同步运行中的元数据冲突。"""
+    from yuxi.services.academic_graph_sync_service import list_academic_graph_conflicts
+
+    user = await _current_user(runtime)
+    return await _call(
+        list_academic_graph_conflicts(
+            run_id=run_id,
+            current_user=user,
+            resolution_status=resolution_status,
+            offset=0,
+            limit=limit,
+        )
+    )
+
+
+@tool(category="research", tags=["科研", "趋势"], display_name="读取研究趋势", args_schema=TrendsInput)
+async def research_get_trends(
+    year_from: int | None,
+    year_to: int | None,
+    top_keywords: int,
+    limit: int,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """按年份与关键词统计当前知识库的发表趋势、关键词演进与新兴方向。"""
+    from yuxi.services.academic_trend_service import get_academic_trends
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    return await _call(
+        get_academic_trends(
+            kb_id=context["kb_id"],
+            current_user=user,
+            year_from=year_from,
+            year_to=year_to,
+            offset=0,
+            limit=limit,
+            top_keywords=top_keywords,
+        )
+    )
+
+
+@tool(category="research", tags=["科研", "机会"], display_name="读取研究机会", args_schema=OpportunitiesInput)
+async def research_get_opportunities(
+    year_from: int | None,
+    year_to: int | None,
+    limit: int,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """按增长、近期性、覆盖度与图谱缺口给出当前知识库的研究机会排序。"""
+    from yuxi.services.academic_opportunity_service import get_academic_opportunities
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    return await _call(
+        get_academic_opportunities(
+            kb_id=context["kb_id"],
+            current_user=user,
+            year_from=year_from,
+            year_to=year_to,
+            limit=limit,
+        )
+    )
+
+
+@tool(category="research", tags=["科研", "风险"], display_name="查询项目风险", args_schema=ListRisksInput)
+async def research_list_project_risks(
+    project_id: str | None,
+    limit: int,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """查询当前研究项目的风险登记项与处置状态。"""
+    from yuxi.services.research_project_risk_service import list_project_risks
+
+    user = await _current_user(runtime)
+    items = await _call(list_project_risks(project_id=await _project_id(runtime, project_id, user), current_user=user))
+    return {"items": items[:limit], "total": len(items)}
+
+
+@tool(category="research", tags=["科研", "风险"], display_name="登记项目风险", args_schema=CreateRiskInput)
+async def research_create_project_risk(
+    project_id: str | None,
+    title: str,
+    description: str,
+    severity: str,
+    owner_uid: str | None,
+    mitigation: str,
+    due_date: date | None,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """在当前研究项目登记一条风险，可指定责任人与缓解措施。"""
+    from yuxi.services.research_project_risk_service import create_project_risk
+
+    user = await _current_user(runtime)
+    owner = (owner_uid or "").strip() or str(user.uid)
+    return await _call(
+        create_project_risk(
+            project_id=await _project_id(runtime, project_id, user),
+            current_user=user,
+            title=title.strip(),
+            description=description.strip(),
+            severity=severity,
+            owner_uid=owner,
+            mitigation=mitigation.strip(),
+            due_date=due_date,
+        )
+    )
+
+
+@tool(
+    category="research",
+    tags=["科研", "风险", "敏感"],
+    display_name="变更风险状态",
+    args_schema=TransitionRiskInput,
+)
+async def research_transition_project_risk(
+    project_id: str | None,
+    risk_id: str,
+    status: str,
+    mitigation: str | None,
+    reason: str | None,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """推进风险处置状态（open/mitigating/accepted/resolved/closed）。此操作需要用户审批。"""
+    from yuxi.services.research_project_risk_service import transition_project_risk
+
+    user = await _current_user(runtime)
+    return await _call(
+        transition_project_risk(
+            project_id=await _project_id(runtime, project_id, user),
+            risk_id=risk_id,
+            status=status,
+            current_user=user,
+            mitigation=mitigation,
+            reason=reason,
+        )
+    )
+
+
+@tool(category="research", tags=["科研", "风险"], display_name="查询风险活动", args_schema=RiskReferenceInput)
+async def research_list_project_risk_activities(
+    project_id: str | None,
+    risk_id: str,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """读取一条风险的处置活动记录。"""
+    from yuxi.services.research_project_risk_service import list_project_risk_activities
+
+    user = await _current_user(runtime)
+    items = await _call(
+        list_project_risk_activities(
+            project_id=await _project_id(runtime, project_id, user),
+            risk_id=risk_id,
+            current_user=user,
+        )
+    )
+    return {"risk_id": risk_id, "items": items}
+
+
+@tool(
+    category="research",
+    tags=["科研", "计划"],
+    display_name="添加任务依赖",
+    args_schema=AddTaskDependencyInput,
+)
+async def research_add_task_dependency(
+    project_id: str | None,
+    task_id: str,
+    depends_on_task_id: str,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """声明一个任务依赖于另一个任务，循环依赖会被拒绝。"""
+    from yuxi.services.research_project_plan_service import create_project_task_dependency
+
+    user = await _current_user(runtime)
+    return await _call(
+        create_project_task_dependency(
+            project_id=await _project_id(runtime, project_id, user),
+            task_id=task_id,
+            depends_on_task_id=depends_on_task_id,
+            current_user=user,
+        )
+    )
+
+
+@tool(
+    category="research",
+    tags=["科研", "计划", "敏感"],
+    display_name="移除任务依赖",
+    args_schema=TaskDependencyInput,
+)
+async def research_remove_task_dependency(
+    project_id: str | None,
+    dependency_id: str,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """移除一条任务依赖关系。此操作需要用户审批。"""
+    from yuxi.services.research_project_plan_service import delete_project_task_dependency
+
+    user = await _current_user(runtime)
+    resolved = await _project_id(runtime, project_id, user)
+    await _call(delete_project_task_dependency(project_id=resolved, dependency_id=dependency_id, current_user=user))
+    return {"deleted": True, "project_id": resolved, "dependency_id": dependency_id}
+
+
+@tool(category="research", tags=["科研", "评测"], display_name="查询用户评测", args_schema=EmptyInput)
+async def research_list_user_studies(dummy: str, runtime: ToolRuntime) -> dict[str, Any]:
+    """查询当前知识库的用户评测、参与人数与回收情况。"""
+    del dummy
+    from yuxi.services.research_user_study_service import ResearchUserStudyService
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    items = await _call(ResearchUserStudyService().list_studies(kb_id=context["kb_id"], current_user=user))
+    return {"items": items, "total": len(items)}
+
+
+@tool(
+    category="research",
+    tags=["科研", "评测"],
+    display_name="创建用户评测",
+    args_schema=CreateUserStudyInput,
+)
+async def research_create_user_study(
+    name: str,
+    description: str,
+    participant_count: int,
+    consent_text: str | None,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """创建一个匿名单次邀请的用户评测，返回仅展示一次的参与者链接。"""
+    from yuxi.services.research_user_study_service import ResearchUserStudyService
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    result = await _call(
+        ResearchUserStudyService().create_study(
+            kb_id=context["kb_id"],
+            current_user=user,
+            name=name.strip(),
+            description=description.strip(),
+            participant_count=participant_count,
+            consent_text=consent_text,
+        )
+    )
+    return {
+        **result,
+        "message": "公开邀请链接只在本条结果中出现一次，请立即转交参与者",
+    }
+
+
+@tool(category="research", tags=["科研", "评测"], display_name="读取用户评测报告", args_schema=UserStudyReportInput)
+async def research_get_user_study_report(
+    study_id: str,
+    page: int,
+    page_size: int,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """读取用户评测的汇总（SUS、任务评分、满意度）与匿名原始响应。"""
+    from yuxi.services.research_user_study_service import ResearchUserStudyService
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    return await _call(
+        ResearchUserStudyService().get_study_report(
+            kb_id=context["kb_id"],
+            study_id=study_id,
+            current_user=user,
+            page=page,
+            page_size=page_size,
+        )
+    )
+
+
+@tool(
+    category="research",
+    tags=["科研", "评测", "敏感"],
+    display_name="关闭用户评测",
+    args_schema=UserStudyInput,
+)
+async def research_close_user_study(study_id: str, runtime: ToolRuntime) -> dict[str, Any]:
+    """关闭用户评测，停止接收新响应。此操作需要用户审批。"""
+    from yuxi.services.research_user_study_service import ResearchUserStudyService
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    await _call(ResearchUserStudyService().close_study(kb_id=context["kb_id"], study_id=study_id, current_user=user))
+    return {"closed": True, "study_id": study_id}
+
+
+@tool(
+    category="research",
+    tags=["科研", "评测", "导出"],
+    display_name="导出用户评测 CSV",
+    args_schema=UserStudyInput,
+)
+async def research_export_user_study(study_id: str, runtime: ToolRuntime) -> dict[str, Any]:
+    """将用户评测的匿名原始响应导出为 CSV，写入交付物目录供用户下载。
+
+    导出完成后应调用 present_artifacts 工具将文件展示给用户。
+    """
+    from yuxi.services.research_user_study_service import ResearchUserStudyService
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    filename, content = await _call(
+        ResearchUserStudyService().export_study_csv(kb_id=context["kb_id"], study_id=study_id, current_user=user)
+    )
+    artifact_path = await _write_artifact(runtime, filename, content.encode("utf-8-sig"))
+    return {
+        "study_id": study_id,
+        "filename": filename,
+        "artifact_path": artifact_path,
+        "message": f"评测数据已导出为 {filename}，请调用 present_artifacts 工具展示该文件",
+    }
+
+
+@tool(
+    category="research",
+    tags=["科研", "对比"],
+    display_name="创建分析对比",
+    args_schema=CreateAnalysisEvaluationInput,
+)
+async def research_create_analysis_evaluation(
+    name: str,
+    description: str,
+    paper_ids: list[str],
+    model_spec: str | None,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """对 2 至 20 篇论文同时生成单 Agent 与多 Agent 报告，供后续人工 A/B 盲审。"""
+    from yuxi.services.academic_paper_analysis_evaluation_service import (
+        AcademicPaperAnalysisEvaluationService,
+    )
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    model = (model_spec or "").strip() or str(getattr(getattr(runtime, "context", None), "model", "") or "").strip()
+    if not model:
+        raise ToolException("分析对比需要指定模型，请在参数中提供 model_spec")
+    return await _call(
+        AcademicPaperAnalysisEvaluationService().create_evaluation(
+            kb_id=context["kb_id"],
+            current_user=user,
+            name=name.strip(),
+            description=description.strip(),
+            paper_ids=paper_ids,
+            model_spec=model,
+        )
+    )
+
+
+@tool(
+    category="research",
+    tags=["科研", "对比"],
+    display_name="查询分析对比",
+    args_schema=EmptyInput,
+)
+async def research_list_analysis_evaluations(dummy: str, runtime: ToolRuntime) -> dict[str, Any]:
+    """查询当前知识库的分析对比实验及其状态。"""
+    del dummy
+    from yuxi.services.academic_paper_analysis_evaluation_service import (
+        AcademicPaperAnalysisEvaluationService,
+    )
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    items = await _call(
+        AcademicPaperAnalysisEvaluationService().list_evaluations(kb_id=context["kb_id"], current_user=user)
+    )
+    return {"items": items, "total": len(items)}
+
+
+@tool(
+    category="research",
+    tags=["科研", "对比"],
+    display_name="读取分析对比报告",
+    args_schema=AnalysisEvaluationInput,
+)
+async def research_get_analysis_evaluation(evaluation_id: str, runtime: ToolRuntime) -> dict[str, Any]:
+    """读取分析对比的汇总报告（仅统计真实人工盲审；无评分时返回无数据）。"""
+    from yuxi.services.academic_paper_analysis_evaluation_service import (
+        AcademicPaperAnalysisEvaluationService,
+    )
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    return await _call(
+        AcademicPaperAnalysisEvaluationService().get_report(
+            kb_id=context["kb_id"], evaluation_id=evaluation_id, current_user=user
+        )
+    )
+
+
+@tool(
+    category="research",
+    tags=["科研", "外部论文"],
+    display_name="搜索外部论文",
+    args_schema=SearchExternalPapersInput,
+)
+async def research_search_external_papers(query: str, limit: int, runtime: ToolRuntime) -> dict[str, Any]:
+    """在 Semantic Scholar 搜索公开论文，返回可导入的候选与开放获取状态。"""
+    from yuxi.services.academic_paper_import_service import search_external_papers
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    return await _call(search_external_papers(kb_id=context["kb_id"], current_user=user, query=query, limit=limit))
+
+
+@tool(
+    category="research",
+    tags=["科研", "外部论文"],
+    display_name="导入外部论文",
+    args_schema=ImportExternalPaperInput,
+)
+async def research_import_external_paper(identifier: str, runtime: ToolRuntime) -> dict[str, Any]:
+    """按标题或 DOI 将公开论文导入当前知识库并启动解析。"""
+    from yuxi.services.academic_paper_import_service import import_external_paper
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    return await _call(import_external_paper(identifier=identifier.strip(), kb_id=context["kb_id"], current_user=user))
+
+
+@tool(
+    category="research",
+    tags=["科研", "评估"],
+    display_name="查询评估基准",
+    args_schema=EmptyInput,
+)
+async def research_list_eval_datasets(dummy: str, runtime: ToolRuntime) -> dict[str, Any]:
+    """查询当前知识库的 RAG 评估基准（仅管理员）。"""
+    del dummy
+    from yuxi.knowledge.eval.service import EvaluationService
+    from yuxi.services.research_paper_service import _ensure_access
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    _require_admin(user)
+    await _call(_ensure_access(user, context["kb_id"]))
+    items = await _call(EvaluationService().list_datasets(context["kb_id"]))
+    return {"items": items, "total": len(items)}
+
+
+@tool(
+    category="research",
+    tags=["科研", "评估"],
+    display_name="发起 RAG 评估",
+    args_schema=RunEvalInput,
+)
+async def research_run_eval(dataset_id: str, name: str | None, runtime: ToolRuntime) -> dict[str, Any]:
+    """基于指定评估基准发起一次 RAG 评估（仅管理员）。"""
+    from yuxi.knowledge.eval.service import EvaluationService
+    from yuxi.services.research_paper_service import _ensure_access
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    _require_admin(user)
+    await _call(_ensure_access(user, context["kb_id"], write=True))
+    run_id = await _call(
+        EvaluationService().run_evaluation(
+            kb_id=context["kb_id"],
+            dataset_id=dataset_id,
+            name=name,
+            model_config={},
+            created_by=str(user.uid),
+        )
+    )
+    return {"run_id": run_id, "status": "queued"}
+
+
+@tool(
+    category="research",
+    tags=["科研", "评估"],
+    display_name="读取评估结果",
+    args_schema=EvalRunInput,
+)
+async def research_get_eval_run(
+    run_id: str,
+    page: int,
+    page_size: int,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """读取一次 RAG 评估的逐题结果与指标（仅管理员）。"""
+    from yuxi.knowledge.eval.service import EvaluationService
+    from yuxi.services.research_paper_service import _ensure_access
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    _require_admin(user)
+    await _call(_ensure_access(user, context["kb_id"]))
+    return await _call(
+        EvaluationService().get_run_results(kb_id=context["kb_id"], run_id=run_id, page=page, page_size=page_size)
+    )
+
+
+@tool(
+    category="research",
+    tags=["科研", "评估"],
+    display_name="查询消融实验",
+    args_schema=EmptyInput,
+)
+async def research_list_eval_experiments(dummy: str, runtime: ToolRuntime) -> dict[str, Any]:
+    """查询当前知识库的消融实验列表（仅管理员）。"""
+    del dummy
+    from yuxi.knowledge.eval.service import EvaluationService
+    from yuxi.services.research_paper_service import _ensure_access
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    _require_admin(user)
+    await _call(_ensure_access(user, context["kb_id"]))
+    items = await _call(EvaluationService().list_experiments(context["kb_id"]))
+    return {"items": items, "total": len(items)}
+
+
+@tool(
+    category="research",
+    tags=["科研", "评估"],
+    display_name="读取消融实验报告",
+    args_schema=EvalExperimentInput,
+)
+async def research_get_eval_experiment(experiment_id: str, runtime: ToolRuntime) -> dict[str, Any]:
+    """读取消融实验的变体对比报告与数据集/语料指纹（仅管理员）。"""
+    from yuxi.knowledge.eval.service import EvaluationService
+    from yuxi.services.research_paper_service import _ensure_access
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    _require_admin(user)
+    await _call(_ensure_access(user, context["kb_id"]))
+    return await _call(EvaluationService().get_experiment(context["kb_id"], experiment_id))
+
+
 RESEARCH_TOOLS = [
     research_get_context,
     research_list_projects,
@@ -841,4 +1831,39 @@ RESEARCH_TOOLS = [
     research_remove_project_asset,
     research_link_asset_to_plan,
     research_unlink_asset_from_plan,
+    research_run_paper_analysis,
+    research_get_paper_analysis,
+    research_export_project_report,
+    research_export_papers,
+    research_list_evidence,
+    research_create_evidence,
+    research_verify_evidence,
+    research_get_evidence_audit,
+    research_sync_academic_graph,
+    research_get_academic_graph,
+    research_get_graph_relations,
+    research_list_graph_conflicts,
+    research_get_trends,
+    research_get_opportunities,
+    research_list_project_risks,
+    research_create_project_risk,
+    research_transition_project_risk,
+    research_list_project_risk_activities,
+    research_add_task_dependency,
+    research_remove_task_dependency,
+    research_list_user_studies,
+    research_create_user_study,
+    research_get_user_study_report,
+    research_close_user_study,
+    research_export_user_study,
+    research_create_analysis_evaluation,
+    research_list_analysis_evaluations,
+    research_get_analysis_evaluation,
+    research_search_external_papers,
+    research_import_external_paper,
+    research_list_eval_datasets,
+    research_run_eval,
+    research_get_eval_run,
+    research_list_eval_experiments,
+    research_get_eval_experiment,
 ]

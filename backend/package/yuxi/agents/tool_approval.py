@@ -19,6 +19,10 @@ SENSITIVE_BACKEND_TOOLS = frozenset(
         "research_add_project_assets",
         "research_remove_project_asset",
         "research_unlink_asset_from_plan",
+        "research_verify_evidence",
+        "research_transition_project_risk",
+        "research_remove_task_dependency",
+        "research_close_user_study",
     }
 )
 TOOL_APPROVAL_INTERRUPT_ON = {

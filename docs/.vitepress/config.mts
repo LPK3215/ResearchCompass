@@ -78,6 +78,7 @@ export default defineConfig({
         text: '开发指南',
         items: [
           { text: '参与贡献', link: '/develop-guides/contributing' },
+          { text: '编码规范（个人规则）', link: '/develop-guides/coding-rules' },
           { text: '开发路线图', link: '/develop-guides/roadmap' },
           { text: '版本变更记录', link: '/develop-guides/changelog' },
           { text: '界面设计规范', link: '/develop-guides/design' },

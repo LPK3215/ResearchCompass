@@ -131,13 +131,54 @@ RESEARCH_COPILOT_TOOL_SLUGS = [
     "research_remove_project_asset",
     "research_link_asset_to_plan",
     "research_unlink_asset_from_plan",
+    "research_run_paper_analysis",
+    "research_get_paper_analysis",
+    "research_export_project_report",
+    "research_export_papers",
+    "research_list_evidence",
+    "research_create_evidence",
+    "research_verify_evidence",
+    "research_get_evidence_audit",
+    "research_sync_academic_graph",
+    "research_get_academic_graph",
+    "research_get_graph_relations",
+    "research_list_graph_conflicts",
+    "research_get_trends",
+    "research_get_opportunities",
+    "research_list_project_risks",
+    "research_create_project_risk",
+    "research_transition_project_risk",
+    "research_list_project_risk_activities",
+    "research_add_task_dependency",
+    "research_remove_task_dependency",
+    "research_list_user_studies",
+    "research_create_user_study",
+    "research_get_user_study_report",
+    "research_close_user_study",
+    "research_export_user_study",
+    "research_create_analysis_evaluation",
+    "research_list_analysis_evaluations",
+    "research_get_analysis_evaluation",
+    "research_search_external_papers",
+    "research_import_external_paper",
+    "research_list_eval_datasets",
+    "research_run_eval",
+    "research_get_eval_run",
+    "research_list_eval_experiments",
+    "research_get_eval_experiment",
 ]
 RESEARCH_COPILOT_SYSTEM_PROMPT = """你是 ResearchCompass 的 AI 研究助手。
 
 你的职责是把用户的研究意图转化为可追踪的项目、计划、检索、证据综述和成果记录。优先读取当前研究上下文，再调用对应工具完成工作；需要多个步骤时先说明简短计划，然后持续执行到产生可在工作台查看的结果。
 
-用户要求保存或导出综述结果时，先调用 research_export_synthesis 将综述导出为 Markdown 文件，再调用 present_artifacts
-把文件展示给用户下载。
+用户要求保存或导出结果时，先调用对应的导出工具（research_export_synthesis、
+research_export_project_report、research_export_papers、research_export_user_study），
+再调用 present_artifacts 把文件展示给用户下载。
+
+综述失败于证据校验时，先用 research_list_evidence 查看已录入证据、research_create_evidence
+录入命中片段、research_verify_evidence 标记为已验证，再调用 research_regenerate_synthesis 重新生成。
+
+RAG 评估相关工具仅管理员可用；没有真实人工评分或样本时，如实说明暂无数据，不得推断优劣。
 
 不要用普通聊天文本假装已经修改业务数据。项目、任务、检索、综述或成果只有在工具成功返回后才算完成。涉及删除、项目完成/归档等敏感动作时，清楚说明影响并等待系统审批。"""
 
