@@ -15,6 +15,7 @@ import os
 import re
 import socket
 import time
+from contextlib import asynccontextmanager
 from typing import Any
 from urllib.parse import quote, urljoin, urlparse
 
@@ -104,10 +105,49 @@ def normalize_paper_identifier(value: str) -> str:
     return normalized
 
 
-class SemanticScholarClient:
-    # Semantic Scholar API 限流：免费 Key 约 1 请求/秒，主动间隔避免触发 429
-    _MIN_REQUEST_INTERVAL = 1.2
+class SemanticScholarThrottle:
+    """进程内共享的 Semantic Scholar 请求闸门。
 
+    免费额度按进程共享，限流间隔必须在同进程内所有客户端实例之间串行生效：
+    论文导入、引用图谱同步、外部检索都会各自新建客户端，只把间隔挂在实例上时，
+    并发请求会同时打到额度上直接触发 429。状态随事件循环重建，避免 asyncio.Lock
+    跨事件循环复用。
+    """
+
+    _MIN_REQUEST_INTERVAL = 1.2
+    _loop: asyncio.AbstractEventLoop | None = None
+    _lock: asyncio.Lock | None = None
+    _last_request_time = 0.0
+
+    @classmethod
+    def _ensure_lock(cls) -> asyncio.Lock:
+        loop = asyncio.get_running_loop()
+        if cls._loop is not loop:
+            cls._loop = loop
+            cls._lock = asyncio.Lock()
+            cls._last_request_time = 0.0
+        if cls._lock is None:
+            cls._lock = asyncio.Lock()
+        return cls._lock
+
+    @classmethod
+    @asynccontextmanager
+    async def acquire(cls):
+        """占用一次请求名额：同进程内的 Semantic Scholar 调用在此串行。"""
+        async with cls._ensure_lock():
+            elapsed = time.monotonic() - cls._last_request_time
+            if elapsed < cls._MIN_REQUEST_INTERVAL:
+                await asyncio.sleep(cls._MIN_REQUEST_INTERVAL - elapsed)
+            cls._last_request_time = time.monotonic()
+            yield
+
+    @classmethod
+    def reset(cls) -> None:
+        """清空节流状态，供测试隔离使用。"""
+        cls._last_request_time = 0.0
+
+
+class SemanticScholarClient:
     def __init__(self) -> None:
         self.base_url = os.getenv("SEMANTIC_SCHOLAR_API_BASE", "https://api.semanticscholar.org/graph/v1").rstrip("/")
         api_key = os.getenv("SEMANTIC_SCHOLAR_API_KEY", "").strip()
@@ -115,8 +155,6 @@ class SemanticScholarClient:
         if api_key:
             self.headers["x-api-key"] = api_key
         self.timeout = httpx.Timeout(45.0, connect=10.0)
-        self._last_request_time = 0.0
-        self._request_lock = asyncio.Lock()
 
     async def _get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         max_retries = 3
@@ -126,14 +164,9 @@ class SemanticScholarClient:
             headers=self.headers,
             trust_env=False,
         ) as client:
-            # 引用与参考文献会被并发拉取，限流间隔只有串行才真正生效：
-            # 并发请求会同时打到 Semantic Scholar 免费额度上，直接触发 429。
-            async with self._request_lock:
+            # 限流间隔必须跨客户端实例生效，因此走进程内共享的闸门。
+            async with SemanticScholarThrottle.acquire():
                 for attempt in range(max_retries + 1):
-                    elapsed = time.monotonic() - self._last_request_time
-                    if elapsed < self._MIN_REQUEST_INTERVAL:
-                        await asyncio.sleep(self._MIN_REQUEST_INTERVAL - elapsed)
-                    self._last_request_time = time.monotonic()
                     try:
                         response = await client.get(f"{self.base_url}{path}", params=params)
                     except httpx.TimeoutException as exc:

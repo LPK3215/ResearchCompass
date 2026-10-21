@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 
 import pytest
 
 from yuxi.services import semantic_scholar_service
 from yuxi.services.semantic_scholar_service import SemanticScholarClient, SemanticScholarError
+
+
+@pytest.fixture(autouse=True)
+def _reset_shared_throttle():
+    """限流闸门是进程内共享状态，每个用例前清空以免互相影响。"""
+    semantic_scholar_service.SemanticScholarThrottle.reset()
+    yield
+    semantic_scholar_service.SemanticScholarThrottle.reset()
 
 
 class _NetworkStream:
@@ -80,6 +89,29 @@ class _GetAsyncClient:
         if isinstance(response, Exception):
             raise response
         return response
+
+
+class _ConcurrencyProbeClient:
+    """记录同一时刻的并发请求数，用于验证请求是否被串行化。"""
+
+    def __init__(self) -> None:
+        self.active = 0
+        self.max_active = 0
+        self.get_calls = 0
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def get(self, url: str, params=None):
+        self.get_calls += 1
+        self.active += 1
+        self.max_active = max(self.max_active, self.active)
+        await asyncio.sleep(0.05)
+        self.active -= 1
+        return _JsonResponse(200)
 
 
 @pytest.mark.asyncio
@@ -232,3 +264,19 @@ async def test_semantic_scholar_get_uses_bounded_fallback_for_invalid_retry_afte
     await SemanticScholarClient()._get("/paper/test", {"fields": "paperId"})
 
     assert sleeps == [10]
+
+
+@pytest.mark.asyncio
+async def test_shared_throttle_serializes_requests_across_client_instances(monkeypatch):
+    """限流闸门是进程内共享的：不同客户端实例的并发请求必须串行发出。"""
+    probe = _ConcurrencyProbeClient()
+    monkeypatch.setattr(semantic_scholar_service.httpx, "AsyncClient", lambda **_kwargs: probe)
+    monkeypatch.setattr(semantic_scholar_service.SemanticScholarThrottle, "_MIN_REQUEST_INTERVAL", 0)
+
+    await asyncio.gather(
+        SemanticScholarClient()._get("/paper/test", {"fields": "paperId"}),
+        SemanticScholarClient()._get("/paper/test", {"fields": "paperId"}),
+    )
+
+    assert probe.get_calls == 2
+    assert probe.max_active == 1
