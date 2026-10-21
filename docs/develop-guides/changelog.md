@@ -100,7 +100,8 @@
 - 新增论文结构图（SVG）：`GET /api/research/databases/{kb_id}/papers/{paper_id}/structure-diagram?kind=method|topics` 与 `research_export_paper_diagram` 工具，方法流程图取自最新分析的方法步骤（无分析时回退到结构提取的方法描述），主题图以论文关键词为中心辐射；输出为单文件 SVG，白底、内联样式，可直接在工作区预览与下载；论文分析页新增“结构图”下拉。引用脉络图待 G-22 补齐。
 - 新增科研数据导出：`GET /api/research/databases/{kb_id}/exports/{kind}` 与 `research_export_research_data` 工具，支持 `eval_run`（RAG 评估逐题结果）、`eval_experiment`（消融实验报告）、`trends`（发表与关键词趋势）、`opportunities`（机会排序）四类数据的 JSON/CSV 导出；JSON 带 `generated_at` 与数据指纹（kb_id、run/experiment id、年份区间），CSV 为通用平铺（嵌套字段以 JSON 文本保留）并在首行写入指纹注释。评估类导出仅管理员可用，CSV 页面入口待补。
 - 新增文献对比矩阵：`GET /api/research/databases/{kb_id}/comparison-matrix?paper_ids=&format=markdown|csv` 与 `research_export_comparison_matrix` 工具，2 到 20 篇论文按“论文/年份/来源/研究问题/方法/数据集/结论/局限”成表；内容来自元数据与最近一次分析，未生成分析或原文未说明的单元格标注“证据不足”而非留空；论文库导出下拉新增 Markdown 与 CSV 两项。
-- 新增综述转选题与页面入口：`GET /api/research/synthesis-runs/{run_id}/topics` 与 `POST /api/research/synthesis-runs/{run_id}/topics/tasks` 把已验证综述的研究空白、后续方向与未支持结论整理为选题清单，并可批量建为当前项目任务（1–20 条，标题取选题、描述带综述 ID 与依据）。工具同步新增 `research_export_synthesis_topics`、`research_create_tasks_from_topics`；证据综述页新增“转选题”下拉，工具栏新增“导出数据”下拉（趋势/机会 JSON·CSV）。
+- 新增综述转选题与页面入口：`GET /api/research/synthesis-runs/{run_id}/topics` 与 `POST /api/research/synthesis-runs/{run_id}/topics/tasks` 把已验证综述的研究空白、后续方向与未支持结论整理为选题清单，并可批量建为当前项目任务（1–20 条）；证据综述页新增“转选题”下拉，工具栏新增“导出数据”下拉（趋势/机会 JSON·CSV）。
+- 统一对外定位口径并限定研究助手能力边界：README 首屏改用“证据可追溯的科研工作台”，并明确写作、协作与投稿不在当前范围；能力全景补充研究助手不执行系统命令、不直接写任意文件的限制，文件类产出统一走导出工具；research-copilot 系统提示同步要求不得声称已保存不存在的文件。
 
 ## v0.10.0
 

@@ -24,7 +24,7 @@
 | 写作 / 协作 / 投稿 | 无 | 空白 | G-26、G-27、G-28 |
 | 文献管理生态 | 无 Zotero 同步、无跨库去重；仅支持论文标签 | 空白 | G-24、G-25、G-34 |
 
-建议对外表述（替换"学术文献智能分析平台"这一过大口径）：
+对外表述（已采用，见 README 与能力全景）：
 
 > **一个证据可追溯的科研工作台：从文献检索、AI 精读，到带原文出处的证据综述与项目报告。**
 
@@ -99,9 +99,9 @@
 | G-11 | 外部论文搜索/导入无 AI 工具 | AI 无法补充文献 | P1 | 已完成 | 支持按标题/DOI 搜索并导入，重复导入幂等 |
 | G-12 | 单篇论文分析报告不可导出 | 分析结果无法带走 | P2 | 已接入，待验收 | 提供 Markdown 导出（含各阶段字段与证据引用） |
 | G-13 | 无汇报材料产出 | 组会/讨论无法直接使用 | P2 | 已接入，待验收（仅对比表，无结构图） | 新增 report-html 技能：3 到 10 篇论文或一个项目生成单页 HTML 汇报（对比表 + 结构图），工作区可预览与下载 |
-| G-14 | copilot 无沙箱与 skills | 产出文件需切智能体 | P2 | 待修复 | 研究助手可调用沙箱写文件并 present_artifacts，或明确限定并在界面提示 |
+| G-14 | copilot 无沙箱与 skills | 产出文件需切智能体 | P2 | 已完成（按“明确限定”分支） | 研究助手可调用沙箱写文件并 present_artifacts，或明确限定并在界面提示 |
 | G-15 | 无双通道能力矩阵与守卫 | 缺口易复发 | P2 | 进行中 | 新增矩阵文档与一条守卫检查：每个 research_* 工具都有 UI 入口，关键 UI 动作有工具或标注仅人工 |
-| G-16 | 对外定位表述过大 | 认知与预期错位 | P2 | 待修复 | README、文档首页、项目介绍统一使用第 2 节建议口径 |
+| G-16 | 对外定位表述过大 | 认知与预期错位 | P2 | 已完成 | README、文档首页、项目介绍统一使用第 2 节建议口径 |
 
 ### 5.2 使用侧与数据出口（G-17 至 G-23、G-30 至 G-32）
 
@@ -169,6 +169,7 @@
 | 2026-10-21 | 批次 3 第 3 项：G-22 引用网络洞察 + G-20 引用脉络图 | 新增 `GET /citation-insight` 与 `research_generate_citation_insight`，输出枢纽论文/研究谱系/孤立节点与数据边界；结构图新增 `kind=citation`（枢纽论文为中心）；界面在导出图谱下拉与结构图下拉各增一项；工具总数 69 到 70；未运行测试 | `backend/package/yuxi/services/research_deliverable_service.py`、`server/routers/research_router.py`、`toolkits/research/tools.py`、`web/src/views/ResearchCompassView.vue`、`web/src/views/ResearchPaperAnalysisView.vue` | 是（G-22 已接入；G-20 补齐引用脉络） |
 | 2026-10-21 | 批次 3 第 4 项：G-23 综述转选题（部分） | 新增 `GET /synthesis-runs/{run_id}/topics`（选题清单 Markdown）与 `POST /synthesis-runs/{run_id}/topics/tasks`（批量建任务）；工具 `research_export_synthesis_topics` / `research_create_tasks_from_topics`（总数 70 到 72）；只接受验证成功的综述；界面入口待补；未运行测试 | `backend/package/yuxi/services/research_deliverable_service.py`、`server/routers/research_router.py`、`toolkits/research/tools.py` | 是（G-23 标记部分完成） |
 | 2026-10-21 | 补齐 G-23/G-31 界面入口 | 综述页新增“转选题”下拉（导出清单 / 建为当前项目任务）；工具栏新增“导出数据”下拉（趋势/机会 JSON·CSV）；ESLint 通过；评估运行与消融实验的逐条导出按钮列为待选项（接口与 AI 工具已覆盖） | `web/src/views/ResearchCompassView.vue`、`web/src/apis/research_api.js` | 是（G-23、G-31 转“已接入，待验收”） |
+| 2026-10-21 | 批次 4 第 1 项：G-16 口径统一 + G-14 明确限定 | README 定位改为“证据可追溯的科研工作台”并声明写作/协作/投稿不在范围；能力全景补充研究助手边界；系统提示明确“不执行命令、不写任意文件，文件一律走导出工具”；ESLint/ruff 通过 | `README.md`、`docs/intro/capabilities.md`、`backend/package/yuxi/repositories/agent_repository.py` | 是（G-14、G-16 转已完成） |
 
 ## 8. 明确不做与边界
 

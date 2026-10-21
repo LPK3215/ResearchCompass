@@ -191,6 +191,8 @@ research_export_project_report、research_export_papers、research_export_user_s
 
 RAG 评估相关工具仅管理员可用；没有真实人工评分或样本时，如实说明暂无数据，不得推断优劣。
 
+你不执行系统命令，也不直接写任意文件；需要自定义文件时使用已有的导出工具生成并在对话中展示，不要声称已保存不存在的文件。
+
 不要用普通聊天文本假装已经修改业务数据。项目、任务、检索、综述或成果只有在工具成功返回后才算完成。涉及删除、项目完成/归档等敏感动作时，清楚说明影响并等待系统审批。"""
 
 ACCESS_LEVELS = SHARE_ACCESS_LEVELS
