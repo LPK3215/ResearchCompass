@@ -126,6 +126,15 @@ from yuxi.services.research_user_study_service import (
     ResearchUserStudyError,
     ResearchUserStudyService,
 )
+from yuxi.services.research_deliverable_service import (
+    ResearchDeliverableError,
+    export_pack,
+    export_paper_analysis_markdown,
+    export_paper_cards,
+    generate_paper_brief,
+    generate_presentation_pack,
+    render_brief_markdown,
+)
 from yuxi.services.academic_paper_analysis_evaluation_service import (
     AcademicPaperAnalysisEvaluationError,
     AcademicPaperAnalysisEvaluationService,
@@ -1988,3 +1997,125 @@ async def update_paper(
         current_user=current_user,
         updates=payload.model_dump(exclude_unset=True),
     )
+
+
+# ---------------------------------------------------------------------------
+# 科研交付物：文献卡片、分层摘要、汇报包、分析报告导出
+# ---------------------------------------------------------------------------
+
+_DELIVERABLE_STATUS_MAP = {
+    "paper_not_found": 404,
+    "invalid_export_format": 422,
+    "paper_required": 422,
+    "paper_limit_exceeded": 422,
+    "deliverable_model_unavailable": 409,
+    "deliverable_model_failed": 502,
+    "deliverable_invalid_json": 502,
+    "deliverable_invalid_schema": 502,
+    "brief_invalid_json": 502,
+    "brief_invalid_schema": 502,
+    "presentation_invalid_json": 502,
+    "presentation_invalid_schema": 502,
+}
+
+
+class PaperBriefRequest(BaseModel):
+    model_spec: str | None = Field(default=None, max_length=512)
+
+
+class PresentationPackRequest(BaseModel):
+    paper_ids: list[str] = Field(..., min_length=1, max_length=10)
+    model_spec: str | None = Field(default=None, max_length=512)
+    format: str = Field(default="markdown", pattern=r"^(markdown|html)$")
+
+
+@research.get("/databases/{kb_id}/papers/cards")
+async def export_research_paper_cards(
+    kb_id: str,
+    paper_ids: str | None = Query(default=None, max_length=4000),
+    format: str = Query(default="markdown", pattern=r"^(markdown|json)$"),
+    current_user: User = Depends(get_required_user),
+):
+    ids = [item.strip() for item in paper_ids.split(",") if item.strip()] if paper_ids else None
+    try:
+        filename, content, media_type = await export_paper_cards(
+            kb_id=kb_id, current_user=current_user, paper_ids=ids, export_format=format
+        )
+    except ResearchDeliverableError as exc:
+        raise _to_http_error(exc, _DELIVERABLE_STATUS_MAP) from exc
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@research.get("/paper-analysis-runs/{run_id}/export")
+async def export_paper_analysis_report(
+    run_id: str,
+    format: str = Query(default="markdown", pattern=r"^markdown$"),
+    current_user: User = Depends(get_required_user),
+):
+    del format
+    try:
+        filename, content, media_type = await export_paper_analysis_markdown(
+            run_id=run_id, current_user=current_user
+        )
+    except ResearchDeliverableError as exc:
+        raise _to_http_error(exc, _DELIVERABLE_STATUS_MAP) from exc
+    except AcademicPaperAnalysisError as exc:
+        raise _to_http_error(exc, _ANALYSIS_STATUS_MAP) from exc
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@research.post("/databases/{kb_id}/papers/{paper_id}/brief")
+async def create_paper_brief(
+    kb_id: str,
+    paper_id: str,
+    payload: PaperBriefRequest,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        brief = await generate_paper_brief(
+            kb_id=kb_id,
+            paper_id=paper_id,
+            current_user=current_user,
+            model_spec=payload.model_spec,
+        )
+    except ResearchDeliverableError as exc:
+        raise _to_http_error(exc, _DELIVERABLE_STATUS_MAP) from exc
+    except AcademicPaperAnalysisError as exc:
+        raise _to_http_error(exc, _ANALYSIS_STATUS_MAP) from exc
+    return {
+        "brief": brief,
+        "filename": f"research_paper_brief_{paper_id}.md",
+        "markdown": render_brief_markdown(brief),
+    }
+
+
+@research.post("/databases/{kb_id}/presentation-packs")
+async def create_presentation_pack(
+    kb_id: str,
+    payload: PresentationPackRequest,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        pack = await generate_presentation_pack(
+            kb_id=kb_id,
+            paper_ids=payload.paper_ids,
+            current_user=current_user,
+            model_spec=payload.model_spec,
+        )
+        filename, content, media_type = export_pack(pack=pack, export_format=payload.format)
+    except ResearchDeliverableError as exc:
+        raise _to_http_error(exc, _DELIVERABLE_STATUS_MAP) from exc
+    return {
+        "filename": filename,
+        "media_type": media_type,
+        "pack": pack,
+        "content": content.decode("utf-8"),
+    }

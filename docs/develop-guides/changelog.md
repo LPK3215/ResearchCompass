@@ -94,6 +94,7 @@
 - 文档体系重整与上手引导：根目录不再堆放过程文档，立项方案、规划与决策、功能实现跟踪表、历史目标、错误清单与验收记录统一迁入 `docs/project/`（通过 VitePress `srcExclude` 排除发布），根目录只保留入口文件；同时新增两篇面向使用者的指引——《能力全景》回答“它能干什么”，《从选题到成稿》把建库、读论文、找证据、写综述、推进课题、章节映射与自评自证串成一条可执行流水线，并补齐论文结构→平台产出的映射表与可直接复用的提示词。README、README.en、VitePress 导航、`.gitattributes` 导出忽略规则同步更新。
 - 沉淀作者个人编码规范与能力缺口计划：新增 `docs/develop-guides/coding-rules.md`（默认生效的 17 条编码规则，纳入开发指南导航与 AGENTS 文档地图）；新增 `docs/project/2026-10-21-capability-gaps-and-dual-channel-plan.md`，用 G-01 至 G-16 追踪“人工界面 / AI 工具”双通道缺口、产出物闭环与三批修复计划，后续修复均在该文档登记状态与验收证据。
 - 研究域能力双通道补齐：为原先只能在科研罗盘工作台点击的能力补上 AI 工具，`research_*` 工具由 26 个扩到 61 个，新增论文分析（运行/读取）、项目报告与论文元数据导出、证据列表/录入/验证/审计、引用图谱同步与网络/两跳关系/冲突查询、趋势与机会、风险登记与状态流转/活动、任务依赖增删、用户评测列表/创建/报告/关闭/CSV 导出、分析对比创建与报告、外部论文搜索与导入、RAG 评估基准与结果查询及发起评估（仅管理员）。工具与 HTTP 路由共用同一 service 与同一套权限校验，导出类工具统一写入沙箱 outputs 并提示调用 `present_artifacts` 交付；证据验证、风险状态流转、依赖移除、评测关闭四类不可逆操作纳入默认审批清单。research-copilot 工具清单与系统提示同步更新，`docs/agents/tools-system.md` 补齐工具表，能力矩阵状态回填 G-01 至 G-09、G-11 为已接入，G-10 部分完成（基准创建与消融实验创建仍待补）。
+- 新增科研交付物服务与四个双通道入口：`research_deliverable_service` 统一渲染文献卡片（元数据 + 最新分析摘要，Markdown/JSON）、论文分析报告 Markdown、单篇论文分层摘要（一句话/一段/一页，模型生成）与组会汇报包（大纲、对比表、讲稿要点，Markdown/单页 HTML）；HTTP 新增 `GET /papers/cards`、`GET /paper-analysis-runs/{id}/export`、`POST /papers/{id}/brief`、`POST /presentation-packs`，工具新增 `research_export_paper_cards`、`research_export_paper_analysis`、`research_generate_paper_brief`、`research_generate_presentation_pack`（工具总数 61 到 65）。界面在论文库导出下拉新增卡片与汇报包入口，在论文分析页新增“导出 Markdown”与“分层摘要”；分析导出同时兼容 `stage_results` 与 `result` 两种运行快照结构，缺字段时显式写“未明确提供”。
 
 ## v0.10.0
 

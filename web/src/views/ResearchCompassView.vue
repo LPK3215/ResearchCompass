@@ -900,6 +900,11 @@
                 <a-menu-item key="markdown">Markdown 收藏</a-menu-item>
                 <a-menu-item key="csv">CSV 表格</a-menu-item>
                 <a-menu-item key="text">纯文本列表</a-menu-item>
+                <a-menu-divider />
+                <a-menu-item key="cards-markdown">文献卡片（Markdown）</a-menu-item>
+                <a-menu-item key="cards-json">文献卡片（JSON）</a-menu-item>
+                <a-menu-item key="pack-markdown">组会汇报包（Markdown）</a-menu-item>
+                <a-menu-item key="pack-html">组会汇报包（HTML）</a-menu-item>
               </a-menu>
             </template>
           </a-dropdown>
@@ -2318,20 +2323,40 @@ const loadGraphRelations = async (graphPaperId) => {
   }
 }
 
+const saveBlob = (blob, filename) => {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 const exportAllPapers = async ({ key: exportFormat }) => {
   if (!selectedKbId.value || papers.value.length === 0) return
   const kbId = selectedKbId.value
   const requestGeneration = workspaceRequestGeneration
   exportLoading.value = true
   try {
+    if (exportFormat === 'cards-markdown' || exportFormat === 'cards-json') {
+      const isJson = exportFormat === 'cards-json'
+      const blob = await researchApi.exportPaperCards(kbId, isJson ? 'json' : 'markdown')
+      if (requestGeneration !== workspaceRequestGeneration || kbId !== selectedKbId.value) return
+      saveBlob(blob, `research_paper_cards_${kbId}.${isJson ? 'json' : 'md'}`)
+      return
+    }
+    if (exportFormat === 'pack-markdown' || exportFormat === 'pack-html') {
+      const paperIds = papers.value.slice(0, 10).map((paper) => paper.paper_id).filter(Boolean)
+      const format = exportFormat === 'pack-html' ? 'html' : 'markdown'
+      const result = await researchApi.generatePresentationPack(kbId, { paper_ids: paperIds, format })
+      if (requestGeneration !== workspaceRequestGeneration || kbId !== selectedKbId.value) return
+      saveBlob(new Blob([result.content], { type: result.media_type }), result.filename)
+      message.success('汇报包已生成')
+      return
+    }
     const blob = await researchApi.exportPapersDocument(kbId, exportFormat)
     if (requestGeneration !== workspaceRequestGeneration || kbId !== selectedKbId.value) return
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `papers_${kbId}.${EXPORT_FILE_EXTENSIONS[exportFormat] || 'txt'}`
-    a.click()
-    URL.revokeObjectURL(url)
+    saveBlob(blob, `papers_${kbId}.${EXPORT_FILE_EXTENSIONS[exportFormat] || 'txt'}`)
   } catch (error) {
     if (requestGeneration !== workspaceRequestGeneration) return
     message.error(error.message || '文献导出失败')

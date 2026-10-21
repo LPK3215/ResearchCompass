@@ -166,6 +166,10 @@ RESEARCH_COPILOT_TOOL_SLUGS = [
     "research_get_eval_run",
     "research_list_eval_experiments",
     "research_get_eval_experiment",
+    "research_export_paper_cards",
+    "research_export_paper_analysis",
+    "research_generate_paper_brief",
+    "research_generate_presentation_pack",
 ]
 RESEARCH_COPILOT_SYSTEM_PROMPT = """你是 ResearchCompass 的 AI 研究助手。
 

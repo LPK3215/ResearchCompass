@@ -6,6 +6,10 @@
       </template>
       <template #actions>
         <a-button class="lucide-icon-btn" @click="goBack">返回论文库</a-button>
+        <a-button :disabled="!run?.run_id || !run?.result" :loading="exporting" @click="exportReport">
+          导出 Markdown
+        </a-button>
+        <a-button :disabled="!paper" :loading="briefing" @click="generateBrief">分层摘要</a-button>
         <a-button type="primary" :loading="starting" :disabled="running" @click="startAnalysis">
           {{ running ? `分析中：${run?.stage || '准备中'}` : '重新生成报告' }}
         </a-button>
@@ -126,6 +130,8 @@ const paper = ref(null)
 const run = ref(null)
 const loading = ref(false)
 const starting = ref(false)
+const exporting = ref(false)
+const briefing = ref(false)
 const error = ref('')
 let pollTimer = null
 
@@ -200,6 +206,43 @@ const startAnalysis = async () => {
 }
 
 const goBack = () => router.push({ name: 'ResearchCompass' })
+
+const saveBlob = (blob, filename) => {
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
+const exportReport = async () => {
+  if (!run.value?.run_id) return
+  exporting.value = true
+  try {
+    const blob = await researchApi.exportPaperAnalysis(run.value.run_id)
+    saveBlob(blob, `research_paper_analysis_${run.value.run_id}.md`)
+    message.success('分析报告已导出')
+  } catch (err) {
+    message.error(err.message || '分析报告导出失败')
+  } finally {
+    exporting.value = false
+  }
+}
+
+const generateBrief = async () => {
+  if (!paper.value) return
+  briefing.value = true
+  try {
+    const result = await researchApi.generatePaperBrief(kbId, paperId)
+    saveBlob(new Blob([result.markdown], { type: 'text/markdown;charset=utf-8' }), result.filename)
+    message.success('分层摘要已生成')
+  } catch (err) {
+    message.error(err.message || '分层摘要生成失败')
+  } finally {
+    briefing.value = false
+  }
+}
 
 onMounted(loadReport)
 onBeforeUnmount(clearPolling)

@@ -363,6 +363,26 @@ class EvalExperimentInput(BaseModel):
     experiment_id: str = Field(min_length=1, max_length=64)
 
 
+class ExportPaperCardsInput(BaseModel):
+    paper_ids: list[str] = Field(default_factory=list, max_length=200, description="为空表示导出当前知识库全部论文")
+    format: Literal["markdown", "json"] = Field(default="markdown", description="导出格式")
+
+
+class ExportPaperAnalysisInput(BaseModel):
+    run_id: str = Field(min_length=1, max_length=64, description="论文分析运行 ID")
+
+
+class PaperBriefInput(BaseModel):
+    paper_id: str = Field(min_length=1, max_length=128, description="论文 ID")
+    model_spec: str | None = Field(default=None, max_length=512, description="生成模型；省略时使用默认模型")
+
+
+class PresentationPackInput(BaseModel):
+    paper_ids: list[str] = Field(min_length=1, max_length=10, description="1 到 10 篇论文 ID")
+    format: Literal["markdown", "html"] = Field(default="markdown", description="导出格式")
+    model_spec: str | None = Field(default=None, max_length=512, description="生成模型；省略时使用默认模型")
+
+
 def _research_context(runtime: ToolRuntime) -> dict[str, Any]:
     context = getattr(runtime, "context", None)
     research_context = getattr(context, "research_context", None)
@@ -1804,6 +1824,147 @@ async def research_get_eval_experiment(experiment_id: str, runtime: ToolRuntime)
     return await _call(EvaluationService().get_experiment(context["kb_id"], experiment_id))
 
 
+@tool(
+    category="research",
+    tags=["科研", "论文", "导出"],
+    display_name="导出文献卡片",
+    args_schema=ExportPaperCardsInput,
+)
+async def research_export_paper_cards(
+    paper_ids: list[str],
+    format: str,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """把论文导出为结构化文献卡片（元数据 + 分析摘要），支持 Markdown 或 JSON。
+
+    导出完成后应调用 present_artifacts 工具将文件展示给用户。
+    """
+    from yuxi.services.research_deliverable_service import export_paper_cards
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    filename, content, media_type = await _call(
+        export_paper_cards(
+            kb_id=context["kb_id"],
+            current_user=user,
+            paper_ids=paper_ids or None,
+            export_format=format,
+        )
+    )
+    artifact_path = await _write_artifact(runtime, filename, content)
+    return {
+        "filename": filename,
+        "format": format,
+        "media_type": media_type,
+        "paper_count": len(paper_ids) if paper_ids else None,
+        "artifact_path": artifact_path,
+        "message": f"文献卡片已导出为 {filename}，请调用 present_artifacts 工具展示该文件",
+    }
+
+
+@tool(
+    category="research",
+    tags=["科研", "分析", "导出"],
+    display_name="导出论文分析报告",
+    args_schema=ExportPaperAnalysisInput,
+)
+async def research_export_paper_analysis(run_id: str, runtime: ToolRuntime) -> dict[str, Any]:
+    """把一次论文分析运行导出为 Markdown 报告，含结构化提取、创新点、方法论与空白。
+
+    导出完成后应调用 present_artifacts 工具将文件展示给用户。
+    """
+    from yuxi.services.research_deliverable_service import export_paper_analysis_markdown
+
+    user = await _current_user(runtime)
+    filename, content, media_type = await _call(export_paper_analysis_markdown(run_id=run_id, current_user=user))
+    artifact_path = await _write_artifact(runtime, filename, content)
+    return {
+        "run_id": run_id,
+        "filename": filename,
+        "media_type": media_type,
+        "artifact_path": artifact_path,
+        "message": f"分析报告已导出为 {filename}，请调用 present_artifacts 工具展示该文件",
+    }
+
+
+@tool(
+    category="research",
+    tags=["科研", "阅读", "导出"],
+    display_name="生成论文分层摘要",
+    args_schema=PaperBriefInput,
+)
+async def research_generate_paper_brief(
+    paper_id: str,
+    model_spec: str | None,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """生成单篇论文的分层摘要（一句话 / 一段 / 一页）并写入 Markdown 交付物。"""
+    from yuxi.services.research_deliverable_service import (
+        generate_paper_brief,
+        render_brief_markdown,
+    )
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    brief = await _call(
+        generate_paper_brief(
+            kb_id=context["kb_id"],
+            paper_id=paper_id,
+            current_user=user,
+            model_spec=model_spec,
+        )
+    )
+    filename = f"research_paper_brief_{paper_id}.md"
+    artifact_path = await _write_artifact(runtime, filename, render_brief_markdown(brief).encode("utf-8"))
+    return {
+        **brief,
+        "filename": filename,
+        "artifact_path": artifact_path,
+        "message": f"分层摘要已写入 {filename}，请调用 present_artifacts 工具展示该文件",
+    }
+
+
+@tool(
+    category="research",
+    tags=["科研", "汇报", "导出"],
+    display_name="生成汇报包",
+    args_schema=PresentationPackInput,
+)
+async def research_generate_presentation_pack(
+    paper_ids: list[str],
+    format: str,
+    model_spec: str | None,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """基于 1 到 10 篇论文生成汇报包（大纲、对比表、讲稿要点），输出 Markdown 或单页 HTML。"""
+    from yuxi.services.research_deliverable_service import (
+        export_pack,
+        generate_presentation_pack,
+    )
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    pack = await _call(
+        generate_presentation_pack(
+            kb_id=context["kb_id"],
+            paper_ids=paper_ids,
+            current_user=user,
+            model_spec=model_spec,
+        )
+    )
+    filename, content, media_type = await _call(export_pack(pack=pack, export_format=format))
+    artifact_path = await _write_artifact(runtime, filename, content)
+    return {
+        "title": pack["title"],
+        "section_count": len(pack["outline"]),
+        "paper_count": len(pack["papers"]),
+        "filename": filename,
+        "media_type": media_type,
+        "artifact_path": artifact_path,
+        "message": f"汇报包已生成 {filename}，请调用 present_artifacts 工具展示该文件",
+    }
+
+
 RESEARCH_TOOLS = [
     research_get_context,
     research_list_projects,
@@ -1866,4 +2027,8 @@ RESEARCH_TOOLS = [
     research_get_eval_run,
     research_list_eval_experiments,
     research_get_eval_experiment,
+    research_export_paper_cards,
+    research_export_paper_analysis,
+    research_generate_paper_brief,
+    research_generate_presentation_pack,
 ]

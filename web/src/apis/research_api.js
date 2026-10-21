@@ -434,6 +434,35 @@ export const researchApi = {
     ).then((response) => response.blob())
   },
 
+  exportPaperCards: (kbId, exportFormat = 'markdown', paperIds = null) => {
+    const query = buildQuery({
+      format: exportFormat,
+      ...(paperIds && paperIds.length ? { paper_ids: paperIds.join(',') } : {})
+    })
+    return apiRequest(
+      `/api/research/databases/${encodeURIComponent(kbId)}/papers/cards?${query}`,
+      { method: 'GET' }, true, 'blob'
+    ).then((response) => response.blob())
+  },
+
+  exportPaperAnalysis: (runId) =>
+    apiRequest(
+      `/api/research/paper-analysis-runs/${encodeURIComponent(runId)}/export?format=markdown`,
+      { method: 'GET' }, true, 'blob'
+    ).then((response) => response.blob()),
+
+  generatePaperBrief: (kbId, paperId, payload = {}) =>
+    apiRequest(
+      `/api/research/databases/${encodeURIComponent(kbId)}/papers/${encodeURIComponent(paperId)}/brief`,
+      { method: 'POST', body: JSON.stringify(payload) }
+    ),
+
+  generatePresentationPack: (kbId, payload) =>
+    apiRequest(
+      `/api/research/databases/${encodeURIComponent(kbId)}/presentation-packs`,
+      { method: 'POST', body: JSON.stringify(payload) }
+    ),
+
   listUserTags: (kbId) =>
     apiGet(`/api/research/databases/${encodeURIComponent(kbId)}/papers/tags`),
 
