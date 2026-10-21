@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -283,6 +284,7 @@ class _CreateRunDb:
         self.runs_by_id = runs_by_id or {}
         self.latest_run = latest_run
         self.raise_create_integrity_error = raise_create_integrity_error
+        self.terminal_status = None
         self._message_id = message_id
 
     async def execute(self, stmt):
@@ -373,6 +375,15 @@ class _CreateRunRepo:
             subagent_thread_relation_id=kwargs.get("subagent_thread_relation_id"),
         )
         return self.db.created_run
+
+    async def set_terminal_status(self, run_id: str, *, status: str, error_type=None, error_message=None):
+        self.db.terminal_status = {
+            "run_id": run_id,
+            "status": status,
+            "error_type": error_type,
+            "error_message": error_message,
+        }
+        return self.db.active_run, True
 
 
 @pytest.mark.asyncio
@@ -472,6 +483,85 @@ async def test_stream_agent_run_events_reads_redis_and_ends_on_end_event(monkeyp
     assert "id: 1700000000000-0" in chunks[0]
     assert chunks[-1].startswith("event: end")
     assert "id: 1700000000001-0" in chunks[-1]
+
+
+@pytest.mark.asyncio
+async def test_stream_agent_run_events_fails_run_stalled_in_pending(monkeypatch: pytest.MonkeyPatch):
+    @asynccontextmanager
+    async def fake_session_ctx():
+        yield object()
+
+    state = {"status": "pending", "terminal": None}
+
+    class Repo:
+        def __init__(self, db):
+            self.db = db
+
+        async def get_run_for_user(self, run_id: str, uid: str):
+            del run_id, uid
+            return SimpleNamespace(
+                id="run-1",
+                status=state["status"],
+                conversation_thread_id="thread-1",
+                created_at=datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=300),
+            )
+
+        async def set_terminal_status(self, run_id: str, *, status: str, error_type=None, error_message=None):
+            state["status"] = status
+            state["terminal"] = {
+                "run_id": run_id,
+                "status": status,
+                "error_type": error_type,
+                "error_message": error_message,
+            }
+            return None, True
+
+    appended: list[tuple[str, dict]] = []
+
+    async def fake_append_run_stream_event(run_id: str, event_type: str, payload: dict, *, thread_id=None):
+        del thread_id
+        appended.append((event_type, payload))
+
+    async def fake_list_events(run_id: str, *, after_seq: str, limit: int):
+        del run_id, after_seq, limit
+        return [
+            {
+                "seq": f"170000000000{index}-0",
+                "event_type": event_type,
+                "payload": {
+                    "schema_version": 1,
+                    "run_id": "run-1",
+                    "thread_id": "thread-1",
+                    "event": event_type,
+                    "payload": payload,
+                    "created_at": "2026-05-27T00:00:00+00:00",
+                },
+                "ts": 1700000000000,
+            }
+            for index, (event_type, payload) in enumerate(appended)
+        ]
+
+    monkeypatch.setattr(agent_run_service.pg_manager, "get_async_session_context", fake_session_ctx)
+    monkeypatch.setattr(agent_run_service, "AgentRunRepository", Repo)
+    monkeypatch.setattr(agent_run_service, "append_run_stream_event", fake_append_run_stream_event)
+    monkeypatch.setattr(agent_run_service, "list_run_stream_events", fake_list_events)
+    monkeypatch.setattr(agent_run_service, "SSE_POLL_INTERVAL_SECONDS", 0)
+
+    chunks = []
+    async for chunk in agent_run_service.stream_agent_run_events(
+        run_id="run-1",
+        after_seq="0",
+        current_uid="user-1",
+    ):
+        chunks.append(chunk)
+
+    assert state["terminal"]["status"] == "failed"
+    assert state["terminal"]["error_type"] == "worker_unavailable"
+    assert [event_type for event_type, _ in appended] == ["error", "end"]
+    assert appended[0][1]["chunk"]["error_message"] == agent_run_service.RUN_WORKER_UNAVAILABLE_MESSAGE
+    assert appended[1][1]["status"] == "failed"
+    assert chunks[0].startswith("event: error")
+    assert chunks[-1].startswith("event: end")
 
 
 @pytest.mark.asyncio
@@ -1126,6 +1216,52 @@ async def test_create_agent_run_rejects_active_checkpoint_run(monkeypatch: pytes
         "uid": "user-1",
     }
     assert db.created_run_kwargs is None
+
+
+@pytest.mark.asyncio
+async def test_create_agent_run_releases_thread_blocked_by_stalled_pending_run(monkeypatch: pytest.MonkeyPatch):
+    db = _patch_agent_run_creation(
+        monkeypatch,
+        active_run=SimpleNamespace(
+            id="stale-run",
+            status="pending",
+            conversation_thread_id="thread-1",
+            created_at=datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=300),
+        ),
+    )
+
+    @asynccontextmanager
+    async def fake_session_ctx():
+        yield db
+
+    appended: list[tuple[str, str, dict]] = []
+
+    async def fake_append_run_stream_event(run_id: str, event_type: str, payload: dict, *, thread_id=None):
+        del thread_id
+        appended.append((run_id, event_type, payload))
+
+    monkeypatch.setattr(agent_run_service.pg_manager, "get_async_session_context", fake_session_ctx)
+    monkeypatch.setattr(agent_run_service, "append_run_stream_event", fake_append_run_stream_event)
+
+    result = await agent_run_service.create_agent_run_view(
+        input_message=_chat_input("hello"),
+        agent_slug="default",
+        thread_id="thread-1",
+        meta={"request_id": "req-1"},
+        current_uid="user-1",
+        db=db,
+    )
+
+    assert db.terminal_status == {
+        "run_id": "stale-run",
+        "status": "failed",
+        "error_type": "worker_unavailable",
+        "error_message": agent_run_service.RUN_WORKER_UNAVAILABLE_MESSAGE,
+    }
+    assert [event_type for _, event_type, _ in appended] == ["error", "end"]
+    assert db.created_run is not None
+    assert result["run_id"] == db.created_run.id
+    assert db.enqueued == [("process_agent_run", db.created_run.id, f"run:{db.created_run.id}")]
 
 
 # ==================== run 结果基础能力 ====================

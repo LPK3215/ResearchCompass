@@ -345,13 +345,18 @@ class AcademicGraphService:
                 target_id = str(outgoing.get("target_id") or "")
                 citation_id = str(citation.get("citation_id") or "")
                 if citation_id and target_id:
+                    # 引用关系上的 source 表示数据来源（semantic_scholar），与边的起点节点 ID 同名，
+                    # 直接展开会覆盖起点导致图谱渲染找不到节点，这里改存为 provider。
+                    provider = citation.pop("source", None)
                     edges[citation_id] = {
+                        **citation,
                         "id": citation_id,
                         "source": paper_id,
                         "target": target_id,
                         "type": "CITES",
-                        **citation,
                     }
+                    if provider:
+                        edges[citation_id]["provider"] = provider
         return {"nodes": list(nodes.values()), "edges": list(edges.values())}
 
     async def delete_kb_projection(self, kb_id: str) -> None:

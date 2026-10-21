@@ -95,24 +95,21 @@ let resizeObserver = null
 let renderTimeout = null
 let retryCount = 0
 let resizeTimer = null
-let layoutTimeout = null
-let highlightTimeout = null
 let isMounted = false
 const MAX_RETRIES = 5
 
+// G6 v5 的力导向布局使用 @antv/layout 的 d3-force，参数是扁平的 manyBody/link/collide，
+// 早期 G6 v4 的 force.charge 嵌套写法会被忽略；同时不要写死 collide.radius，
+// 大图上固定半径会让斥力计算反复重排，节点数上千时直接把主线程占满。
 const defaultLayout = {
   type: 'd3-force',
   preventOverlap: true,
   alphaDecay: 0.1,
   alphaMin: 0.01,
   velocityDecay: 0.6,
-  iterations: 150,
-  force: {
-    center: { x: 0.5, y: 0.5, strength: 0.1 },
-    charge: { strength: -400, distanceMax: 600 },
-    link: { distance: 100, strength: 0.8 }
-  },
-  collide: { radius: 40, strength: 0.8, iterations: 3 }
+  // alphaDecay 0.1 时 alpha 在约 44 次迭代后就已低于 alphaMin，再多迭代几乎不改变位置，
+  // 但每次迭代都要重算全部节点的受力，节点上千时白白多耗几秒，因此按收敛点取值。
+  iterations: 50
 }
 
 const CHUNK_NODE_LABEL = 'Chunk'
@@ -293,8 +290,13 @@ function initGraph() {
     container: container.value,
     width,
     height,
-    autoFit: props.autoFit,
+    // G6 v5 的 autoFit 只接受 'view' / 'center'，传 true 会被当成无类型对象而直接跳过，
+    // 结果整张图超出画布边界，因此这里显式转成 'view'。
+    autoFit: props.autoFit ? 'view' : false,
     autoResize: props.autoResize,
+    // G6 v5 默认给每个元素播放入场动画，元素数量上千时动画调度会占满主线程：
+    // 实测 2000 节点带标签渲染要 30 秒以上，关掉动画后同样的图 2 秒多就能画完。
+    animation: false,
     layout: { ...defaultLayout, ...props.layoutOptions },
     node: {
       type: 'circle',
@@ -378,34 +380,23 @@ function initGraph() {
   emit('ready', graphInstance)
 }
 
-function setGraphData() {
+async function setGraphData() {
   if (!graphInstance || !isMounted) initGraph()
   if (!graphInstance || !isMounted) return
   const data = formatData()
 
   graphInstance.setData(data)
-  graphInstance.render()
+  // G6 v5 的 render() 内部已经跑完一次布局，这里等渲染结束后再应用高亮。
+  // 不再额外调用 layout()，否则大图会重复跑一整轮力导向迭代而卡住页面。
+  try {
+    await graphInstance.render()
+  } catch (error) {
+    console.warn('图谱渲染失败:', error)
+  }
+  if (!isMounted || !graphInstance) return
 
-  // 手动触发布局重新计算，确保节点分布
-  clearTimeout(layoutTimeout)
-  layoutTimeout = setTimeout(() => {
-    if (!isMounted || !graphInstance) return
-    try {
-      if (graphInstance && graphInstance.layout) {
-        graphInstance.layout()
-      }
-    } catch (error) {
-      console.warn('布局重新计算失败:', error)
-    }
-
-    // 等待力导向布局稳定后再应用高亮
-    clearTimeout(highlightTimeout)
-    highlightTimeout = setTimeout(() => {
-      if (!isMounted || !graphInstance) return
-      applyHighlightKeywords()
-      emit('data-rendered')
-    }, 1500)
-  }, 10) // 等待 10ms 确保布局完成
+  applyHighlightKeywords()
+  emit('data-rendered')
 }
 
 // 关键词高亮功能
@@ -575,8 +566,12 @@ onMounted(() => {
       if (width === 0 && height === 0) return
       graphInstance.setSize(width, height)
       clearTimeout(resizeTimer)
-      resizeTimer = setTimeout(() => {
+      resizeTimer = setTimeout(async () => {
         if (graphInstance && isMounted) {
+          // G6 v5 调整画布尺寸会清空画布，但不会自动重绘元素，
+          // 尺寸变化后必须补一次 draw()，否则整张图会整块消失。
+          await graphInstance.draw()
+          if (!isMounted || !graphInstance) return
           graphInstance.fitView()
         }
       }, 150)
@@ -598,8 +593,6 @@ onUnmounted(() => {
   if (resizeObserver && container.value) resizeObserver.unobserve(container.value)
   clearTimeout(renderTimeout)
   clearTimeout(resizeTimer)
-  clearTimeout(layoutTimeout)
-  clearTimeout(highlightTimeout)
   try {
     graphInstance?.destroy()
   } catch {

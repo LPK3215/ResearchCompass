@@ -285,7 +285,7 @@ async def _run_sync(
             await context.set_progress(100, "所选论文均已同步至引用图谱，跳过重复同步")
             result = {k: v for k, v in counts.items() if k != "completed_at"}
             await context.set_result({"run_id": run_id, **result})
-            return {"run_id": run_id, **counts}
+            return {"run_id": run_id, **result}
         papers = pending_papers
         for index, local_paper in enumerate(papers, start=1):
             if local_paper.paper_id in processed_paper_ids:
@@ -416,7 +416,7 @@ async def _run_sync(
         await context.set_progress(100, "学术引用图谱同步完成")
         result = {k: v for k, v in counts.items() if k not in ("completed_at",)}
         await context.set_result({"run_id": run_id, **result})
-        return {"run_id": run_id, **counts}
+        return {"run_id": run_id, **result}
     except asyncio.CancelledError:
         if context.cancellation_reason == "shutdown":
             await repo.update_sync_run(

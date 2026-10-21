@@ -341,6 +341,12 @@
             :message="selectedSynthesisRun.error_message || '研究综述已取消'"
           />
 
+          <SynthesisEvidencePanel
+            v-if="showSynthesisEvidencePanel"
+            :kb-id="selectedKbId"
+            :snapshot="selectedSynthesisRun.retrieval_snapshot"
+          />
+
           <template v-if="selectedSynthesisResult">
             <div class="synthesis-coverage-cards">
               <article>
@@ -511,6 +517,9 @@
             <span>{{ graphData.counts.citations }} 条引用</span>
             <span>{{ graphData.counts.authors }} 位作者</span>
             <span>{{ graphData.counts.topics }} 个主题</span>
+            <span class="graph-sample-hint" title="画布只渲染前 {{ ACADEMIC_GRAPH_PAPER_LIMIT }} 篇论文的关联实体，避免上千节点拖慢浏览器">
+              画布抽样 {{ graphPapers.length }} 篇论文
+            </span>
           </div>
           <a-button :loading="graphLoading" :disabled="!selectedKbId" @click="loadAcademicGraph">刷新图谱</a-button>
         </div>
@@ -1214,6 +1223,7 @@ import PaperDetailDrawer from '@/components/research/PaperDetailDrawer.vue'
 import ResearchCopilotPanel from '@/components/research/ResearchCopilotPanel.vue'
 import ResearchProjectWorkspace from '@/components/research/ResearchProjectWorkspace.vue'
 import ResearchSearchWorkspace from '@/components/research/ResearchSearchWorkspace.vue'
+import SynthesisEvidencePanel from '@/components/research/SynthesisEvidencePanel.vue'
 import UserStudyManager from '@/components/research/UserStudyManager.vue'
 import PaperAnalysisEvaluationManager from '@/components/research/PaperAnalysisEvaluationManager.vue'
 import PageHeader from '@/components/shared/PageHeader.vue'
@@ -1225,7 +1235,9 @@ let echartsPromise
 let pdfJsPromise
 
 const loadEcharts = () => {
-  if (!echartsPromise) echartsPromise = import('@/utils/echarts')
+  // 动态 import 返回的是模块命名空间，真正的 echarts 实例在 default 上，
+  // 直接当命名空间用会拿到 undefined 的 init，图表初始化会静默失败。
+  if (!echartsPromise) echartsPromise = import('@/utils/echarts').then((mod) => mod.default)
   return echartsPromise
 }
 
@@ -1340,6 +1352,12 @@ const canRegenerateSynthesis = computed(() => (
 const canCancelSynthesis = computed(() => (
   selectedSynthesisRun.value?.run_id
   && synthesisActiveStatuses.has(selectedSynthesisRun.value.status)
+))
+// 综述失败于证据校验时，给出片段级证据校验入口。
+const showSynthesisEvidencePanel = computed(() => (
+  selectedSynthesisRun.value?.status === 'failed'
+  && ['synthesis_insufficient_evidence', 'synthesis_evidence_changed'].includes(selectedSynthesisRun.value.error_type)
+  && Boolean(selectedSynthesisRun.value?.retrieval_snapshot?.papers?.length)
 ))
 const synthesisInsightSections = [
   { key: 'contradictions', title: '证据矛盾', empty: '未发现通过验证的跨论文矛盾', icon: AlertTriangle },
@@ -1710,6 +1728,9 @@ const loadTrends = async () => {
     if (requestGeneration !== workspaceRequestGeneration || kbId !== selectedKbId.value) return
     trendData.value = result
     selectedTrendKeyword.value = trendData.value.keyword_trends?.[0]?.keyword || ''
+    // 图表容器挂在 v-else 分支上，trendLoading 还是 true 时它并不在 DOM 里，
+    // 必须先结束 loading 再渲染图表，否则模板引用拿不到元素，图表整块缺失。
+    trendLoading.value = false
     await renderTrendCharts(requestGeneration)
   } catch (error) {
     if (requestGeneration !== workspaceRequestGeneration) return
@@ -2173,6 +2194,11 @@ const downloadEvidenceFile = async (variant) => {
   }
 }
 
+// 引用图谱画布上的实体数量决定前端力导向布局的耗时：每次布局迭代都要重算所有节点的受力，
+// 节点上千时单次渲染会占用主线程近十秒，页面表现为假死。这里按可交互的规模取样论文，
+// 画布展示的是前若干篇论文的引用与作者关联，完整规模在顶部统计与论文库中查看。
+const ACADEMIC_GRAPH_PAPER_LIMIT = 100
+
 const loadAcademicGraph = async () => {
   if (!selectedKbId.value) return
   const kbId = selectedKbId.value
@@ -2180,7 +2206,7 @@ const loadAcademicGraph = async () => {
   graphLoading.value = true
   graphError.value = ''
   try {
-    const result = await researchApi.getAcademicGraph(kbId, { depth: 2, limit: 300 })
+    const result = await researchApi.getAcademicGraph(kbId, { depth: 2, limit: ACADEMIC_GRAPH_PAPER_LIMIT })
     if (requestGeneration !== workspaceRequestGeneration || kbId !== selectedKbId.value) return
     graphData.value = result
   } catch (error) {
@@ -3514,6 +3540,11 @@ onBeforeUnmount(() => {
   gap: 6px 14px;
   color: var(--color-text-secondary);
   font-size: 12px;
+}
+
+.graph-sample-hint {
+  color: var(--color-text-tertiary);
+  cursor: help;
 }
 
 .graph-conflicts {

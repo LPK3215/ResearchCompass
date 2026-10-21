@@ -117,6 +117,7 @@ class SemanticScholarClient:
             self.headers["x-api-key"] = api_key
         self.timeout = httpx.Timeout(45.0, connect=10.0)
         self._last_request_time = 0.0
+        self._request_lock = asyncio.Lock()
 
     async def _get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         max_retries = 3
@@ -126,36 +127,39 @@ class SemanticScholarClient:
             headers=self.headers,
             trust_env=False,
         ) as client:
-            for attempt in range(max_retries + 1):
-                elapsed = time.monotonic() - self._last_request_time
-                if elapsed < self._MIN_REQUEST_INTERVAL:
-                    await asyncio.sleep(self._MIN_REQUEST_INTERVAL - elapsed)
-                self._last_request_time = time.monotonic()
-                try:
-                    response = await client.get(f"{self.base_url}{path}", params=params)
-                except httpx.TimeoutException as exc:
-                    if attempt < max_retries:
+            # 引用与参考文献会被并发拉取，限流间隔只有串行才真正生效：
+            # 并发请求会同时打到 Semantic Scholar 免费额度上，直接触发 429。
+            async with self._request_lock:
+                for attempt in range(max_retries + 1):
+                    elapsed = time.monotonic() - self._last_request_time
+                    if elapsed < self._MIN_REQUEST_INTERVAL:
+                        await asyncio.sleep(self._MIN_REQUEST_INTERVAL - elapsed)
+                    self._last_request_time = time.monotonic()
+                    try:
+                        response = await client.get(f"{self.base_url}{path}", params=params)
+                    except httpx.TimeoutException as exc:
+                        if attempt < max_retries:
+                            await asyncio.sleep(backoff_seconds[attempt])
+                            continue
+                        raise SemanticScholarError("semantic_scholar_timeout", "Semantic Scholar 请求超时") from exc
+                    except httpx.HTTPError as exc:
+                        if attempt < max_retries:
+                            await asyncio.sleep(backoff_seconds[attempt])
+                            continue
+                        raise SemanticScholarError("semantic_scholar_network", "Semantic Scholar 网络请求失败") from exc
+                    if response.status_code == 429 and attempt < max_retries:
+                        wait = _retry_wait_seconds(response.headers.get("Retry-After"), backoff_seconds[attempt])
+                        await asyncio.sleep(wait)
+                        continue
+                    if response.status_code == 429:
+                        raise SemanticScholarError(
+                            "semantic_scholar_rate_limited",
+                            "Semantic Scholar API 触发限流，已重试 3 次仍失败",
+                        )
+                    if response.status_code >= 500 and attempt < max_retries:
                         await asyncio.sleep(backoff_seconds[attempt])
                         continue
-                    raise SemanticScholarError("semantic_scholar_timeout", "Semantic Scholar 请求超时") from exc
-                except httpx.HTTPError as exc:
-                    if attempt < max_retries:
-                        await asyncio.sleep(backoff_seconds[attempt])
-                        continue
-                    raise SemanticScholarError("semantic_scholar_network", "Semantic Scholar 网络请求失败") from exc
-                if response.status_code == 429 and attempt < max_retries:
-                    wait = _retry_wait_seconds(response.headers.get("Retry-After"), backoff_seconds[attempt])
-                    await asyncio.sleep(wait)
-                    continue
-                if response.status_code == 429:
-                    raise SemanticScholarError(
-                        "semantic_scholar_rate_limited",
-                        "Semantic Scholar API 触发限流，已重试 3 次仍失败",
-                    )
-                if response.status_code >= 500 and attempt < max_retries:
-                    await asyncio.sleep(backoff_seconds[attempt])
-                    continue
-                break
+                    break
         if response.status_code == 404:
             raise SemanticScholarError("paper_not_found", "Semantic Scholar 未找到论文")
         if response.status_code >= 400:

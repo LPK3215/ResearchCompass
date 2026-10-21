@@ -16,9 +16,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Literal
 
 from fastapi import HTTPException
@@ -38,6 +40,7 @@ from yuxi.services.input_message_service import (
 )
 from yuxi.services.run_queue_service import (
     RunQueueUnavailableError,
+    append_run_stream_event,
     build_run_event_envelope,
     get_arq_pool,
     get_last_run_stream_seq,
@@ -62,6 +65,11 @@ from yuxi.utils.sse_utils import (
 RUN_PROGRESS_RECENT_EVENT_SCAN_LIMIT = 100
 RUN_PROGRESS_MESSAGE_LIMIT = 3
 RUN_PROGRESS_CONTENT_MAX_CHARS = 800
+
+# run 停在 pending 说明后台 worker 没有消费队列。worker 存活时该窗口通常在秒级，
+# 因此超时阈值取得比较宽松，避免 worker 冷启动期间误判为失败。
+RUN_PENDING_TIMEOUT_SECONDS = int(os.getenv("RUN_PENDING_TIMEOUT_SECONDS", "60"))
+RUN_WORKER_UNAVAILABLE_MESSAGE = "后台任务进程未运行，请检查 worker 服务是否已启动"
 
 
 def _resolve_agent_run_request_id(
@@ -749,11 +757,15 @@ async def prepare_agent_run_creation_scope(
             uid=str(current_uid),
         )
         if active_run:
-            raise _run_busy_exception(
-                active_run=active_run,
-                agent_slug=agent_slug,
-                conversation_thread_id=conversation_thread_id,
-            )
+            if _is_stalled_pending_run(active_run):
+                # 上一次运行因 worker 未消费队列而卡在 pending，先释放线程再放行本次请求
+                await _fail_stalled_pending_run(active_run)
+            else:
+                raise _run_busy_exception(
+                    active_run=active_run,
+                    agent_slug=agent_slug,
+                    conversation_thread_id=conversation_thread_id,
+                )
     return AgentRunCreationScope(
         conversation=conversation,
         agent_item=agent_item,
@@ -767,6 +779,53 @@ async def enqueue_agent_run(run_id: str) -> None:
     """把已持久化的 run 投递到后台 worker 队列。"""
     queue = await get_arq_pool()
     await queue.enqueue_job("process_agent_run", run_id, _job_id=f"run:{run_id}")
+
+
+def _is_stalled_pending_run(run) -> bool:
+    """run 长时间停在 pending，说明后台 worker 没有消费队列。"""
+    if run is None or run.status != "pending":
+        return False
+    created_at = getattr(run, "created_at", None)
+    if not isinstance(created_at, datetime):
+        return False
+    return (utc_now_naive() - created_at).total_seconds() >= RUN_PENDING_TIMEOUT_SECONDS
+
+
+async def _fail_stalled_pending_run(run) -> bool:
+    """把未被 worker 消费的 run 置为失败，并回传错误与结束事件。
+
+    run 停在 pending 会一直占住所在线程（同一线程同时只允许一个未结束的 run），
+    不显式失败的话该对话线程之后的所有消息都会被判为“运行中”而无法继续。
+    """
+    error_chunk = {
+        "status": "error",
+        "error_type": "worker_unavailable",
+        "error_message": RUN_WORKER_UNAVAILABLE_MESSAGE,
+        "retryable": False,
+    }
+    async with pg_manager.get_async_session_context() as db:
+        _, changed = await AgentRunRepository(db).set_terminal_status(
+            run.id,
+            status="failed",
+            error_type="worker_unavailable",
+            error_message=RUN_WORKER_UNAVAILABLE_MESSAGE,
+        )
+    if not changed:
+        return False
+    await append_run_stream_event(
+        run.id,
+        "error",
+        {"chunk": error_chunk, "retryable": False},
+        thread_id=run.conversation_thread_id,
+    )
+    await append_run_stream_event(
+        run.id,
+        "end",
+        {"status": "failed"},
+        thread_id=run.conversation_thread_id,
+    )
+    logger.warning(f"Run stalled in pending, marked as failed (run_id={run.id})")
+    return True
 
 
 async def get_agent_run_view(*, run_id: str, current_uid: str, db: AsyncSession) -> dict:
@@ -961,6 +1020,10 @@ async def stream_agent_run_events(
 
             if emitted_terminal:
                 return
+
+            if not events and _is_stalled_pending_run(run):
+                # worker 未消费队列：把 run 置为失败并回传错误，错误事件会在下一轮轮询推给客户端
+                await _fail_stalled_pending_run(run)
 
             if run.status in TERMINAL_RUN_STATUSES and not events:
                 terminal_seq = last_seq

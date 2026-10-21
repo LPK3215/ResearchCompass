@@ -5,14 +5,14 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.utils.auth_middleware import get_current_user, get_db, get_required_user
 from yuxi.config import UserConfig, UserConfigSchema
 from yuxi.storage.minio import upload_image_to_minio
-from yuxi.storage.postgres.models_business import APIKey, AgentEnv, User
+from yuxi.storage.postgres.models_business import APIKey, AgentEnv, CLIAuthSession, User
 from yuxi.utils.auth_utils import AuthUtils
 from yuxi.utils.datetime_utils import coerce_any_to_utc_datetime, format_utc_datetime, utc_now_naive
 
@@ -258,6 +258,12 @@ async def delete_api_key(
 ):
     api_key = await get_accessible_api_key(db, api_key_id, current_user)
 
+    # CLI 授权会话持有该密钥的外键引用，删除密钥前先解除引用
+    await db.execute(
+        update(CLIAuthSession)
+        .where(CLIAuthSession.api_key_id == api_key.id)
+        .values(api_key_id=None)
+    )
     await db.delete(api_key)
     await db.commit()
     return {"success": True}

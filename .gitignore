@@ -73,6 +73,7 @@ src/data
 web/package-lock.json
 saves
 saves_dev
+backups
 notebooks
 graphrag
 docker/volumes

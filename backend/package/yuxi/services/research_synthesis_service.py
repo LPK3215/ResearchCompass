@@ -870,7 +870,8 @@ async def _authorized_run(run_id: str, current_user: User):
 
 async def get_research_synthesis(*, run_id: str, current_user: User) -> dict[str, Any]:
     record = await _authorized_run(run_id, current_user)
-    return ResearchSynthesisRepository.serialize(record)
+    # 带上检索快照，界面才能在证据校验失败时告诉用户具体是哪些片段尚未验证。
+    return ResearchSynthesisRepository.serialize(record, include_snapshot=True)
 
 
 async def cancel_research_synthesis(*, run_id: str, current_user: User) -> dict[str, Any]:

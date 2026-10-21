@@ -157,7 +157,9 @@ services:
     environment:
       # Common provisioner settings
       - PROVISIONER_BACKEND=${SANDBOX_PROVISIONER_BACKEND:-docker}
-      - PROVISIONER_PUBLIC_URL=${SANDBOX_PROVISIONER_URL:-http://sandbox-provisioner:8002}
+      # 后端在宿主机原生运行时，沙箱地址必须用宿主机可访问的端口，
+      # 因此对外地址与容器网络地址分开配置。
+      - PROVISIONER_PUBLIC_URL=${SANDBOX_PROVISIONER_PUBLIC_URL:-http://sandbox-provisioner:8002}
       - SANDBOX_PROVISIONER_TOKEN=${SANDBOX_PROVISIONER_TOKEN:?Set SANDBOX_PROVISIONER_TOKEN in .env}
       - SANDBOX_IMAGE=${SANDBOX_IMAGE:-enterprise-public-cn-beijing.cr.volces.com/vefaas-public/all-in-one-sandbox:latest}
       - SANDBOX_CONTAINER_PORT=${SANDBOX_CONTAINER_PORT:-8080}

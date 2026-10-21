@@ -1204,7 +1204,7 @@ async def project_assets(
     project_id: str,
     asset_type: str | None = Query(
         default=None,
-        pattern=r"^(paper|search_run|synthesis_run|analysis_run|evaluation_experiment)$",
+        pattern=r"^(paper|search_run|synthesis_run|analysis_run|evaluation_experiment|evidence)$",
     ),
     query: str | None = Query(default=None, max_length=500),
     offset: int = Query(default=0, ge=0),

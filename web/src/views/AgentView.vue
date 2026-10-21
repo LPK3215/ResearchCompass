@@ -48,8 +48,7 @@
                     type="button"
                     class="config-dropdown-item"
                     :class="{
-                      selected: agent.value === selectedAgentId,
-                      disabled: hasActiveThread && agent.value !== selectedAgentId
+                      selected: agent.value === selectedAgentId
                     }"
                     @click="handleAgentSwitch(agent.value, hasActiveThread)"
                   >
@@ -74,7 +73,7 @@
                   </button>
 
                   <div v-if="hasActiveThread" class="config-dropdown-hint">
-                    当前对话已绑定智能体，新对话可切换。
+                    切换智能体将开启新对话。
                   </div>
 
                   <div class="config-dropdown-divider"></div>
@@ -299,13 +298,22 @@ const loadAgentBackends = async () => {
 
 const handleAgentSwitch = async (agentId, hasActiveThread) => {
   if (!agentId || agentId === selectedAgentId.value) return
-  if (hasActiveThread) {
-    message.info('当前对话已绑定智能体，请新建对话后切换')
-    return
-  }
   try {
+    // 先切智能体再清空线程，保证清空过程中不会把新智能体判定成研究助手。
     await agentStore.selectAgent(agentId)
     agentDropdownOpen.value = false
+    // 线程与智能体绑定，切换智能体需要新会话。
+    if (hasActiveThread) {
+      await chatComponentRef.value?.selectThreadFromRoute?.('')
+      chatThreadsStore.setCurrentThreadId(null)
+      // 线程回填期间 syncingRouteThread 会吞掉 thread-change 事件，这里直接同步地址栏。
+      if (getRouteThreadId()) {
+        await router.replace({ name: 'AgentComp' })
+      }
+    }
+    if (isResearchCopilotAgent({ id: agentId })) {
+      await ensureResearchThread()
+    }
   } catch (error) {
     console.error('切换智能体出错:', error)
     message.error('切换智能体失败')

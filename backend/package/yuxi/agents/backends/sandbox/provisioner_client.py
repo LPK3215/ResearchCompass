@@ -19,13 +19,21 @@ class ProvisionerClient:
         self._headers = {"Authorization": f"Bearer {token}"}
 
     def _request(self, method: str, path: str, **kwargs) -> httpx.Response:
-        return httpx.request(
-            method=method,
-            url=f"{self._base_url}{path}",
-            timeout=self._timeout,
-            headers=self._headers,
-            **kwargs,
-        )
+        try:
+            return httpx.request(
+                method=method,
+                url=f"{self._base_url}{path}",
+                timeout=self._timeout,
+                headers=self._headers,
+                **kwargs,
+            )
+        except httpx.ConnectError as exc:
+            # 地址解析失败或端口不通时，原始异常只给出 socket 错误码，
+            # 调用方无法判断是沙箱服务没启动还是地址配错，这里换成可定位的提示。
+            raise RuntimeError(
+                f"sandbox provisioner is unreachable at {self._base_url}; "
+                "start the sandbox-provisioner service and check SANDBOX_PROVISIONER_URL"
+            ) from exc
 
     def health(self) -> bool:
         response = self._request("GET", "/health")
