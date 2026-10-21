@@ -2925,7 +2925,10 @@ const maybeOpenOnboarding = async () => {
 }
 const onboardingActions = {
   create_knowledge_base: () => openKnowledgeManagement(),
-  upload_paper: () => openKnowledgeManagement(),
+  upload_paper: () => {
+    if (selectedKbId.value) openSelectedKnowledgeBase()
+    else openKnowledgeManagement()
+  },
   run_search: () => {
     activeMode.value = 'search'
   },
