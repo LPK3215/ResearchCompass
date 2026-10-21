@@ -574,7 +574,7 @@ def export_pack(*, pack: dict[str, Any], export_format: str) -> tuple[str, bytes
     return filename, content.encode("utf-8"), media_type
 
 
-DIAGRAM_KINDS = {"method": "flow", "topics": "hub"}
+DIAGRAM_KINDS = {"method": "flow", "topics": "hub", "citation": "hub"}
 
 
 def _svg_escape(value: Any) -> str:
@@ -680,11 +680,25 @@ async def generate_structure_diagram(
         if not steps:
             raise ResearchDeliverableError("diagram_no_data", "还没有可用的方法步骤，请先生成论文分析")
         svg = _render_flow_svg(f"方法流程：{title}", steps[:12])
-    else:
+    elif kind == "topics":
         keywords = _string_list(paper.keywords)
         if not keywords:
             raise ResearchDeliverableError("diagram_no_data", "该论文没有可用的关键词，无法生成主题图")
         svg = _render_hub_svg(f"主题图：{title}", title, keywords[:8])
+    else:
+        nodes, edges = await _load_graph_snapshot(kb_id)
+        papers, indegree, outdegree = _citation_metrics(nodes, edges)
+        if not papers:
+            raise ResearchDeliverableError("graph_empty", "引用图谱为空，请先同步引用图谱")
+        ranked = sorted(
+            papers.values(), key=lambda item: (indegree[str(item["id"])], outdegree[str(item["id"])]), reverse=True
+        )
+        top = ranked[0]
+        cites, cited_by = _citation_neighbors(str(top["id"]), papers, edges, limit=4)
+        spokes = list(dict.fromkeys([*cites, *cited_by]))[:8]
+        if not spokes:
+            spokes = [str(item.get("title") or item.get("id")) for item in ranked[1:6]]
+        svg = _render_hub_svg("引用脉络", str(top.get("title") or top["id"]), spokes)
     filename = f"research_structure_{kind}_{paper_id}.svg"
     return filename, svg.encode("utf-8"), "image/svg+xml; charset=utf-8"
 
@@ -880,3 +894,108 @@ async def export_comparison_matrix(
         media_type, ext = "text/csv; charset=utf-8", "csv"
     filename = f"research_comparison_{kb_id}_{stamp}.{ext}"
     return filename, body.encode("utf-8"), media_type
+
+
+async def _load_graph_snapshot(kb_id: str, limit: int = 500) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    from yuxi.repositories.academic_graph_repository import AcademicGraphRepository
+
+    graph = await AcademicGraphRepository().get_graph(kb_id=kb_id, center_paper_id=None, limit=limit)
+    nodes = [item for item in graph.get("nodes") or [] if isinstance(item, dict)]
+    edges = [item for item in graph.get("edges") or [] if isinstance(item, dict)]
+    return nodes, edges
+
+
+def _citation_metrics(
+    nodes: list[dict[str, Any]], edges: list[dict[str, Any]]
+) -> tuple[dict[str, dict[str, Any]], dict[str, int], dict[str, int]]:
+    papers = {str(n.get("id")): n for n in nodes if n.get("type") == "paper" and n.get("id")}
+    indegree = {pid: 0 for pid in papers}
+    outdegree = {pid: 0 for pid in papers}
+    for edge in edges:
+        if edge.get("type") != "CITES":
+            continue
+        source, target = str(edge.get("source") or ""), str(edge.get("target") or "")
+        if source in papers and target in papers:
+            outdegree[source] += 1
+            indegree[target] += 1
+    return papers, indegree, outdegree
+
+
+def _citation_neighbors(
+    paper_id: str, papers: dict[str, dict[str, Any]], edges: list[dict[str, Any]], limit: int = 5
+) -> tuple[list[str], list[str]]:
+    cites, cited_by = [], []
+    for edge in edges:
+        if edge.get("type") != "CITES":
+            continue
+        source, target = str(edge.get("source") or ""), str(edge.get("target") or "")
+        if source == paper_id and target in papers:
+            cites.append(str(papers[target].get("title") or target))
+        elif target == paper_id and source in papers:
+            cited_by.append(str(papers[source].get("title") or source))
+    return cites[:limit], cited_by[:limit]
+
+
+async def generate_citation_insight(*, kb_id: str, current_user: User) -> dict[str, Any]:
+    """基于当前引用图谱快照生成确定性洞察：枢纽论文、引用谱系与孤立节点。"""
+    from yuxi.utils.datetime_utils import utc_now_naive
+
+    await _ensure_access(current_user, kb_id)
+    nodes, edges = await _load_graph_snapshot(kb_id)
+    if not nodes:
+        raise ResearchDeliverableError("graph_empty", "引用图谱为空，请先同步引用图谱")
+    papers, indegree, outdegree = _citation_metrics(nodes, edges)
+    ranked = sorted(papers.values(), key=lambda p: (indegree[str(p["id"])], outdegree[str(p["id"])]), reverse=True)
+    hubs = ranked[:5]
+    isolates = [p for p in papers.values() if indegree[str(p["id"])] == 0 and outdegree[str(p["id"])] == 0][:5]
+    citation_edges = sum(1 for e in edges if e.get("type") == "CITES")
+    lines = [
+        "# 引用网络洞察报告",
+        "",
+        f"- 生成时间：{utc_now_naive().strftime('%Y-%m-%d %H:%M')}",
+        f"- 图谱快照：{len(papers)} 篇论文、{citation_edges} 条引用边（导出上限 500 个节点）",
+        "",
+        "## 一、枢纽论文",
+        "",
+    ]
+    if hubs:
+        for index, paper in enumerate(hubs, start=1):
+            pid = str(paper["id"])
+            lines.append(f"{index}. {paper.get('title') or pid}（被引 {indegree[pid]} 次 / 引用 {outdegree[pid]} 篇）")
+            lines.append(f"   - 依据：图谱节点 {pid} 的 CITES 入边与出边计数")
+    else:
+        lines.append("当前快照没有可用的论文节点。")
+    lines.extend(["", "## 二、研究谱系线索", ""])
+    if hubs:
+        top = str(hubs[0]["id"])
+        cites, cited_by = _citation_neighbors(top, papers, edges)
+        lines.append(f"以枢纽论文「{papers[top].get('title') or top}」为中心：")
+        lines.append("- 它引用的论文：" + ("；".join(cites) if cites else "快照内无记录"))
+        lines.append("- 引用它的论文：" + ("；".join(cited_by) if cited_by else "快照内无记录"))
+        lines.append("- 依据：图谱 CITES 边的直接邻接关系，未做跨快照推断")
+    else:
+        lines.append("缺少枢纽论文，无法展开谱系。")
+    lines.extend(["", "## 三、引用断层与孤岛", ""])
+    if isolates:
+        for paper in isolates:
+            lines.append(f"- {paper.get('title') or paper.get('id')}：快照内既无入边也无出边")
+        lines.append("- 说明：孤岛通常意味着该论文尚未同步引用关系，或确实未被当前语料引用；需结合同步运行记录判断。")
+    else:
+        lines.append("当前快照未发现孤立论文节点。")
+    lines.extend(
+        [
+            "",
+            "## 数据边界",
+            "",
+            "- 本报告只统计当前知识库引用图谱快照，不代表领域完整引用网络。",
+            "- 边计数来自 Semantic Scholar 同步结果；缺失边会在孤岛一节体现，不做补齐或推测。",
+        ]
+    )
+    return {
+        "markdown": "\n".join(lines),
+        "paper_count": len(papers),
+        "citation_edge_count": citation_edges,
+        "hub_count": len(hubs),
+        "isolate_count": len(isolates),
+        "generated_at": utc_now_naive().strftime("%Y-%m-%d %H:%M"),
+    }

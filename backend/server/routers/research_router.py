@@ -134,6 +134,7 @@ from yuxi.services.research_deliverable_service import (
     export_paper_analysis_markdown,
     export_paper_cards,
     export_research_data,
+    generate_citation_insight,
     generate_paper_brief,
     generate_presentation_pack,
     generate_structure_diagram,
@@ -2027,6 +2028,7 @@ _DELIVERABLE_STATUS_MAP = {
     "invalid_data_kind": 422,
     "target_required": 422,
     "matrix_requires_two_papers": 422,
+    "graph_empty": 409,
     "forbidden": 403,
 }
 
@@ -2157,7 +2159,7 @@ async def export_research_academic_graph(
 async def export_paper_structure_diagram(
     kb_id: str,
     paper_id: str,
-    kind: str = Query(default="method", pattern=r"^(method|topics)$"),
+    kind: str = Query(default="method", pattern=r"^(method|topics|citation)$"),
     current_user: User = Depends(get_required_user),
 ):
     try:
@@ -2219,5 +2221,24 @@ async def export_research_comparison_matrix(
     return Response(
         content=content,
         media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@research.get("/databases/{kb_id}/citation-insight")
+async def export_research_citation_insight(
+    kb_id: str,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        insight = await generate_citation_insight(kb_id=kb_id, current_user=current_user)
+    except ResearchDeliverableError as exc:
+        raise _to_http_error(exc, _DELIVERABLE_STATUS_MAP) from exc
+    from yuxi.utils.datetime_utils import utc_now_naive
+
+    filename = f"research_citation_insight_{kb_id}_{utc_now_naive().strftime('%Y%m%d%H%M')}.md"
+    return Response(
+        content=insight["markdown"].encode("utf-8"),
+        media_type="text/markdown; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

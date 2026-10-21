@@ -57,6 +57,7 @@
             <a-menu @click="exportGraphSnapshot">
               <a-menu-item key="csv">CSV（节点与边）</a-menu-item>
               <a-menu-item key="graphml">GraphML</a-menu-item>
+              <a-menu-item key="insight">引用网络洞察（Markdown）</a-menu-item>
             </a-menu>
           </template>
         </a-dropdown>
@@ -2366,6 +2367,12 @@ const exportGraphSnapshot = async ({ key: exportFormat }) => {
   const kbId = selectedKbId.value
   graphExportLoading.value = true
   try {
+    if (exportFormat === 'insight') {
+      const blob = await researchApi.exportCitationInsight(kbId)
+      saveBlob(blob, `research_citation_insight_${kbId}.md`)
+      message.success('引用网络洞察已生成')
+      return
+    }
     const blob = await researchApi.exportAcademicGraph(kbId, exportFormat)
     saveBlob(blob, `research_citation_graph_${kbId}.${exportFormat === 'graphml' ? 'xml' : 'csv'}`)
     message.success('引用图谱已导出')

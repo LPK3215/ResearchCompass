@@ -465,6 +465,12 @@ export const researchApi = {
       { method: 'GET' }, true, 'blob'
     ).then((response) => response.blob()),
 
+  exportCitationInsight: (kbId) =>
+    apiRequest(
+      `/api/research/databases/${encodeURIComponent(kbId)}/citation-insight`,
+      { method: 'GET' }, true, 'blob'
+    ).then((response) => response.blob()),
+
   exportPaperDiagram: (kbId, paperId, kind = 'method') =>
     apiRequest(
       `/api/research/databases/${encodeURIComponent(kbId)}/papers/${encodeURIComponent(paperId)}/structure-diagram?kind=${encodeURIComponent(kind)}`,

@@ -410,6 +410,10 @@ class ExportComparisonMatrixInput(BaseModel):
     format: Literal["markdown", "csv"] = Field(default="markdown", description="导出格式")
 
 
+class CitationInsightInput(BaseModel):
+    dummy: str = Field(default="", description="无需填写，忽略此参数")
+
+
 def _research_context(runtime: ToolRuntime) -> dict[str, Any]:
     context = getattr(runtime, "context", None)
     research_context = getattr(context, "research_context", None)
@@ -2128,6 +2132,33 @@ async def research_export_comparison_matrix(
     }
 
 
+@tool(
+    category="research",
+    tags=["科研", "图谱", "洞察"],
+    display_name="生成引用网络洞察",
+    args_schema=CitationInsightInput,
+)
+async def research_generate_citation_insight(dummy: str, runtime: ToolRuntime) -> dict[str, Any]:
+    """基于当前引用图谱快照生成枢纽论文、研究谱系与孤立节点的 Markdown 洞察报告。"""
+    del dummy
+    from yuxi.services.research_deliverable_service import generate_citation_insight
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    insight = await _call(generate_citation_insight(kb_id=context["kb_id"], current_user=user))
+    filename = f"research_citation_insight_{context['kb_id']}.md"
+    artifact_path = await _write_artifact(runtime, filename, insight["markdown"].encode("utf-8"))
+    return {
+        "paper_count": insight["paper_count"],
+        "citation_edge_count": insight["citation_edge_count"],
+        "hub_count": insight["hub_count"],
+        "isolate_count": insight["isolate_count"],
+        "filename": filename,
+        "artifact_path": artifact_path,
+        "message": f"洞察报告已写入 {filename}，请调用 present_artifacts 工具展示该文件",
+    }
+
+
 RESEARCH_TOOLS = [
     research_get_context,
     research_list_projects,
@@ -2198,4 +2229,5 @@ RESEARCH_TOOLS = [
     research_export_paper_diagram,
     research_export_research_data,
     research_export_comparison_matrix,
+    research_generate_citation_insight,
 ]

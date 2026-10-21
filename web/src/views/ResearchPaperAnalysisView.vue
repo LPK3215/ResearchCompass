@@ -19,6 +19,7 @@
             <a-menu @click="exportDiagram">
               <a-menu-item key="method">方法流程图</a-menu-item>
               <a-menu-item key="topics">主题图</a-menu-item>
+              <a-menu-item key="citation">引用脉络图</a-menu-item>
             </a-menu>
           </template>
         </a-dropdown>

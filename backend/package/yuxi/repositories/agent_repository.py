@@ -174,6 +174,7 @@ RESEARCH_COPILOT_TOOL_SLUGS = [
     "research_export_paper_diagram",
     "research_export_research_data",
     "research_export_comparison_matrix",
+    "research_generate_citation_insight",
 ]
 RESEARCH_COPILOT_SYSTEM_PROMPT = """你是 ResearchCompass 的 AI 研究助手。
 

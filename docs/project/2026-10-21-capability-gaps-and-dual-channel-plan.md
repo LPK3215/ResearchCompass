@@ -112,9 +112,9 @@
 | G-17 | 文献卡片导出 | 无法快速产出单篇/多篇卡片 | P2 | 已接入，待验收 | 单篇或批量生成结构化卡片（问题/方法/数据/结论/局限/证据位置），支持 MD 与 JSON |
 | G-18 | 分层压缩摘要 | 长文压缩无标准产出 | P2 | 已接入，待验收 | 全文可生成一段 / 一页 / 卡片三档摘要并导出 |
 | G-19 | 组会讲稿包 | 汇报准备靠手工 | P2 | 已接入，待验收 | 选题 + 3 到 10 篇 → 汇报大纲、讲稿要点、对比表（MD） |
-| G-20 | 结构图生成 | 方法与引用脉络无可视产出 | P2 | 部分完成（方法流程 + 主题图；引用脉络待 G-22） | 生成方法流程 / 引用脉络 / 主题聚类图（SVG 或 HTML），工作区可预览与下载 |
+| G-20 | 结构图生成 | 方法与引用脉络无可视产出 | P2 | 已接入，待验收 | 生成方法流程 / 引用脉络 / 主题聚类图（SVG 或 HTML），工作区可预览与下载 |
 | G-21 | 文献对比矩阵 | 多维对比靠人工拼表 | P2 | 已接入，待验收 | 多篇 × 多字段自动成表，导出 CSV/MD，缺证据字段显式标注 |
-| G-22 | 引用网络洞察报告 | 图谱只能看不能讲 | P2 | 待修复 | 输出枢纽论文、研究谱系与断层叙事（MD），每条结论带引用 |
+| G-22 | 引用网络洞察报告 | 图谱只能看不能讲 | P2 | 已接入，待验收 | 输出枢纽论文、研究谱系与断层叙事（MD），每条结论带引用 |
 | G-23 | 研究空白转选题 | 综述空白无法落地 | P2 | 待修复 | 从综述未支持结论/空白生成选题清单，并批量建为项目任务 |
 | G-30 | 引文样式缺失 | 参考文献只输出数据库字段，不能按期刊格式渲染 | P2 | 已接入，待验收 | 支持 GB/T 7714、APA、IEEE 等至少三种样式，可导出且与项目报告一致 |
 | G-31 | 评估与统计结果不可导出 | 评估/消融/趋势/机会只能用界面看 | P2 | 部分完成（接口 + AI 工具；界面入口待补） | 评估运行、消融报告、趋势与机会统计可导出 CSV/JSON，带数据指纹 |
@@ -166,6 +166,7 @@
 | 2026-10-21 | 批次 2 第 3 项：G-20 结构图（部分） | 新增结构图服务与接口，支持方法流程图（来自最新分析的方法步骤）与主题图（论文关键词），SVG 输出；工具与论文分析页入口同步；引用脉络图待 G-22；工具总数 66 到 67；未运行测试与真实调用 | `backend/package/yuxi/services/research_deliverable_service.py`、`server/routers/research_router.py`、`toolkits/research/tools.py`、`web/src/views/ResearchPaperAnalysisView.vue`、`web/src/apis/research_api.js` | 是（G-20 标记部分完成） |
 | 2026-10-21 | 批次 3 第 1 项：G-31 数据导出（部分） | 新增 `GET /databases/{kb_id}/exports/{kind}` 与 `research_export_research_data` 工具，支持 eval_run / eval_experiment / trends / opportunities 的 JSON/CSV 导出，带数据指纹；评估类仅管理员；界面入口待补；工具总数 67 到 68；未运行测试 | `backend/package/yuxi/services/research_deliverable_service.py`、`server/routers/research_router.py`、`toolkits/research/tools.py` | 是（G-31 标记部分完成） |
 | 2026-10-21 | 批次 3 第 2 项：G-21 文献对比矩阵 | 新增 `GET /comparison-matrix` 与 `research_export_comparison_matrix` 工具，2 到 20 篇论文按论文/年份/来源/研究问题/方法/数据集/结论/局限成表，Markdown 与 CSV，缺分析单元格标注“证据不足”；论文库导出下拉新增两项；工具总数 68 到 69；未运行测试 | `backend/package/yuxi/services/research_deliverable_service.py`、`server/routers/research_router.py`、`toolkits/research/tools.py`、`web/src/views/ResearchCompassView.vue`、`web/src/apis/research_api.js` | 是（G-21 标记已接入，待验收） |
+| 2026-10-21 | 批次 3 第 3 项：G-22 引用网络洞察 + G-20 引用脉络图 | 新增 `GET /citation-insight` 与 `research_generate_citation_insight`，输出枢纽论文/研究谱系/孤立节点与数据边界；结构图新增 `kind=citation`（枢纽论文为中心）；界面在导出图谱下拉与结构图下拉各增一项；工具总数 69 到 70；未运行测试 | `backend/package/yuxi/services/research_deliverable_service.py`、`server/routers/research_router.py`、`toolkits/research/tools.py`、`web/src/views/ResearchCompassView.vue`、`web/src/views/ResearchPaperAnalysisView.vue` | 是（G-22 已接入；G-20 补齐引用脉络） |
 
 ## 8. 明确不做与边界
 
@@ -198,6 +199,7 @@
 | 2026-10-21 | 批次 2 第 3 项：新增方法流程图与主题图（SVG），G-20 转“部分完成” |
 | 2026-10-21 | 批次 3 第 1 项：评估/消融/趋势/机会数据支持 JSON/CSV 导出（带指纹），G-31 转“部分完成”（界面入口待补） |
 | 2026-10-21 | 批次 3 第 2 项：新增文献对比矩阵（Markdown/CSV），G-21 转“已接入，待验收” |
+| 2026-10-21 | 批次 3 第 3 项：新增引用网络洞察报告与引用脉络图，G-22 转“已接入，待验收”，G-20 补齐引用脉络 |
 
 ## 附录 A：本轮文档重整的落地与验证（2026-10-21）
 
