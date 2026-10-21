@@ -133,7 +133,25 @@ def _structure_of(stages: dict[str, Any]) -> dict[str, Any]:
 
 def _bullet_lines(values: Any) -> list[str]:
     if isinstance(values, list):
-        return [str(item).strip() for item in values if str(item).strip()]
+        lines: list[str] = []
+        for item in values:
+            if isinstance(item, dict):
+                text = str(item.get("direction") or item.get("title") or item.get("claim") or "").strip()
+                basis = str(item.get("basis") or "").strip()
+                confidence = str(item.get("confidence") or "").strip()
+                if not text:
+                    text = str(item).strip()
+                if basis:
+                    text += f"（依据：{basis}）"
+                if confidence:
+                    text += f"（置信度：{confidence}）"
+                if text:
+                    lines.append(text)
+            else:
+                text = str(item).strip()
+                if text:
+                    lines.append(text)
+        return lines
     if isinstance(values, str) and values.strip():
         return [values.strip()]
     return []
@@ -251,8 +269,15 @@ async def export_paper_cards(
 
 def _render_analysis_markdown(run: dict[str, Any], paper_title: str) -> str:
     stages = _stage_payload(run)
+    structure = _structure_of(stages)
+    report_title = (
+        paper_title
+        or str(structure.get("title") or "").strip()
+        or str(run.get("paper_id") or "").strip()
+        or "未命名论文"
+    )
     lines = [
-        f"# 论文分析报告：{paper_title or run.get('paper_id', '')}",
+        f"# 论文分析报告：{report_title}",
         "",
         f"- 运行 ID：{run.get('run_id', '')}",
         f"- 状态：{run.get('status', '')}",
@@ -260,7 +285,6 @@ def _render_analysis_markdown(run: dict[str, Any], paper_title: str) -> str:
         f"- 生成时间：{_now_text()}",
         "",
     ]
-    structure = _structure_of(stages)
     if structure:
         lines.extend(["## 一、结构化提取", ""])
         if structure.get("title"):

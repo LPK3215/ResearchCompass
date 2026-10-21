@@ -113,7 +113,10 @@
               </div>
               <div class="future-direction-block">
                 <label>后续方向</label>
-                <p>{{ formatList(run.result.research_gaps?.future_directions) }}</p>
+                <p v-for="(direction, index) in futureDirections" :key="`direction-${index}`">
+                  {{ formatFutureDirection(direction) }}
+                </p>
+                <p v-if="!futureDirections.length">未明确提供</p>
               </div>
               <a-empty v-if="!run.result.research_gaps?.gaps?.length" description="未提取到明确研究空白" />
             </div>
@@ -215,6 +218,21 @@ const formatList = (value) => {
   if (value && typeof value === 'object') return Object.entries(value).map(([key, item]) => `${key}：${item}`).join('；')
   return String(value || '未明确提供')
 }
+const formatFutureDirection = (value) => {
+  if (typeof value === 'string') return value
+  if (value && typeof value === 'object') {
+    const direction = value.direction || value.title || value.claim || ''
+    const basis = value.basis ? `（依据：${value.basis}）` : ''
+    const confidence = value.confidence ? `（置信度：${value.confidence}）` : ''
+    return `${direction}${basis}${confidence}` || '未明确提供'
+  }
+  return String(value || '未明确提供')
+}
+const futureDirections = computed(() => {
+  const value = run.value?.result?.research_gaps?.future_directions
+  if (Array.isArray(value)) return value
+  return value ? [value] : []
+})
 
 const confidenceColor = (value) => ({ high: 'green', medium: 'orange', low: 'default' }[value] || 'default')
 
