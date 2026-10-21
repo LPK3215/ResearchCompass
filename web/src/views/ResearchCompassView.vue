@@ -806,7 +806,7 @@
             />
           </div>
           <div class="graph-counts" v-if="graphData">
-            <span>{{ graphData.counts.papers }} 篇论文</span>
+            <span title="包含库内论文与外部引文节点">{{ graphData.counts.papers }} 篇论文（含外部引文）</span>
             <span>{{ graphData.counts.citations }} 条引用</span>
             <span>{{ graphData.counts.authors }} 位作者</span>
             <span>{{ graphData.counts.topics }} 个主题</span>
@@ -1187,7 +1187,7 @@
               <ChevronDown :size="14" />
             </a-button>
             <template #overlay>
-              <a-menu @click="exportAllPapers">
+              <a-menu @click="exportPapers">
                 <a-menu-item key="bibtex">BibTeX</a-menu-item>
                 <a-menu-item key="ris">RIS (EndNote / Zotero)</a-menu-item>
                 <a-menu-item key="markdown">Markdown 收藏</a-menu-item>
@@ -1802,6 +1802,16 @@ const EXPORT_FILE_EXTENSIONS = {
   gb7714: 'txt',
   apa: 'txt',
   ieee: 'txt'
+}
+const EXPORT_FILE_LABELS = {
+  bibtex: 'papers',
+  ris: 'papers',
+  markdown: 'papers',
+  csv: 'papers',
+  text: 'papers_text',
+  gb7714: 'references_gb7714',
+  apa: 'references_apa',
+  ieee: 'references_ieee'
 }
 const sortValue = computed({
   get: () => `${filters.sortBy}-${filters.sortOrder}`,
@@ -3108,21 +3118,22 @@ const exportGraphSnapshot = async ({ key: exportFormat }) => {
   }
 }
 
-const exportAllPapers = async ({ key: exportFormat }) => {
+const exportPapers = async ({ key: exportFormat }) => {
   if (!selectedKbId.value || papers.value.length === 0) return
   const kbId = selectedKbId.value
   const requestGeneration = workspaceRequestGeneration
+  const selectedIds = selectedPaperIds.value.length ? [...selectedPaperIds.value] : null
   exportLoading.value = true
   try {
     if (exportFormat === 'cards-markdown' || exportFormat === 'cards-json') {
       const isJson = exportFormat === 'cards-json'
-      const blob = await researchApi.exportPaperCards(kbId, isJson ? 'json' : 'markdown')
+      const blob = await researchApi.exportPaperCards(kbId, isJson ? 'json' : 'markdown', selectedIds)
       if (requestGeneration !== workspaceRequestGeneration || kbId !== selectedKbId.value) return
       saveBlob(blob, `research_paper_cards_${kbId}.${isJson ? 'json' : 'md'}`)
       return
     }
     if (exportFormat === 'matrix-markdown' || exportFormat === 'matrix-csv') {
-      const paperIds = papers.value.slice(0, 10).map((paper) => paper.paper_id).filter(Boolean)
+      const paperIds = selectedIds || papers.value.slice(0, 10).map((paper) => paper.paper_id).filter(Boolean)
       if (paperIds.length < 2) {
         message.warning('对比矩阵至少需要两篇论文')
         return
@@ -3138,7 +3149,7 @@ const exportAllPapers = async ({ key: exportFormat }) => {
       return
     }
     if (exportFormat === 'pack-markdown' || exportFormat === 'pack-html') {
-      const paperIds = papers.value.slice(0, 10).map((paper) => paper.paper_id).filter(Boolean)
+      const paperIds = selectedIds || papers.value.slice(0, 10).map((paper) => paper.paper_id).filter(Boolean)
       const format = exportFormat === 'pack-html' ? 'html' : 'markdown'
       const result = await researchApi.generatePresentationPack(kbId, { paper_ids: paperIds, format })
       if (requestGeneration !== workspaceRequestGeneration || kbId !== selectedKbId.value) return
@@ -3146,9 +3157,11 @@ const exportAllPapers = async ({ key: exportFormat }) => {
       message.success('汇报包已生成')
       return
     }
-    const blob = await researchApi.exportPapersDocument(kbId, exportFormat)
+    const blob = await researchApi.exportPapersDocument(kbId, exportFormat, selectedIds)
     if (requestGeneration !== workspaceRequestGeneration || kbId !== selectedKbId.value) return
-    saveBlob(blob, `papers_${kbId}.${EXPORT_FILE_EXTENSIONS[exportFormat] || 'txt'}`)
+    const extension = EXPORT_FILE_EXTENSIONS[exportFormat] || 'txt'
+    const label = EXPORT_FILE_LABELS[exportFormat] || 'papers'
+    saveBlob(blob, `${label}_${kbId}.${extension}`)
   } catch (error) {
     if (requestGeneration !== workspaceRequestGeneration) return
     message.error(error.message || '文献导出失败')
