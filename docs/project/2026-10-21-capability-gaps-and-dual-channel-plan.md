@@ -127,7 +127,7 @@
 | ID | 缺口 | 影响 | 优先级 | 状态 | 验收标准 |
 | --- | --- | --- | --- | --- | --- |
 | G-24 | Zotero / RIS 双向同步 | 文献管理闭环缺失 | P3 | 待评估 | 导入集合、回写标签与笔记；冲突可感知 |
-| G-25 | 跨库去重与合并 | 多库重复文献 | P3 | 待评估 | 按 DOI 与标题相似度识别重复并合并引用 |
+| G-25 | 跨库去重与合并 | 多库重复文献 | P3 | 部分完成（库内只读检测；跨库与合并待决策） | 按 DOI 与标题相似度识别重复并合并引用 |
 | G-26 | 写作工作台 | 无法在平台内成稿 | P3 | 待评估 | 草稿编辑器 + 引用插入 + 与证据双向跳转 |
 | G-27 | 协作与批注 | 多人协作缺失 | P3 | 待评估 | 项目共享、评论、变更通知 |
 | G-28 | 投稿辅助 | 选刊与格式检查缺失 | P3 | 待评估 | 期刊匹配、格式检查提示（外部数据依赖需评估） |
@@ -187,6 +187,7 @@
 | 2026-10-21 | 批次 4 第 1 项：G-16 口径统一 + G-14 明确限定 | README 定位改为“证据可追溯的科研工作台”并声明写作/协作/投稿不在范围；能力全景补充研究助手边界；系统提示明确“不执行命令、不写任意文件，文件一律走导出工具”；ESLint/ruff 通过 | `README.md`、`docs/intro/capabilities.md`、`backend/package/yuxi/repositories/agent_repository.py` | 是（G-14、G-16 转已完成） |
 | 2026-10-21 | 状态核对：G-10 拆分完成项与待选项，G-15 转待决策 | G-10 核心链路（查询基准/发起评估/读结果/实验报告）已通，基准与消融创建工具列为待选项；G-15 守卫需新增单测，按编码规则第 9 条需用户授权 | 本文档 §5 | 是 |
 | 2026-10-21 | G-15 守卫落地（脚本式，不新增单测） | 新增 `backend/scripts/check_research_tool_parity.py`，比较工具定义与 research-copilot 启用清单；实跑 `defined=72 enabled=72 parity ok`，退出码 0；按编码规则第 9 条未写测试代码 | `backend/scripts/check_research_tool_parity.py` | 是（G-15 转已完成） |
+| 2026-10-21 | P3 首项：G-25 重复论文检测（只读部分） | 新增 `GET /databases/{kb_id}/duplicates` 与 `research_find_duplicate_papers` 工具：按 DOI（优先）或归一化标题分组，只报告不合并；工具总数 72 到 73；跨库扫描与合并策略待决策 | `backend/package/yuxi/services/research_deliverable_service.py`、`server/routers/research_router.py`、`toolkits/research/tools.py` | 是（G-25 标记部分完成） |
 
 ## 8. 明确不做与边界
 

@@ -2209,6 +2209,27 @@ async def research_create_tasks_from_topics(
     return await _call(create_tasks_from_topics(run_id=run_id, project_id=project_id, current_user=user, limit=limit))
 
 
+@tool(
+    category="research",
+    tags=["科研", "去重"],
+    display_name="检测重复论文",
+    args_schema=EmptyInput,
+)
+async def research_find_duplicate_papers(dummy: str, runtime: ToolRuntime) -> dict[str, Any]:
+    """在当前知识库内按 DOI（优先）或归一化标题检测重复论文，只读不改数据。"""
+    del dummy
+    from yuxi.services.research_deliverable_service import find_duplicate_papers
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    result = await _call(find_duplicate_papers(kb_id=context["kb_id"], current_user=user))
+    return {
+        **result,
+        "groups": result["groups"][:20],
+        "message": "仅报告重复，不自动合并；合并策略需人工确认",
+    }
+
+
 RESEARCH_TOOLS = [
     research_get_context,
     research_list_projects,
@@ -2282,4 +2303,5 @@ RESEARCH_TOOLS = [
     research_generate_citation_insight,
     research_export_synthesis_topics,
     research_create_tasks_from_topics,
+    research_find_duplicate_papers,
 ]

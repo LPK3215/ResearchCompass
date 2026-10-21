@@ -140,6 +140,7 @@ from yuxi.services.research_deliverable_service import (
     generate_structure_diagram,
     build_topic_list,
     create_tasks_from_topics,
+    find_duplicate_papers,
     render_brief_markdown,
 )
 from yuxi.services.academic_paper_analysis_evaluation_service import (
@@ -2285,5 +2286,16 @@ async def create_tasks_from_synthesis_topics(
             current_user=current_user,
             limit=payload.limit,
         )
+    except ResearchDeliverableError as exc:
+        raise _to_http_error(exc, _DELIVERABLE_STATUS_MAP) from exc
+
+
+@research.get("/databases/{kb_id}/duplicates")
+async def list_duplicate_papers(
+    kb_id: str,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await find_duplicate_papers(kb_id=kb_id, current_user=current_user)
     except ResearchDeliverableError as exc:
         raise _to_http_error(exc, _DELIVERABLE_STATUS_MAP) from exc

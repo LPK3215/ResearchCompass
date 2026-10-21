@@ -1112,3 +1112,52 @@ async def create_tasks_from_topics(
         )
         created.append({"task_id": task.get("task_id"), "title": task.get("title")})
     return {"created": len(created), "tasks": created, "source_run_id": run_id}
+
+
+def _duplicate_key(paper: Any) -> str:
+    doi = str(getattr(paper, "doi", "") or "").strip().lower()
+    if doi:
+        return f"doi:{doi}"
+    title = re.sub(r"[^0-9a-z\u4e00-\u9fff]+", "", str(getattr(paper, "title", "") or "").lower())
+    return f"title:{title[:80]}" if title else ""
+
+
+async def find_duplicate_papers(*, kb_id: str, current_user: User) -> dict[str, Any]:
+    """在当前知识库内按 DOI（优先）或归一化标题检测重复论文，只读不改数据。"""
+    await _ensure_access(current_user, kb_id)
+    repo = AcademicPaperRepository()
+    papers: list[Any] = []
+    async for batch in repo.iter_export_batches(kb_id=kb_id):
+        papers.extend(batch)
+    groups: dict[str, list[Any]] = {}
+    for paper in papers:
+        key = _duplicate_key(paper)
+        if key:
+            groups.setdefault(key, []).append(paper)
+    duplicates = []
+    for key, items in groups.items():
+        if len(items) < 2:
+            continue
+        duplicates.append(
+            {
+                "key": key,
+                "count": len(items),
+                "papers": [
+                    {
+                        "paper_id": str(getattr(item, "paper_id", "")),
+                        "title": str(getattr(item, "title", "") or ""),
+                        "publication_year": getattr(item, "publication_year", None),
+                        "file_id": str(getattr(item, "file_id", "") or ""),
+                    }
+                    for item in items
+                ],
+            }
+        )
+    duplicates.sort(key=lambda item: item["count"], reverse=True)
+    return {
+        "kb_id": kb_id,
+        "paper_count": len(papers),
+        "duplicate_group_count": len(duplicates),
+        "duplicate_paper_count": sum(item["count"] for item in duplicates),
+        "groups": duplicates,
+    }
