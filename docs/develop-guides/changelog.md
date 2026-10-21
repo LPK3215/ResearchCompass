@@ -10,6 +10,10 @@
 
 ## v0.11.0 (current)
 
+- 固定语料基线收口：`scripts/eval/fixed_corpus.json` 的 28 篇开放获取论文**全部真实入库**备选库 `kb_ksf23a31w7`（该库 30 篇论文，28 篇带全文共 993 个 chunk）。新增三个可重复的基线脚本，公共辅助抽到 `scripts/eval/corpus_common.py`：`fixed_corpus_baseline.py`（文档级 hit@1/3/5 + MRR，走研究检索链路 `local_hybrid`）、`fixed_corpus_ablation.py`（评测模块受控消融，只切换 `use_reranker`）、`fixed_corpus_synthesis.py`（证据约束综述的引用覆盖率，按产品流程先核验证据再综述）。真实数值：文档级 hit@1=8/10、hit@3=8/10、hit@5=10/10、MRR=0.845（12.9–14.6 秒/题）；受控消融下重排序开启相比关闭，recall@10 由 0.1 升到 0.3、LLM 裁判答案正确率由 0.3 升到 0.5（样本 n=10 < 30，属初步信号，不作为稳定效应估计）；综述引用覆盖率 5/5 成功、平均 0.8037。
+- 修复 Semantic Scholar 限流只对单个客户端实例生效：论文导入、引用图谱同步、外部检索各自新建客户端，并发请求会同时打到免费额度上直接触发 429。限流闸门改为**进程内共享**（`SemanticScholarThrottle`），同进程内所有 Semantic Scholar 请求串行发出；新增跨实例并发回归测试。
+- 固定语料导入脚本支持按 PDF 体积升序提交（`--order-by-size`）：大 PDF 解析慢，先让小论文在导入任务超时前落地；管理员凭据读取与语料读取抽到公共模块。
+
 - 冒烟验收脚本加固（`backend/scripts/smoke_acceptance.py`）：多源检索超时从 120 秒放宽到 180 秒（实测 123.7 秒，旧阈值会把正常结果误判为失败）；上一次运行失败或取消会让线程队列停在 `paused`，此时新提交只入队不派发、脚本取不到 `run_id`，现在改为自动调用 `POST /api/agent/thread/{id}/requests/continue` 恢复派发后再等真实 run 跑完。真实用产品接口制造 `paused` 态验证：报告 `test-results/smoke-acceptance-20261022-021515.md`，54 项通过 / 0 失败，AI 项证据 `status=completed resumed=paused-queue`。
 - 智能体运行失败日志补运行标识：`chat_service` 的运行失败/恢复失败日志原来只有异常类型，无法定位是哪一次运行；现在补上 `thread_id` 与 `run_id`。上游供应商报错原文仍不入日志（代码库已有回归测试守护），根因排查走 Langfuse 追踪与 `raise ... from exc` 异常链。
 - 修复宿主机直跑读不到仓库根 `.env`：`backend/package/yuxi/__init__.py` 原先按当前工作目录加载 `.env`，从 `backend/` 直跑时只能拿到 `backend/.env`，根目录 `.env` 里的模型密钥、`RERANK_TIMEOUT_SECONDS`、`EMBEDDING_TIMEOUT`、`LLM_TIMEOUT` 全部缺失——表现为混合检索 502（重排按默认 30 秒超时）与智能体运行失败。改为按仓库路径固定加载 `backend/.env` 与根 `.env`（`override=False`，真实环境变量优先），与 Docker Compose 的 `env_file: .env` 保持一致。真实复测：本地混合检索 3 条命中（27.4 秒，含重排），智能体 run `completed`。

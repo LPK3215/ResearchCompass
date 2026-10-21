@@ -2,7 +2,7 @@
 
 用法（在 backend 目录执行）：
     uv run --no-sync --env-file ../.env python ../scripts/eval/import_fixed_corpus.py \
-        --kb-id kb_xxx [--limit 5] [--interval 2.5] [--dry-run]
+        --kb-id kb_xxx [--limit 5] [--interval 2.5] [--order-by-size] [--dry-run]
 
 脚本只提交导入任务，不等待解析完成；进度在任务中心查看。
 """
@@ -10,30 +10,21 @@
 from __future__ import annotations
 
 import argparse
-import json
-import os
-from pathlib import Path
 import time
 
 import httpx
-
-ROOT = Path(__file__).resolve().parents[2]
-CORPUS_PATH = Path(__file__).resolve().parent / "fixed_corpus.json"
+from corpus_common import load_admin_credentials, load_corpus
 
 
-def _load_admin_credentials() -> tuple[str, str]:
-    uid = os.getenv("ADMIN_UID", "").strip()
-    password = os.getenv("ADMIN_PASSWORD", "").strip()
-    if uid and password:
-        return uid, password
-    env_path = ROOT / "saves/local/dev_admin.env"
-    values: dict[str, str] = {}
-    for line in env_path.read_text(encoding="utf-8").splitlines():
-        if "=" not in line or line.lstrip().startswith("#"):
-            continue
-        key, value = line.split("=", 1)
-        values[key.strip()] = value.strip().strip('"').strip("'")
-    return values["ADMIN_UID"], values["ADMIN_PASSWORD"]
+def _pdf_size_bytes(identifier: str) -> int:
+    """探测 arXiv PDF 体积；探测失败按 0 处理（不阻塞导入）。"""
+    arxiv_id = identifier.split(":", 1)[-1]
+    try:
+        with httpx.Client(timeout=30.0, follow_redirects=True) as client:
+            response = client.head(f"https://arxiv.org/pdf/{arxiv_id}")
+        return int(response.headers.get("content-length") or 0)
+    except Exception:  # noqa: BLE001 - 体积探测失败不影响导入
+        return 0
 
 
 def main() -> int:
@@ -41,18 +32,29 @@ def main() -> int:
     parser.add_argument("--kb-id", required=True, help="目标知识库 ID")
     parser.add_argument("--limit", type=int, default=0, help="最多导入多少篇，0 表示全部")
     parser.add_argument("--interval", type=float, default=2.5, help="两次提交之间的间隔秒数")
+    parser.add_argument(
+        "--order-by-size",
+        action="store_true",
+        help="按 PDF 体积升序提交：大 PDF 解析慢，先让小论文在导入任务超时前落地",
+    )
     parser.add_argument("--dry-run", action="store_true", help="只打印清单，不提交")
     parser.add_argument("--base-url", default="http://127.0.0.1:5050")
     args = parser.parse_args()
 
-    corpus = json.loads(CORPUS_PATH.read_text(encoding="utf-8"))
+    corpus = load_corpus()
     papers = corpus["papers"][: args.limit or None]
+    if args.order_by_size:
+        sized = []
+        for paper in papers:
+            sized.append((_pdf_size_bytes(paper["identifier"]), paper))
+            time.sleep(0.6)
+        papers = [paper for _, paper in sorted(sized, key=lambda row: row[0])]
     if args.dry_run:
         for paper in papers:
             print(paper["identifier"], paper["title"])
         return 0
 
-    uid, password = _load_admin_credentials()
+    uid, password = load_admin_credentials()
     with httpx.Client(base_url=args.base_url.rstrip("/"), timeout=60.0) as client:
         response = client.post("/api/auth/token", data={"username": uid, "password": password})
         response.raise_for_status()
