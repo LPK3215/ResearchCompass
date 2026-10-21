@@ -1902,7 +1902,7 @@ const selectedTrendKeywordData = computed(() =>
 )
 const evidencePdfPage = computed(() => Number(selectedEvidence.value?.source_page_start || 0))
 const hasPdfPageLocator = computed(() => (
-  ['pdf_page_range', 'pdf_page_rect'].includes(selectedEvidence.value?.locator_type)
+  ['pdf_page_range', 'pdf_page_rect', 'pdf_page_start'].includes(selectedEvidence.value?.locator_type)
   && Number.isInteger(evidencePdfPage.value)
   && evidencePdfPage.value > 0
   && Boolean(selectedEvidenceFile.value?.original_available)

@@ -211,10 +211,14 @@
 ### 风险观察（未解决，不盲改）
 
 - **结果渲染偶发主线程无响应**：G-40 多源结果、G-42 翻译结果各观察一次；a11y 快照仍可用，无法稳定复现；下一步用 Chrome Performance 采样，暂未定位。
-- **翻译页码缺口**：G-42 的 4 段中 2 段源 chunk 无 `source_page_start`；不从 UI 伪造页码，后续在解析/分块阶段补齐。
 - **本地模型时延**：4 段翻译约 97 秒；已按 1 片段/批、每批 60 秒超时防止无限等待，并新增“约需 1–2 分钟”加载提示；后续可评估异步任务与进度条。
 - **上游引文数据质量**：G-38 被引列表含 2027 年份/跨领域论文；已核对本地年份 2017 与 external S2 ID 正确，应用按 S2 原始结果展示，不从应用层猜测过滤。
-- **桌面端 AI 面板层叠隐患**：面板 z-index 40，低于 sticky PageHeader 1000 与图谱浮层 999；当前有 padding 预留、未复现遮挡，但状态错位时可能盖住面板。后续统一层级变量或改用 portal。
+
+### 已关闭的风险（2026-10-21）
+
+- **翻译页码缺口（已关闭）**：根因是页码锚点只认“起止各 80 字符都命中”，导致 464 个学术 chunk 中仅 145 个（31%）有页码。已重写 `pdf_locator`：锚点按 80/60/45/30/20 词对齐递减重试、短锚点必须全文唯一、长锚点才允许用文档顺序消歧，图表 chunk 起点匹配不到时回退到 chunk 内部可唯一定位的片段扫描；结束页无法验证时只保留起始页（新增 `pdf_page_start` 定位类型），绝不伪造页码。真实语料回放：带起始页 chunk **145 → 458（98.7%）**，原实现已命中的 145 个页码**全部保留、零冲突、零丢失**。存量文件用 `backend/scripts/refresh_pdf_page_metadata.py` 补算（只重算定位字段，不重解析、不重建向量、不删 chunk）。真实接口复验：`Attention is All you Need` 逐段中英对照 4 段**全部带页码**（此前 2/4），含 Figure 1 图表 chunk（页 3）。
+- **桌面端 AI 面板层叠隐患（实测非缺陷）**：浏览器实测 1440/1200/1101/1100/1000/961 六种宽度下，面板与 PageHeader **水平重叠 0px**（`.research-view.copilot-open` 预留 `padding-right`），`elementFromPoint` 命中面板本身，关闭按钮可点；≤960px 面板按设计变为 z-index 1100 的固定抽屉。截图 `test-results/copilot-zindex-check.png`。低优先级观察：`.research-content` 的 `height: calc(100% - 57px)` 与实际页头 60.67px 差 4px，被 `overflow: hidden` 裁掉，当前不可见，按“不盲改”暂不动。
+- **真实模型审批未跑（已关闭）**：G-37 走完真实模型审批 E2E——copilot 先调 `research_list_archived_papers` 并请求确认，确认后调 `research_restore_archived_papers` 触发真实 `human_approval_required` 中断（携带真实工具名与参数）；approve 后工具实际执行（`restored_paper_ids` 1 篇、归档列表回到 0、DB `archived_at` 置空），reject 后工具返回“用户拒绝执行该操作”且论文保持归档；两种分支都用 REST 复原了 fixture，未删数据。
 
 ## 7. 边界与不做
 
@@ -245,12 +249,13 @@
 | 2026-10-21 | 收口后批次：G-43 新手引导、G-44 自助改密；冒烟验收与固定语料 |
 | 2026-10-21 | 按最新状态重写本文档：44 条缺口重新按“已完成 / 待验收 / 待评估 / 不做”组织，补充验收证据与剩余边界 |
 | 2026-10-21 | 收口剩余边界：G-13 结构图嵌入 HTML 汇报包；G-35 详情页逐篇补全文；G-10 外部基线边界关闭；冒烟 52/52 复跑通过 |
+| 2026-10-21 | 风险批次：G-37 真实模型审批 E2E 跑通（approve/reject 双分支）；G-42 页码缺口根因修复（页码覆盖 145→458，零回归）；AI 面板 z-index 实测非缺陷 |
 
 ## 10. 浏览器验收前检查清单（2026-10-21）
 
 已收口：
 
-- [x] 后端全量单测 1654 通过 / 5 跳过 / 0 失败
+- [x] 后端全量单测 1662 通过 / 5 跳过 / 0 失败
 - [x] 前端单测 91 通过；ESLint、生产构建通过
 - [x] 冒烟验收 52/52；报告 `test-results/smoke-acceptance-20261021-215331.md`
 - [x] 工具一致性 97/97；路由顺序、工具签名、工具文档同步守卫通过
@@ -270,7 +275,7 @@
 - [x] 管理员重置密码：旧 Token 401 / 新 Token 200；OIDC 恢复路径仅代码检查（外部 IdP 不做本机 E2E）
 - [x] G-40 多源检索：逐源状态 10/10/10 + 卡片来源标签；未导入
 - [x] G-41 论文对话：35–40 秒返回答案与页码/chunk 引用
-- [x] G-42 对照翻译：97 秒返回 4 段中英对照；2/4 段源元数据缺页码
+- [x] G-42 对照翻译：97 秒返回 4 段中英对照；当时 2/4 段源元数据缺页码，已由页码定位重写修复（145→458 覆盖），真实接口复验 4/4 段均带页码
 - [x] G-43 首次使用引导：自动打开 1/4、关闭、重开、步骤直达知识库
 - [x] G-39 文献筛选：纳入 2 / 待定 9；CSV 导出 200，13 行含 decision/reason
 - [x] G-35 参考文献导入：重复 BibTeX 新增 0 / 跳过 1 / 失败 0，论文数 11→11
@@ -286,8 +291,9 @@
 - [x] G-31 评测导出：趋势/机会浏览器已验；eval_run 221,764 B、eval_experiment 4,581 B，均含 fingerprint，API 200
 - [x] G-25 归档恢复：临时归档 1 篇 → 归档列表 1 篇 → restore 1 篇 → active；未删除论文
 - [x] G-36 元数据补全：ResNet/10.1109/CVPR.2016.90 通过 Crossref 补作者、CVPR venue、引用数；abstract/keywords 为缺项
-- [x] G-37 审批分层：REST 恢复真实通过；审批名单/default 强制/interrupt 33 项测试通过；真实模型审批 E2E 未跑（风险）
+- [x] G-37 审批分层：REST 恢复真实通过；审批名单/default 强制/interrupt 33 项测试通过；真实模型审批 E2E 已跑通（approve 工具实际执行 + reject 保持归档，fixture 已复原）
 - 未解决性能观察：G-40/G-42 结果渲染后偶发主线程无响应，a11y 快照仍可用；无可稳定复现，未定位根因
+- [x] 桌面端 AI 面板 z-index 实测：1440/1200/1101/1100/1000/961 六种宽度与 PageHeader 水平重叠 0px，elementFromPoint 命中面板，关闭按钮可点（实测非缺陷）
 - 截图：`test-results/ui-research.png`、`ui-onboarding.png`、`ui-notes.png`、`ui-manifest.png`、`ui-duplicate.png`、`ui-merged.png`；改密 UI：`pw-change-01..05`；本轮：`g40-02-multisource-results.png`、`g41-01-chat-pending.png`、`g42-retest2-01-after-click.png`、`g43-01-onboarding-autoopen.png`
 
 浏览器验收重点：
