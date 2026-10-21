@@ -926,6 +926,8 @@
                 <a-menu-divider />
                 <a-menu-item key="cards-markdown">文献卡片（Markdown）</a-menu-item>
                 <a-menu-item key="cards-json">文献卡片（JSON）</a-menu-item>
+                <a-menu-item key="matrix-markdown">对比矩阵（Markdown）</a-menu-item>
+                <a-menu-item key="matrix-csv">对比矩阵（CSV）</a-menu-item>
                 <a-menu-item key="pack-markdown">组会汇报包（Markdown）</a-menu-item>
                 <a-menu-item key="pack-html">组会汇报包（HTML）</a-menu-item>
               </a-menu>
@@ -2385,6 +2387,22 @@ const exportAllPapers = async ({ key: exportFormat }) => {
       const blob = await researchApi.exportPaperCards(kbId, isJson ? 'json' : 'markdown')
       if (requestGeneration !== workspaceRequestGeneration || kbId !== selectedKbId.value) return
       saveBlob(blob, `research_paper_cards_${kbId}.${isJson ? 'json' : 'md'}`)
+      return
+    }
+    if (exportFormat === 'matrix-markdown' || exportFormat === 'matrix-csv') {
+      const paperIds = papers.value.slice(0, 10).map((paper) => paper.paper_id).filter(Boolean)
+      if (paperIds.length < 2) {
+        message.warning('对比矩阵至少需要两篇论文')
+        return
+      }
+      const isCsv = exportFormat === 'matrix-csv'
+      const blob = await researchApi.exportComparisonMatrix(
+        kbId,
+        isCsv ? 'csv' : 'markdown',
+        paperIds
+      )
+      if (requestGeneration !== workspaceRequestGeneration || kbId !== selectedKbId.value) return
+      saveBlob(blob, `research_comparison_${kbId}.${isCsv ? 'csv' : 'md'}`)
       return
     }
     if (exportFormat === 'pack-markdown' || exportFormat === 'pack-html') {

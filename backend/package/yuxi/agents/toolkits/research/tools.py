@@ -405,6 +405,11 @@ class ExportResearchDataInput(BaseModel):
     year_to: int | None = Field(default=None, ge=1500)
 
 
+class ExportComparisonMatrixInput(BaseModel):
+    paper_ids: list[str] = Field(min_length=2, max_length=20, description="2 到 20 篇论文 ID")
+    format: Literal["markdown", "csv"] = Field(default="markdown", description="导出格式")
+
+
 def _research_context(runtime: ToolRuntime) -> dict[str, Any]:
     context = getattr(runtime, "context", None)
     research_context = getattr(context, "research_context", None)
@@ -2093,6 +2098,36 @@ async def research_export_research_data(
     }
 
 
+@tool(
+    category="research",
+    tags=["科研", "对比", "导出"],
+    display_name="导出文献对比矩阵",
+    args_schema=ExportComparisonMatrixInput,
+)
+async def research_export_comparison_matrix(
+    paper_ids: list[str],
+    format: str,
+    runtime: ToolRuntime,
+) -> dict[str, Any]:
+    """把 2 到 20 篇论文按统一字段渲染为对比矩阵（Markdown / CSV），缺少分析的单元格标注“证据不足”。"""
+    from yuxi.services.research_deliverable_service import export_comparison_matrix
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    filename, content, media_type = await _call(
+        export_comparison_matrix(kb_id=context["kb_id"], current_user=user, paper_ids=paper_ids, export_format=format)
+    )
+    artifact_path = await _write_artifact(runtime, filename, content)
+    return {
+        "filename": filename,
+        "format": format,
+        "media_type": media_type,
+        "paper_count": len(paper_ids),
+        "artifact_path": artifact_path,
+        "message": f"对比矩阵已导出为 {filename}，请调用 present_artifacts 工具展示该文件",
+    }
+
+
 RESEARCH_TOOLS = [
     research_get_context,
     research_list_projects,
@@ -2162,4 +2197,5 @@ RESEARCH_TOOLS = [
     research_export_academic_graph,
     research_export_paper_diagram,
     research_export_research_data,
+    research_export_comparison_matrix,
 ]

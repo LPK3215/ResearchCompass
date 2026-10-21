@@ -805,3 +805,78 @@ async def export_research_data(
         ext = "csv"
     filename = f"research_{kind}_{kb_id}_{stamp}.{ext}"
     return filename, body.encode("utf-8"), media_type
+
+
+COMPARISON_FIELDS = (
+    ("title", "论文"),
+    ("year", "年份"),
+    ("venue", "来源"),
+    ("problem", "研究问题"),
+    ("method", "方法"),
+    ("datasets", "数据集"),
+    ("results", "结论"),
+    ("limitations", "局限"),
+)
+
+
+def _comparison_value(card: dict[str, Any], key: str) -> str:
+    if key == "title":
+        return str(card.get("title") or card.get("paper_id") or "")
+    if key == "year":
+        return str(card.get("year") or "未说明")
+    if key == "venue":
+        return str(card.get("venue") or "未说明")
+    analysis = card.get("analysis") or {}
+    if key in {"datasets", "results", "limitations"}:
+        values = analysis.get(key) or []
+        return "；".join(str(item) for item in values) if values else "证据不足"
+    return str(analysis.get(key) or "未说明")
+
+
+async def export_comparison_matrix(
+    *, kb_id: str, current_user: User, paper_ids: list[str], export_format: str
+) -> tuple[str, bytes, str]:
+    """把多篇论文按统一字段渲染为对比矩阵，支持 Markdown 与 CSV。"""
+    import csv
+    import io
+
+    from yuxi.utils.datetime_utils import utc_now_naive
+
+    if export_format not in {"markdown", "csv"}:
+        raise ResearchDeliverableError("invalid_export_format", "对比矩阵只支持 markdown 或 csv")
+    normalized = list(dict.fromkeys(item.strip() for item in paper_ids if item.strip()))
+    if len(normalized) < 2:
+        raise ResearchDeliverableError("matrix_requires_two_papers", "对比矩阵至少需要两篇论文")
+    if len(normalized) > 20:
+        raise ResearchDeliverableError("paper_limit_exceeded", "对比矩阵一次最多支持 20 篇论文")
+    cards = await _compose_cards(kb_id, normalized, current_user)
+    if len(cards) < 2:
+        raise ResearchDeliverableError("matrix_requires_two_papers", "对比矩阵至少需要两篇论文")
+    header = [label for _, label in COMPARISON_FIELDS]
+    rows = [[_comparison_value(card, key) for key, _ in COMPARISON_FIELDS] for card in cards]
+    stamp = utc_now_naive().strftime("%Y%m%d%H%M")
+    if export_format == "markdown":
+        lines = [
+            "# 文献对比矩阵",
+            "",
+            f"- 论文数：{len(cards)}",
+            f"- 生成时间：{utc_now_naive().strftime('%Y-%m-%d %H:%M')}",
+            "- 说明：单元格内容来自论文元数据与最近一次分析；“证据不足”表示尚未生成分析或原文未说明。",
+            "",
+            "| " + " | ".join(header) + " |",
+            "| " + " | ".join(["---"] * len(header)) + " |",
+        ]
+        for row in rows:
+            lines.append("| " + " | ".join(_markdown_cell(cell) for cell in row) + " |")
+        body = "\n".join(lines)
+        media_type, ext = "text/markdown; charset=utf-8", "md"
+    else:
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
+        writer.writerow(header)
+        for row in rows:
+            writer.writerow([("'" + cell) if cell[:1] in {"=", "+", "-", "@"} else cell for cell in row])
+        body = buffer.getvalue()
+        media_type, ext = "text/csv; charset=utf-8", "csv"
+    filename = f"research_comparison_{kb_id}_{stamp}.{ext}"
+    return filename, body.encode("utf-8"), media_type

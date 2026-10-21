@@ -130,6 +130,7 @@ from yuxi.services.research_user_study_service import (
 from yuxi.services.research_deliverable_service import (
     ResearchDeliverableError,
     export_pack,
+    export_comparison_matrix,
     export_paper_analysis_markdown,
     export_paper_cards,
     export_research_data,
@@ -2025,6 +2026,7 @@ _DELIVERABLE_STATUS_MAP = {
     "diagram_no_data": 409,
     "invalid_data_kind": 422,
     "target_required": 422,
+    "matrix_requires_two_papers": 422,
     "forbidden": 403,
 }
 
@@ -2190,6 +2192,27 @@ async def export_research_data_endpoint(
             export_format=format,
             year_from=year_from,
             year_to=year_to,
+        )
+    except ResearchDeliverableError as exc:
+        raise _to_http_error(exc, _DELIVERABLE_STATUS_MAP) from exc
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@research.get("/databases/{kb_id}/comparison-matrix")
+async def export_research_comparison_matrix(
+    kb_id: str,
+    paper_ids: str = Query(..., min_length=1, max_length=4000),
+    format: str = Query(default="markdown", pattern=r"^(markdown|csv)$"),
+    current_user: User = Depends(get_required_user),
+):
+    ids = [item.strip() for item in paper_ids.split(",") if item.strip()]
+    try:
+        filename, content, media_type = await export_comparison_matrix(
+            kb_id=kb_id, current_user=current_user, paper_ids=ids, export_format=format
         )
     except ResearchDeliverableError as exc:
         raise _to_http_error(exc, _DELIVERABLE_STATUS_MAP) from exc

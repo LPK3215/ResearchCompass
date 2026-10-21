@@ -445,6 +445,14 @@ export const researchApi = {
     ).then((response) => response.blob())
   },
 
+  exportComparisonMatrix: (kbId, exportFormat = 'markdown', paperIds = []) => {
+    const query = buildQuery({ paper_ids: paperIds.join(','), format: exportFormat })
+    return apiRequest(
+      `/api/research/databases/${encodeURIComponent(kbId)}/comparison-matrix?${query}`,
+      { method: 'GET' }, true, 'blob'
+    ).then((response) => response.blob())
+  },
+
   exportPaperAnalysis: (runId) =>
     apiRequest(
       `/api/research/paper-analysis-runs/${encodeURIComponent(runId)}/export?format=markdown`,
