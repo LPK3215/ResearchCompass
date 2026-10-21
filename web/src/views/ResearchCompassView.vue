@@ -1433,7 +1433,7 @@
         </a-button>
       </div>
       <a-alert v-if="externalImportError" type="error" show-icon :message="externalImportError" />
-      <div v-if="externalSources.some((source) => source.status === 'failed')" class="external-source-status">
+      <div v-if="externalSources.length" class="external-source-status">
         <a-tag v-for="source in externalSources" :key="source.source" :color="source.status === 'ok' ? 'green' : 'orange'">
           {{ source.label }}：{{ source.status === 'ok' ? `可用 ${source.count} 条` : source.message || '暂不可用' }}
         </a-tag>

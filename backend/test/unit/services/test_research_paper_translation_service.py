@@ -1,9 +1,11 @@
 """research_paper_translation_service 的对照输出与失败行为测试。"""
 
+import asyncio
+import json
+import re
 from types import SimpleNamespace
 
 import pytest
-
 from yuxi.services import research_paper_translation_service as translation
 
 
@@ -173,3 +175,63 @@ def test_build_translation_context_skips_empty_chunks():
     assert "[chunk:c1]" in context
     assert "c2" not in context
     assert [row["chunk_id"] for row in selected] == ["c1"]
+
+
+class BatchingModel:
+    def __init__(self):
+        self.batch_sizes: list[int] = []
+
+    async def call(self, messages, stream=False):
+        prompt = messages[-1]["content"]
+        chunk_ids = re.findall(r"\[chunk:([^\]]+)\]", prompt)
+        self.batch_sizes.append(len(chunk_ids))
+        return SimpleNamespace(
+            content=json.dumps(
+                {
+                    "paragraphs": [
+                        {"chunk_id": chunk_id, "translation": f"译-{chunk_id}"} for chunk_id in chunk_ids
+                    ]
+                },
+                ensure_ascii=False,
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_translate_batches_large_requests(monkeypatch, allow_access):
+    chunks = [_chunk(f"c{index}", f"第 {index} 段", index=index) for index in range(1, 6)]
+    monkeypatch.setattr(translation, "AcademicPaperRepository", lambda: FakePaperRepository())
+    monkeypatch.setattr(translation, "KnowledgeChunkRepository", lambda: FakeChunkRepository(chunks))
+    model = BatchingModel()
+    monkeypatch.setattr(translation, "select_model", lambda **kwargs: model)
+
+    result = await translation.translate_paper(
+        kb_id="kb-1", paper_id="paper-1", current_user=SimpleNamespace(uid="user-1"), limit=6, model_spec="test:model"
+    )
+
+    assert model.batch_sizes == [1, 1, 1, 1, 1]
+    assert result["paragraph_count"] == 5
+    assert [item["chunk_id"] for item in result["paragraphs"]] == ["c1", "c2", "c3", "c4", "c5"]
+
+
+class HangingModel:
+    async def call(self, messages, stream=False):
+        await asyncio.sleep(5)
+        return SimpleNamespace(content='{"paragraphs":[]}')
+
+
+@pytest.mark.asyncio
+async def test_translate_times_out_instead_of_hanging(monkeypatch, allow_access):
+    monkeypatch.setattr(translation, "AcademicPaperRepository", lambda: FakePaperRepository())
+    monkeypatch.setattr(
+        translation, "KnowledgeChunkRepository", lambda: FakeChunkRepository([_chunk("c1", "A", index=1)])
+    )
+    monkeypatch.setattr(translation, "select_model", lambda **kwargs: HangingModel())
+    monkeypatch.setattr(translation, "TRANSLATION_MODEL_TIMEOUT_SECONDS", 0.01)
+
+    with pytest.raises(translation.ResearchPaperTranslationError) as exc_info:
+        await translation.translate_paper(
+            kb_id="kb-1", paper_id="paper-1", current_user=SimpleNamespace(uid="user-1"), model_spec="test:model"
+        )
+
+    assert exc_info.value.error_type == "translation_model_timeout"

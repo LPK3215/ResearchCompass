@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from typing import Any
@@ -20,6 +21,8 @@ from yuxi.storage.postgres.models_business import User
 
 MAX_TRANSLATION_CHUNKS = 12
 MAX_TRANSLATION_SOURCE_CHARS = 16000
+TRANSLATION_BATCH_SIZE = 1
+TRANSLATION_MODEL_TIMEOUT_SECONDS = 60.0
 
 TRANSLATION_SYSTEM_PROMPT = (
     "你是学术论文翻译助手。把给定论文片段逐段译成中文，保留术语、数字与引用标记，不增删、不总结。"
@@ -117,29 +120,44 @@ async def translate_paper(
         offset=0,
         limit=normalized_limit,
     )
-    context, selected = build_translation_context([_chunk_row(chunk) for chunk in chunks])
+    _, selected = build_translation_context([_chunk_row(chunk) for chunk in chunks])
     if not selected:
         raise ResearchPaperTranslationError("paper_chunk_missing", "没有可翻译的正文片段，请先完成解析与索引")
 
     kb = await KnowledgeBaseRepository().get_by_kb_id(kb_id)
     resolved_model = _resolve_model_spec(model_spec, kb.llm_model_spec if kb else None)
-    messages = [
-        {"role": "system", "content": TRANSLATION_SYSTEM_PROMPT},
-        {"role": "user", "content": f"论文片段：\n{context}"},
-    ]
-    try:
-        response = await select_model(model_spec=resolved_model, model_params={"temperature": 0}).call(
-            messages, stream=False
-        )
-    except Exception as exc:  # noqa: BLE001 - 模型异常统一转为可定位错误
-        raise ResearchPaperTranslationError("translation_model_failed", "论文翻译模型调用失败") from exc
+    translations: dict[str, str] = {}
+    for start in range(0, len(selected), TRANSLATION_BATCH_SIZE):
+        batch = selected[start : start + TRANSLATION_BATCH_SIZE]
+        batch_context, _ = build_translation_context(batch)
+        messages = [
+            {"role": "system", "content": TRANSLATION_SYSTEM_PROMPT},
+            {"role": "user", "content": f"论文片段：\n{batch_context}"},
+        ]
+        try:
+            response = await asyncio.wait_for(
+                select_model(model_spec=resolved_model, model_params={"temperature": 0}).call(
+                    messages, stream=False
+                ),
+                timeout=TRANSLATION_MODEL_TIMEOUT_SECONDS,
+            )
+        except TimeoutError as exc:
+            batch_no = start // TRANSLATION_BATCH_SIZE + 1
+            raise ResearchPaperTranslationError(
+                "translation_model_timeout",
+                f"论文翻译第 {batch_no} 批超时，请减少片段数或选择章节后重试",
+            ) from exc
+        except Exception as exc:  # noqa: BLE001 - 模型异常统一转为可定位错误
+            raise ResearchPaperTranslationError("translation_model_failed", "论文翻译模型调用失败") from exc
 
-    payload = _parse_translation(getattr(response, "content", ""))
-    translations = {
-        str(item.get("chunk_id")): str(item.get("translation") or "").strip()
-        for item in payload["paragraphs"]
-        if isinstance(item, dict) and item.get("chunk_id") and str(item.get("translation") or "").strip()
-    }
+        payload = _parse_translation(getattr(response, "content", ""))
+        translations.update(
+            {
+                str(item.get("chunk_id")): str(item.get("translation") or "").strip()
+                for item in payload["paragraphs"]
+                if isinstance(item, dict) and item.get("chunk_id") and str(item.get("translation") or "").strip()
+            }
+        )
     paragraphs = [
         {
             "chunk_id": row["chunk_id"],
