@@ -126,7 +126,7 @@
 
 | ID | 缺口 | 影响 | 优先级 | 状态 | 验收标准 |
 | --- | --- | --- | --- | --- | --- |
-| G-24 | Zotero / RIS 双向同步 | 文献管理闭环缺失 | P3 | 待评估 | 导入集合、回写标签与笔记；冲突可感知 |
+| G-24 | Zotero / RIS 双向同步 | 文献管理闭环缺失 | P3 | 不做（用户明确不引入第三方文献管理工具） | 导入集合、回写标签与笔记；冲突可感知 |
 | G-25 | 跨库去重与合并 | 多库重复文献 | P3 | 部分完成（库内检测 + 保留建议 + 合并预览；合并未执行） | 按 DOI 与标题相似度识别重复并合并引用 |
 | G-26 | 写作工作台 | 无法在平台内成稿 | P3 | 待评估 | 草稿编辑器 + 引用插入 + 与证据双向跳转 |
 | G-27 | 协作与批注 | 多人协作缺失 | P3 | 待评估 | 项目共享、评论、变更通知 |
@@ -188,6 +188,7 @@
 | 2026-10-21 | 状态核对：G-10 拆分完成项与待选项，G-15 转待决策 | G-10 核心链路（查询基准/发起评估/读结果/实验报告）已通，基准与消融创建工具列为待选项；G-15 守卫需新增单测，按编码规则第 9 条需用户授权 | 本文档 §5 | 是 |
 | 2026-10-21 | G-15 守卫落地（脚本式，不新增单测） | 新增 `backend/scripts/check_research_tool_parity.py`，比较工具定义与 research-copilot 启用清单；实跑 `defined=72 enabled=72 parity ok`，退出码 0；按编码规则第 9 条未写测试代码 | `backend/scripts/check_research_tool_parity.py` | 是（G-15 转已完成） |
 | 2026-10-21 | P3 首项：G-25 重复论文检测（只读部分） | 新增 `GET /databases/{kb_id}/duplicates` 与 `research_find_duplicate_papers` 工具：按 DOI（优先）或归一化标题分组，只报告不合并；工具总数 72 到 73；跨库扫描与合并策略待决策 | `backend/package/yuxi/services/research_deliverable_service.py`、`server/routers/research_router.py`、`toolkits/research/tools.py` | 是（G-25 标记部分完成） |
+| 2026-10-21 | 本次任务收尾归档 | 双通道：15 个能力域中 14 个双向齐全，RAG 评估的“基准上传/生成 + 消融创建”两个 AI 工具未做；新增：15 项已接入（G-12/13/14/15/16/17/18/19/20/21/22/23/30/31/32），G-25/G-34 部分完成，G-33 待评估，G-24 明确不做，G-26/27/28 暂缓，G-29 不做；详细状态见第 5 节 | 本文档 | 是 |
 | 2026-10-21 | G-31 补评估运行逐条导出 | RAG 评估历史行新增“导出”链接，调用 `/exports/eval_run` 下载 JSON（带数据指纹）；`exportResearchData` 支持 target_id；消融逐条导出仍为待选项 | `web/src/components/RAGEvaluationTab.vue`、`web/src/apis/research_api.js` | 是 |
 | 2026-10-21 | P3 第 3 项：G-34 知识库迁移清单 | 新增 `GET /databases/{kb_id}/export-manifest` 与 `research_export_kb_manifest` 工具：输出论文元数据清单与图谱统计（不含原文/向量），并声明备份链路边界；工具总数 73 到 74；导入校验待补 | `backend/package/yuxi/services/research_deliverable_service.py`、`server/routers/research_router.py`、`toolkits/research/tools.py` | 是（G-34 标记部分完成） |
 
