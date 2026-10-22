@@ -2,10 +2,210 @@
 
 本页用于记录各版本发布说明（新增、修复与破坏性变更）。
 
+> 说明：ResearchCompass 在开源智能体框架 Yuxi 之上进行科研领域二次开发。本变更记录中，v0.8.0 起的 ResearchCompass 科研业务条目（论文管理、学术分块、引用图谱、证据综述、研究项目、实验评测等）由本仓库作者设计与实现；更早的框架级条目（智能体运行时、知识库、Skills、MCP、沙盒、队列等通用能力）来自上游 Yuxi 框架，本仓库复用并在其之上扩展。
+
 同一版本的多次功能更新时，应以功能为单位进行更新，比如之前添加了 A 功能的更新，在后续的更新中修复了因 A 功能引入的 bug，那么这个修复说明应该和 A 功能描述放在一起，而不是新增一条修复记录，功能更新同理。
 
-## v0.7.2 (current)
+> 当前验收标签：v0.11.15（2026-10-21）。以下 v0.11.0 段落汇总本轮能力收口内容。
 
+## Unreleased
+
+- 文档与开源规范收口（2026-10-22）：`README.md` 改为英文主版，新增 `README.zh-CN.md` 中文配套版；新增 `FAQ.md`、`SECURITY.md`、`AUTHORS`、`.pre-commit-config.yaml`、`backend/README.md`；补充 `Makefile` 的测试 / 冒烟 / 固定语料评测 / 文档构建目标；更新 `LICENSE` 版权行、`.gitignore` / `.gitattributes`、`backend/pyproject.toml`、`web/package.json`、`docs/package.json` 元数据。
+- README 开场与可视化（2026-10-22）：新增 `docs/assets/banner.svg`（生成脚本 `scripts/visualization/generate_banner.mjs`），两版 README 增加居中横幅、shields.io 徽章、章节导航、可视化与 FAQ 章节，并链接 `docs/archify/` 下的交互式架构 / 工作流 / 时序 / 数据流图；两版章节结构与语言互链保持对齐。
+- 项目全景观览页（2026-10-22）：新增 `docs/index.html` 入口、`docs/.nojekyll` 与 `docs/project_overview/`（`index.html` / `style.css` / `script.js` / `charts.js`），覆盖架构、方法、技术栈、目录树、快速开始、评测图表、API、质量、文档索引、贡献与许可；按 GitHub Pages 经典模式使用相对路径。
+- 文档一致性审计（2026-10-22）：文档站首页版本、供应商数量与统计改由 `backend/scripts/doc_stats.py` 生成；统一 Compose 宿主 API 端口 5051 与直跑 5050 的表述；同步后端单测 1696/5、冒烟 55/55、项目 Markdown 79 篇，并让项目档案索引与自动统计对齐。
+
+## v0.11.0
+
+- 上线前第八轮审计与修复（2026-10-22）：① 登录限流跟踪表加上界（`RATE_LIMIT_TRACKED_SOURCES_LIMIT`），未认证请求靠刷源地址把进程内存撑爆的路径关闭（复现 20000 源→保留 20000 键，修复后→ 10000 键）；② 缺「默认部门」时不再静默建出「能登录但全站 400」的账号，改为 409 显式失败；③ 集成测试知识库清理取错主键（读不存在的 `slug`，实际字段是 `kb_id`），`pytest_*` 残留库从未被清理，本次修复根因；④ 生产 nginx 上传上限 20M 与后端 `MAX_UPLOAD_SIZE_BYTES`（100 MB）矛盾，20–100 MB 上传永远到不了应用，已对齐（同一 25 MB 请求：旧配置 413、新配置 422 到达应用）；⑤ 404 页面文案拼音混英文且无返回入口，改为中文文案 + 返回链接；⑥ 科研罗盘默认知识库取 API 返回的 `[0]`，而后端未约定顺序，改为按创建时间倒序确定；⑦ 文档统一：根 `CHANGELOG.md`、`CLAUDE.md`、`CONTRIBUTING.md` 改为指向唯一真源，安装文档版本对齐最新标签 `v0.11.15`，补齐 3 个缺失导航项；新增 `backend/scripts/doc_stats.py` 从真源生成版本与代码面统计，不再手写。
+- 固定语料基线收口：`scripts/eval/fixed_corpus.json` 的 28 篇开放获取论文**全部真实入库**备选库 `kb_ksf23a31w7`（该库 30 篇论文，28 篇带全文共 993 个 chunk）。新增三个可重复的基线脚本，公共辅助抽到 `scripts/eval/corpus_common.py`：`fixed_corpus_baseline.py`（文档级 hit@1/3/5 + MRR，走研究检索链路 `local_hybrid`）、`fixed_corpus_ablation.py`（评测模块受控消融，只切换 `use_reranker`）、`fixed_corpus_synthesis.py`（证据约束综述的引用覆盖率，按产品流程先核验证据再综述）。真实数值：文档级 hit@1=8/10、hit@3=8/10、hit@5=10/10、MRR=0.845（12.9–14.6 秒/题）；受控消融下重排序开启相比关闭，recall@10 由 0.1 升到 0.3、LLM 裁判答案正确率由 0.3 升到 0.5（样本 n=10 < 30，属初步信号，不作为稳定效应估计）；综述引用覆盖率 5/5 成功、平均 0.8037。
+- 修复 Semantic Scholar 限流只对单个客户端实例生效：论文导入、引用图谱同步、外部检索各自新建客户端，并发请求会同时打到免费额度上直接触发 429。限流闸门改为**进程内共享**（`SemanticScholarThrottle`），同进程内所有 Semantic Scholar 请求串行发出；新增跨实例并发回归测试。
+- 固定语料导入脚本支持按 PDF 体积升序提交（`--order-by-size`）：大 PDF 解析慢，先让小论文在导入任务超时前落地；管理员凭据读取与语料读取抽到公共模块。
+
+- 冒烟验收脚本加固（`backend/scripts/smoke_acceptance.py`）：多源检索超时从 120 秒放宽到 180 秒（实测 123.7 秒，旧阈值会把正常结果误判为失败）；上一次运行失败或取消会让线程队列停在 `paused`，此时新提交只入队不派发、脚本取不到 `run_id`，现在改为自动调用 `POST /api/agent/thread/{id}/requests/continue` 恢复派发后再等真实 run 跑完。真实用产品接口制造 `paused` 态验证：报告 `test-results/smoke-acceptance-20261022-021515.md`，54 项通过 / 0 失败，AI 项证据 `status=completed resumed=paused-queue`。
+- 智能体运行失败日志补运行标识：`chat_service` 的运行失败/恢复失败日志原来只有异常类型，无法定位是哪一次运行；现在补上 `thread_id` 与 `run_id`。上游供应商报错原文仍不入日志（代码库已有回归测试守护），根因排查走 Langfuse 追踪与 `raise ... from exc` 异常链。
+- 修复宿主机直跑读不到仓库根 `.env`：`backend/package/yuxi/__init__.py` 原先按当前工作目录加载 `.env`，从 `backend/` 直跑时只能拿到 `backend/.env`，根目录 `.env` 里的模型密钥、`RERANK_TIMEOUT_SECONDS`、`EMBEDDING_TIMEOUT`、`LLM_TIMEOUT` 全部缺失——表现为混合检索 502（重排按默认 30 秒超时）与智能体运行失败。改为按仓库路径固定加载 `backend/.env` 与根 `.env`（`override=False`，真实环境变量优先），与 Docker Compose 的 `env_file: .env` 保持一致。真实复测：本地混合检索 3 条命中（27.4 秒，含重排），智能体 run `completed`。
+- 冒烟验收复跑 **54 项通过 / 0 失败**（报告 `test-results/smoke-acceptance-20261022-014947.md`）；后端单测 1674 通过 / 5 跳过；`ruff check package server scripts test/unit/scripts` 与 import 排序均为 0。
+- 新增「演示数据包（体验验证版本）」：新增 `backend/scripts/export_demo_data.py`、`backend/scripts/import_demo_data.py` 与只读校验脚本 `backend/scripts/verify_demo_data.py`（共享表结构定义在 `backend/scripts/demo_data_spec.py`）。导出把知识库的论文元数据、PDF 原文、chunk 正文与页码定位元数据与 chunk 级分析结果、以及业务表的快照固化到仓库 `demo_data/`；导入在新环境一键重建——建演示库、上传 PDF、按快照重建 chunk、用目标环境自己的 embedding 模型重算向量、把业务主键与跨表引用重新映射后写回业务快照。**只增不删**：不覆盖也不删除目标环境已有数据；用户不存在时自动执行 `seed_initial_users.py` 初始化标准账号。`.gitignore` 对 `demo_data/**/*.pdf` 放开，PDF 原文随仓库分发，换机器/重建 Docker 后不再是空库。本轮收口三点：① **导出只覆盖可恢复的论文**——取不到 PDF 原文的论文不再导出其 chunk，其原文缺失原因如实记入 manifest 的 `papers_without_pdf`，`counts` 与磁盘文件一一对应；`schema_version` 升到 2，每篇论文带 `chunk_count`。② **导入幂等且自检**——业务表写入改用 `ON CONFLICT DO NOTHING`，重复导入不再中断；脚本逐表比对「导出快照行数」与「实际写入行数」，并分别报出「已存在跳过」与「引用未能解析（字段置空）」的行数，不一致时以退出码 1 结束；原先未被重映射的 `evaluation_experiments.task_id` 补进映射表，避免写入悬挂外键。③ **新增只读校验脚本**——按 `demo_data_spec.py` 的共享约定逐列检查孤儿引用，并跑一次真实检索。真实导入验证：两个数据包重新导出后导入新库 `kb_rfmqv6xktk`（11 篇 / 11 文件 / 336 chunk / 19 张业务表）与 `kb_ibw00jvo6s`（30 篇 / 28 文件 / 993 chunk / 10 张业务表），校验脚本各 **16/16 项通过**（计数、文件与 chunk 状态、页码定位与论文快照回填、chunk 级分析结果、跨表引用、真实检索）；检索命中分数与源环境逐位一致（0.5118 / 0.5069 / 0.5006）。源库自身存在悬挂引用（`research_synthesis_runs.task_id` 5+17 条、`evaluation_runs.experiment_id` / `variant_id` 各 2 条、`evaluation_experiments.task_id` 1+2 条），导入时已解析为 NULL，两个新库孤儿引用为 0。
+- 修复演示数据导出的业务子表漏导：`_primary_key_column` 对只有自增主键的表返回空，导致评测明细、研究邀请与回复、项目任务/里程碑/风险/资产的快照被静默跳过；改用业务主键列（`BUSINESS_KEY_COLUMN`）定位父表范围后，63 条评测明细、15 条邀请、1 条回复、2 条任务、2 条里程碑、2 条风险、2 条资产恢复导出。
+- 备份脚本补齐运行中数据卷：`backups/backup-data.ps1` 新增第 6 步，MinIO 按对象级导出（`mc mirror` 知识库桶，PDF 原文可直接查看与回传），Milvus / Neo4j / Redis 按卷打包，解决此前只覆盖仓库内 `docker/volumes` 绑定目录、运行中的共享 infra 命名卷未进备份的缺口。
+- 修复论文对照翻译源片段大量缺页码：重写 PDF 页码锚点策略——锚点按 80/60/45/30/20 词对齐递减重试，短锚点必须全文唯一命中、长锚点才允许用文档顺序消歧，图表 chunk 起点匹配不到时回退到 chunk 内部可唯一定位的片段扫描；结束页无法验证时只保留起始页（新增 `pdf_page_start` 定位类型），不再伪造页码。真实语料回放：464 个学术 chunk 带起始页比例 145（31%）→ 458（98.7%），原实现已命中的页码全部保留、零冲突、零丢失。存量文件用新增的 `backend/scripts/refresh_pdf_page_metadata.py` 补算（只重算定位字段，不重解析、不重建向量、不删 chunk）。前端补齐 `pdf_page_start` 白名单。新增 8 项页码定位单元测试；后端单测 1662 通过/5 跳过，真实接口复验 `Attention is All you Need` 逐段中英对照 4 段全部带页码。
+- 验收补齐：G-37 归档审批分层验证；REST 恢复真实通过，restore 已注册敏感工具，研究 copilot 强制 default 审批，审批/interrupt 相关 33 项测试通过；真实模型审批 E2E 已跑通——approve 后工具实际执行（恢复 1 篇归档论文、库中归档数回到 0），reject 后工具返回“用户拒绝执行该操作”且论文保持归档，两条分支都用 REST 复原 fixture，未删除数据。
+- 验收补齐：G-36 元数据补全；备选库导入真实 DOI 的 ResNet 参考条目，Crossref 补齐作者、CVPR venue、引用数；abstract/keywords 缺项如实返回，未覆盖已有字段。
+- 验收补齐：G-25 归档恢复；烟测参考文献先临时归档，归档列表 1 篇，`duplicates/restore` 返回 1 篇，数据库回到 active，未删除论文。
+- 验收补齐：G-31 评估/消融/趋势/机会导出；趋势/机会浏览器已验，`eval_run` 221,764 B、`eval_experiment` 4,581 B，JSON 含 fingerprint，均 API 200。
+- 交付物稳定性：模型调用/JSON 瞬时失败自动重试一次；选题清单跳过缺失标题并格式化方向对象，修复导出出现 `None`；G-13 汇报包（含讲稿要点）、G-19 讲稿要点、G-23 选题清单验收通过。
+- 修复论文分析报告输出：后续方向对象不再渲染成 `[object Object]`，Markdown 导出不再输出 Python dict 原始串；标题回退到分析结果中的论文名。新增导出回归测试。
+- 验收补齐：G-12 分析报告（130 秒生成，Markdown 15,299 B）、G-18 分层摘要（2,265 B，约 15 秒）、G-20 方法流程图 SVG（5,991 B）；应用/API 均 200，磁盘下载受浏览器工具限制。
+- 验收补齐：G-34 迁移清单导出/校验（11/11/11，consistent，API 200）与 G-22 引用网络洞察（Markdown 2603 B，195 ms）。浏览器面板隐藏导致下载未落盘、原生文件选择器不可用；应用侧 UI handler 与 API 均已验证，磁盘文件/真实文件选择器列为工具限制。
+- 修复“导出文献”忽略勾选：文献卡片/对比矩阵/引文样式改为有选中导选中，无选中才回退全部/前 10；GB/T、APA、IEEE 使用独立文件名。真实浏览器选中 2 篇重测通过。图谱统计补充“含外部引文”口径。
+- 新手引导“上传论文 → 去完成”直达当前知识库文件管理（`/extensions/knowledgebase/<kb_id>`），无当前库时回退通用知识库列表；真实浏览器验证 URL、库名、上传按钮与 0 控制台错误。
+- 浏览器验收补齐：G-39 文献筛选（识别 11 / 纳入 2 / 待定 9，CSV 导出 200）、G-35 重复 BibTeX 导入（新增 0 / 跳过 1 / 失败 0，论文数 11→11）、G-38 引文滚雪球（参考文献/被引文献各 20 条，API 200，未导入）。G-38 被引列表含上游 S2 返回的未来年份/跨领域条目，本地年份与 S2 ID 核对正确，应用按原样展示。
+- 前端体验打磨：多源检索显示结果总数；对照翻译加载时显示“约需 1–2 分钟”提示并清空旧结果；源 chunk 缺页码时显示“页码未提供”而不是静默留白。真实浏览器验证加载提示通过；前端 91 项、ESLint、构建通过。
+- 清理前端残留的上游品牌推广入口：侧边栏左下角的「GitHub / 欢迎 Star」条目、设置弹窗左侧的「给 ResearchCompass 点个 Star」宣传卡片（含「支持项目」徽标、「打开 GitHub 仓库」链接与已读状态存储键）、首页头部的 GitHub 猫头鹰图标外链全部移除，对应的样式类与 `GithubOutlined`/`Star`/`ExternalLink` 图标引用一并清掉。保留项目自有文档站入口（「使用帮助 / 查看文档 / 文档中心」）、仓库 Issues 支持通道（「问题反馈 / 联系支持」）、版权声明与第三方归属（Anthropic Skills 源、highlight.js 配色注释），登录、鉴权、权限、设置页与导航逻辑均未改动。真实浏览器实测侧边栏展开/折叠、设置弹窗侧栏、首页头部均无失效链接、空白占位与错位布局，控制台 0 错误；ESLint 0 问题、前端单测 91/91 通过、生产构建 2.67 秒。
+- 清理后端 import 排序：`ruff check --select I package server scripts` 64→0，仅调整 import 顺序，无行为变化；后端 1651 通过/5 跳过，冒烟 52/52。
+- 修复论文对照翻译无限 pending：按 1 个片段分批、每批 60 秒超时；真实浏览器 97 秒返回 4 段中英对照，真实接口 99 秒返回 4 段。多源检索改为始终显示逐源状态（浏览器 10/10/10）。G-40/G-41/G-42/G-43 浏览器验收通过；当时 G-42 有 2/4 段源 chunk 缺页码元数据，该缺口已由上述页码定位重写修复。
+- 清理后端全仓 lint：移除 summary 中间件未使用的 token 计数调用（每次模型请求少 1 次无效计数）和 `StateBackend` 未使用导入；格式化 6 个服务文件的 25 处 E501；`ruff check package server scripts` 29→0，全量 1649 通过/5 跳过，冒烟 52/52。
+- 修复 PostgreSQL schema 管理器 12 处既有 E501 长 SQL 行，按字符串拼接拆分、SQL 语义不变；`ruff check manager.py` 12→0，API 启动 schema 初始化真实执行通过。
+- 改密撤销旧会话：JWT 增加 `iat`，用户表增加 `password_changed_at`；自助改密、管理员重置和 OIDC 恢复账号都会拒绝改密前签发的 Token；前端改密后引导重新登录。真实浏览器 5/5 验证改密后跳转 `/login`、Token 清除、新密码再登录；冒烟新增旧 Token 401 / 新 Token 200 检查。
+- 重复论文检测改为 DOI 与归一化标题联合分组，修复“有 DOI 的元数据条目 + 同标题无 DOI 全文条目”漏检；跨库查重同步生效，新增回归测试。
+- 研究助手提示词补齐当前工作区与当前选中对象（论文、检索运行、证据综述、图谱节点等），明确“这篇 / 当前 / 它”的指代；真实运行验证能正确回答选中论文标题。
+- 前端幂等 GET/HEAD 请求在瞬时网络失败时自动重试一次（300ms），POST 等非幂等请求不重试；减少服务重启/网络抖动导致的初始化失败与控制台错误。
+- 修复重复论文合并推荐可能保留仅元数据条目、反而归档全文论文的问题：排序改为优先有全文、再 DOI、再最早年份，并新增回归测试。
+- 修复科研罗盘 `/research` 初始化时 `onboardingActions` 提前引用 `openKnowledgeManagement` 导致的 TDZ 白屏；修复跨库查重有结果时仍显示“未发现重复论文”的矛盾提示。
+- 补齐双通道界面入口：重复论文检测弹窗新增“合并本组”（归档式合并，可恢复），迁移清单弹窗新增“导出当前库清单”。
+- 仅元数据论文支持“补全文”：从开放获取源下载 PDF 后挂到已有论文记录，不再新建重复记录；外部导入按标题归一化 + 年份兜底，修复 arXiv DOI 与出版社 DOI 不一致时的重复导入。
+- 汇报包 HTML 新增方法流程图：从论文分析方法步骤生成 SVG 并嵌入，Markdown 版同步列出文字步骤。
+- 修复外部论文导入任务默认 6 小时超时：导入任务改为 15 分钟，并把可恢复任务的超时写入任务 payload，服务重启后沿用原超时，避免解析卡住长时间占用任务队列。
+- 修复仅元数据论文仍可进入论文对话与筛选的问题：论文对话在检索前明确返回 `paper_chunk_missing`；已归档论文不能再写入筛选结论，避免产生不计入统计的无效记录。
+- 修复外部论文导入在 Semantic Scholar 的 `openAccessPdf` 指向落地页时直接失败的问题：有 arXiv ID 时优先使用 `arxiv.org/pdf/<id>.pdf` 直链，非 arXiv 论文仍使用原开放获取地址；已用 Attention 与 BERT 两篇真实导入验证。
+- 新增账户自助改密：账户设置页新增“安全设置”，`POST /api/auth/password` 校验当前密码并拒绝新旧相同，修改后旧密码与旧 Token 立即失效，需要重新登录；临时用户端到端验证通过。
+- 修复仅元数据论文仍显示“生成报告”入口：论文详情页禁用分析按钮并提示该论文仅含元数据。
+- 修复引用图谱导出与引用网络洞察的数据源不一致：两者原本读取 PostgreSQL 的图谱投影，而图谱视图读取 Neo4j，导致图上有 1636 个节点时导出/洞察仍返回 409 `graph_empty`。现统一复用 `AcademicGraphService.get_network` 的快照，导出 CSV/GraphML 与洞察报告与界面看到的是同一张图。
+- 新增可重复冒烟验收与固定语料：`backend/scripts/smoke_acceptance.py` 覆盖 17 个能力族（含 AI 工具真实运行）并输出 JSON/Markdown 报告；`scripts/eval/fixed_corpus.json` 提供 28 篇开放获取论文与 10 个金标准问题，配套批量导入脚本。
+- 新增论文阅读笔记与选区批注：论文详情抽屉支持笔记增删改查、在章节分块中选中文字直接添加批注（记录分块、字符区间与 PDF 页码）、分块内高亮回显与 Markdown 导出；笔记按用户隔离，AI 侧新增查询、记录、修改、删除、导出五个工具，其中删除进入审批名单；新增 `research_paper_notes` 表（启动时自动建表）与 `research_paper_note_service`，并补充服务级单测。
+- 论文库新增参考文献文件导入：支持 BibTeX 与 RIS，按 DOI 优先、标题兜底幂等去重；导入记录只含元数据（`file_id` 为空）并在论文库与详情页标注“仅元数据”，不参与全文检索。新增 `research_reference_import_service`、`POST /api/research/databases/{kb_id}/papers/import-references` 与 `research_import_reference_file`，论文库顶部提供“导入文献”弹窗，返回新增 / 跳过 / 失败计数；`academic_papers.file_id` 改为可空并补启动迁移。下载开放获取全文列为待选项。
+- 新增文献筛选（纳入 / 排除）双通道：论文库支持逐篇勾选或批量标记纳入 / 排除并填写理由，顶部展示识别 / 纳入 / 排除 / 待定计数，可导出带计数的 CSV；筛选结果按用户隔离，新增 `GET/POST /api/research/databases/{kb_id}/papers/screening` 与 `GET .../screening/export`，AI 侧新增查询、记录、导出三个工具，其中记录工具进入审批名单，明确只能记录用户给出的结论、不得替用户判断；新增 `academic_paper_screenings` 表（启动时自动建表）与 `research_paper_screening_service`，并补充服务级单测。
+- 新增外部论文多源检索：关键词检索并发查询 Semantic Scholar、OpenAlex 与 Crossref，按 DOI（优先）或归一化标题归并去重并在结果中标注来源；单个来源失败只降级为 `partial` 并在界面提示，全部来源失败才返回可重试错误。BibTeX / RIS / DOI 等标识符仍走 Semantic Scholar 精确解析，导入链路不变。新增 `external_academic_search_service` 与归并 / 降级单测。
+- 新增单篇论文对话：论文分析页提供论文作用域追问，检索范围固定为该论文的学术切片（hybrid 失败时仅在 embedding 故障时降级关键词），回答要求用 `[chunk:...]` 标注来源，返回带页码与章节的引用，点击可回到论文库并打开带高亮定位的原文 PDF；新增 `POST /api/research/databases/{kb_id}/papers/{paper_id}/chat` 与 `research_ask_paper_question`，界面与 AI 工具共用同一 service 与检索范围。
+- 新增引文滚雪球：论文详情页可从单篇论文发起“参考文献 / 被引文献”，勾选后批量纳入本地库；默认只写元数据（复用仅元数据批量写入，按 DOI 优先、标题兜底幂等，不参与全文检索），开启全文下载时仅对开放获取条目复用既有外部导入任务，避免重复下载与重复记录。新增 `GET /api/research/databases/{kb_id}/papers/{paper_id}/related`、`POST .../related/import` 与 `research_list_related_papers`、`research_import_related_papers` 两个工具。
+- 补齐 RAG 评估双通道：新增 `research_upload_eval_dataset`（接收 JSONL 文本，校验 `.jsonl` 后缀）与 `research_create_eval_experiment`（2 到 8 个变体，可指定基线序号），均为管理员工具；外部基线录入仍在界面完成。至此评估基准、评估运行、消融实验与结果导出均有人工与 AI 两个入口。
+- 知识库迁移清单支持导入校验：新增 `POST /api/research/databases/{kb_id}/export-manifest/validate` 与 `research_validate_kb_manifest`，按 paper_id 优先、DOI 兜底比对清单与当前库，输出匹配 / 缺失 / 新增计数与明细；论文库顶部新增“校验清单”入口（选择 JSON 文件，限制 8 MB）。校验只对比元数据，不声称已校验原文文件、向量与图谱。
+- 修复引文滚雪球导入成功后的前端事件错误：原实现复用 `updated` 事件但未携带论文对象，父组件按 `result.paper.paper_id` 取值会抛错；现改为 `library-changed` 并刷新论文库列表。
+- 修复多源检索丢失 arXiv 开放获取回退：Semantic Scholar 条目只读 `openAccessPdf`，导致仅有 arXiv 标识的论文被误判为“无公开 PDF”、导入按钮被禁用；现恢复 arXiv PDF 回退并补充单测。
+- 优化文献筛选页加载：计数改为 SQL 聚合、当前页只加载本页论文，避免每次翻页扫描全库论文与摘要。
+- 新增论文对照翻译（G-42）：论文详情页可按章节生成逐段中英对照，返回页码与章节定位，支持长文截断与未翻译片段显式标注；译文只在响应中返回，不写入数据库与证据库，避免把模型译文当成可引用证据。新增 `POST /api/research/databases/{kb_id}/papers/{paper_id}/translate` 与 `research_translate_paper`，界面与 AI 工具共用同一服务；单次最多 12 个片段。
+- 补充自助改密回归测试（G-44）：已有 `POST /api/auth/password` 与账户设置页密码表单，本次覆盖旧密码错误、新旧密码相同、成功更新哈希、短密码 422、旧 Token 401 与新 Token 200，验证修改后旧密码与旧 Token 均失效。
+- 新增跨库查重（只读）：`GET /api/research/duplicates/cross-library` 枚举当前用户可访问的 Milvus 知识库，按 DOI（优先）/归一化标题汇总跨库重复论文，只报告不合并；查重弹窗新增“跨库查重”入口，AI 侧新增 `research_find_cross_library_duplicates`。跨库合并需先确定保留库与原文、证据和项目资产的迁移策略，本轮不做。
+- 新增知识库迁移包（ZIP）：`GET /api/research/databases/{kb_id}/export-bundle` 打包 `manifest.json`、`papers.csv`、`files.csv`、`graph/citation_graph.csv` 与 README；图谱未同步时降级为说明行而不阻断导出；论文库“导出数据”菜单新增“知识库迁移包（ZIP）”，AI 侧新增 `research_export_kb_bundle`。包内不含原文二进制与向量，恢复后请用“校验清单”核对。
+- 接入本地向量与重排推理服务并切换系统默认模型:新增 OpenAI 兼容的本地推理服务(端口 19100,`paraphrase-multilingual-MiniLM-L12-v2` 384 维与 `BAAI/bge-reranker-base`),注册为内置供应商 `local-embedding` 并在引导时启用;系统默认 `embed_model` 与 `reranker` 切换为本地模型,界面建库、检索与综述不再依赖 SiliconFlow。重排请求超时支持 `RERANK_TIMEOUT_SECONDS` 覆盖(默认 30 秒),适配本地 CPU 推理处理大候选集。模型更换会改变向量维度,已有知识库需重建。
+- 修复科研检索聊天模型解析缺省回退:按请求参数、知识库配置、系统默认模型三级解析,与综述链路一致;空白配置视为未配置,避免知识库未填模型时整条检索链路不可用。补充单元测试。
+- 修复带时区时间戳被写入 8 小时偏移:业务代码统一用 `utc_now_naive()` 生成 naive UTC,而 asyncpg 在写入 `timestamptz` 时把 naive datetime 当作本地时区(Asia/Shanghai),导致检索运行、证据活动、通知等记录的时刻整体提前 8 小时。现新增 `UTCDateTime` 类型装饰器(`storage/postgres/column_types.py`),在绑定参数层把 naive 统一标注 UTC、aware 统一转为 UTC,并替换全部知识库模型列与 `UserNotification`,调用点零改动,同时覆盖 `update().values()` 查询写入;无时区业务表保持原有 naive UTC 约定不变。已用真实检索验证新写入与本地日志时刻一致。历史数据仍为偏移值,未做批量回填。
+- 新增本地开发环境启动指南:覆盖共享数据容器、本地推理服务、前后端启动顺序、配置 文件、健康检查与常见故障处理,见 `docs/develop-guides/local-dev-environment.md`。
+- 修复智能体运行卡在 pending 导致对话界面无任何反应:后台任务依赖 ARQ worker 消费 Redis 队列,worker 未启动时 run 入队后无人消费,而运行服务对卡住的 run 既不报错也不超时,前端 SSE 流无限等待,用户侧表现为发送消息后一直停在「停止回答」。现为 `pending` 超过 `RUN_PENDING_TIMEOUT_SECONDS`(默认 60 秒)的 run 自动置为 `failed`(`error_type=worker_unavailable`)并回传错误与结束事件,放行新请求前先释放这类僵死 run 避免线程锁死;前端错误事件兼容 `error_message` 字段以展示可定位文案。
+- 修复研究助手场景下无法切换智能体:研究助手会话按「知识库+项目」作用域绑定,`POST /api/research/copilot/thread` 为幂等 ensure,路由切到无 `thread_id` 时前端会立即重新绑定同一条作用域会话,配合下拉按是否存在当前线程禁用其他智能体项,形成无法切换的死路。现切换智能体时先切智能体再清空当前线程并同步地址栏,切回研究助手时显式重新绑定作用域会话,下拉项不再置灰并提示「切换智能体将开启新对话」。
+- 修复沙箱服务不可达时工具返回不可定位的错误:沙箱客户端在地址解析失败时直接抛出 `httpx.ConnectError`,调用方只看到 `[Errno 11001] getaddrinfo failed`,无法区分是沙箱服务未启动还是地址配错。现将该异常转换为带当前地址与排查方向的 `RuntimeError`;同时在本地开发环境启动指南中补齐沙箱服务(sandbox-provisioner)的启动步骤、宿主机与容器内两套访问地址的配置位置、健康检查与故障排查条目,并在容器编排中把宿主机可见地址与容器网络地址拆分为两个独立配置项。
+- 论文资料库新增多格式导出：除原有 BibTeX 外，支持 Markdown 文献收藏、RIS（EndNote / Zotero / Mendeley 兼容）、CSV 与纯文本列表，统一入口为 `GET /api/research/databases/{kb_id}/papers/export/{export_format}`，沿用知识库访问权限校验，非法格式返回 422 结构化错误。BibTeX 复用既有转义与引用键生成，新旧接口输出一致；CSV 使用 UTF-8 BOM 并对公式样式单元格加前导单引号；Markdown 与 RIS 对换行字段做单行压缩。格式设计参考 LitScan 项目 `core/exporter.py`（MIT License），代码按本仓库论文模型重写，未新增第三方依赖。前端论文工具栏的单一 BibTeX 按钮改为导出下拉菜单。
+- 论文库新增元数据自动补全：`POST /api/research/databases/{kb_id}/papers/{paper_id}/metadata/enrich` 按 DOI（优先）或标题从 Crossref 回填 DOI、摘要、作者、年份、期刊、关键词与引用数，Crossref 未命中时用 Semantic Scholar 严格标题+年份匹配兜底；只写入空字段，人工校正过的值不会被覆盖。有原文文件的论文沿用“元数据修订 → 重建学术分块与检索索引”流程并返回同步任务，只有元数据的记录直接更新、不提交索引任务。前端论文详情抽屉在“校正元数据”旁新增“补全元数据”，AI 研究助手同步新增 `research_enrich_paper_metadata`，两条通道共用同一服务与权限校验。补充 14 项单元测试。
+- 修复文献卡片导出接口不可用：`GET /api/research/databases/{kb_id}/papers/cards` 声明在同层参数路由 `/papers/{paper_id}` 之后，被当作 `paper_id=cards` 匹配并返回“论文不存在”。现将字面量路由前移到 `/papers/archived` 之后，并新增路由顺序守卫单测（扫描全部 356 条接口，确认无其它字面量路由被参数路由遮蔽）。
+- 新增首次使用引导：首次进入科研罗盘自动弹出“建库 → 上传 → 检索 → 综述”四步引导，未完成步骤可“去完成”直达知识库管理或对应工作区，可跳过、可点“使用引导”重新打开与重新检查；步骤完成状态由 `GET /api/research/onboarding` 按真实数据判定（可访问知识库数、本人上传文件数、成功检索数与成功综述数），不存引导进度也不使用演示数据。
+- 新增研究工具调用签名守卫：解析 `tools.py` 中全部 `from yuxi... import ...` 调用（当前 201 处）并与实际函数签名比对，关键字拼错或缺少必填参数会在单测阶段直接失败，避免只在真实对话中报 ToolException；同时把 `docs/agents/tools-system.md` 的科研工具表从 77 条补齐到 93 条（含笔记、筛选、关联文献、引用文件导入、单篇对话、归档清单、元数据补全与评估基准上传），并新增文档同步守卫与 `RESEARCH_TOOLS` 双向比对。
+- 修复重复合并把论文移出统计却仍留在论文库的问题：归档改用独立字段 `academic_papers.archived_at`，不再占用 `metadata_status`；论文库列表、导出、检索范围、趋势、机会与图谱同步统一排除归档论文，恢复只清空归档时间并保留原有元数据状态（不再把 `verified` 降级为 `extracted`）。新增 `GET /api/research/databases/{kb_id}/papers/archived` 与 `research_list_archived_papers` 供核对与恢复，合并与恢复进入审批名单；查重弹窗新增“已归档”清单，管理员可逐篇恢复并刷新论文库与重复分组；合并与恢复改为知识库写权限（管理员）。启动迁移会把历史 `metadata_status='archived'` 的行回填为归档时间并校正索引修订号（幂等）。真实 PostgreSQL 事务内验证归档前后可见性（归档后不可见、归档清单可查、恢复后可见），测试已回滚无残留数据。
+- 修复引文滚雪球把已归档重复条目再次导入的问题：滚雪球的“已入库”判定改为包含归档论文（与参考文献导入一致），避免合并隐藏后又被滚雪球重新建记录；真实库验证默认口径不含归档、含归档口径可见，临时数据已清理。
+- 修复单篇论文对话始终提示“没有可用于回答的正文片段”：知识库召回把 `chunk_id` / `chunk_index` 放在 `metadata` 内，对话服务按顶层字段读取导致上下文渲染为空。现兼容两种结构并补充真实召回结构的回归测试；真实问答验证返回 668 字回答与 6 条引用（4 条被引用）。
+
+- 修复真实 Chromium 浏览器回归中 Ant Design 模态框按钮可访问名称包含空格导致的定位超时:项目、里程碑、任务与风险保存统一使用模态框主按钮选择器;在 Docker 运行的真实账号回归已通过。
+- 扩展真实 Chromium 回归的导出验收:通过研究项目界面点击“导出报告→CSV 数据”,等待实际浏览器下载并校验文件名扩展名,覆盖从用户操作到文件交付的完整路径。
+
+- 新增科研项目风险登记与处置闭环:风险支持等级、责任人、缓解措施、截止日期及 open/mitigating/accepted/resolved/closed 状态机;所有创建和状态变化记录操作者、时间与前置条件。补充已有数据库运行时建表、索引、项目权限和责任人存在性校验,不存在风险或无权限访问时返回明确业务错误。
+- 补充风险闭环真实 PostgreSQL 集成测试:验证风险和审计持久化、合法/非法状态转换及责任人存在性校验;前端风险 API 契约纳入编码与请求体回归测试。
+- 浏览器回归新增风险登记路径:真实 Chromium 流程覆盖风险 tab、登记表单及风险保存;未配置 E2E 环境时继续明确跳过。
+
+- 新增科研项目内置模板闭环:提供“系统综述”和“实证研究”模板目录,新建项目时可选择模板并自动生成阶段与任务;模板实例化失败会执行补偿删除,不会保留半成品项目。前端提供模板选择与说明,后端模板目录和项目创建参数均受登录权限保护,补充模板目录单元测试与 API 契约测试。
+
+- 新增普通用户通知中心:在主布局侧栏提供未读数量角标、通知列表、手动刷新与 30 秒轮询;点击任务完成、失败或审批等待通知即可标记已读。通知接口对查询参数和资源标识进行编码,加载失败时给出明确提示;补充前端 API 契约测试。
+- 修复通知未读角标受分页上限影响的问题:通知查询现在返回用户全量 `unread_total`,前端角标使用精确总数,标记已读后即时同步;后端 Ruff 与前端 77 项单测、Lint 回归通过。
+
+- 扩展真实 Chromium 浏览器回归到科研项目写操作闭环:通过可视界面创建项目、里程碑和任务并将任务切换为已完成;为计划操作补充稳定的 data-testid 定位标识。测试仍需显式配置浏览器与账号,不把缺少环境伪装为通过。
+
+- 修复科研检索在向量服务余额不足或暂时不可用时直接阻塞的问题:仅在异常链明确指向 Embedding 失败时切换到 Milvus BM25 关键词召回,关闭不适用的重排,并在响应配置中标记 `retrieval_degraded` 与原因;其他检索/数据错误仍显式失败。ModelScope 凭据改为通过 `MODELSCOPE_ACCESS_TOKEN` 运行时环境变量注入,数据库不再保存明文 API Key,并补充降级判定单元回归测试。
+- 锁定已通过真实 Chat 与应用适配器验证的 `deepseek:deepseek-chat` 作为默认、快速响应和内容审查模型,避免配置缺失时回落到余额不足的供应商。
+- 加固证据生命周期并发边界:证据状态转换使用数据库行锁,避免并发操作绕过前置状态;重复录入同一知识片段返回明确的 409 冲突而非数据库 500。状态转换同时要求知识库写权限,普通共享读者不能再把证据置为 verified 并进入综述引用链。
+- 修复研究计划状态审计的前置状态记录:里程碑/任务更新现在先保存旧状态再写入活动日志,`from_status` 不再错误地记录为更新后的状态,确保状态机时间线可重放。
+- 外部论文导入改为先持久化可恢复任务:Semantic Scholar 元数据/PDF 获取、对象存储上传及文件记录创建在任务 handler 内执行,临时依赖故障可进入统一重试态;阶段性 `file_id`/元数据写回任务 payload,避免解析失败重试时重复下载和创建文件记录。公开导入入口按 `{kb_id, identifier}` 对 pending/running 任务做唯一入队,重复点击返回同一任务,不再产生重复下载与索引;前端成功提示改用结果列表中的论文标题,不再读取后端未返回的 `title` 字段而显示空值。
+- 增加外部论文导入阶段幂等恢复:任务在文件记录已创建但 payload 检查点尚未写回时,按知识库和 Semantic Scholar 标识复用已有文件,避免重试重复下载与上传。
+- 新增证据引用审计查询接口 `GET /api/research/evidence/{evidence_id}/citations`,返回综述运行、运行状态、操作者和引用时间,并复用知识库权限校验。
+- 提升操作审计可观测性:操作日志持久化失败仍遵循既有“不回滚业务请求”语义,但不再静默吞异常,现在记录操作名、用户标识和异常类型,便于监控审计链路缺口。
+- 补充项目报告 CSV 导出内容级回归测试:覆盖标题、备注和任务描述中的公式样式输入,确认导出会添加前导单引号以阻止表格软件公式注入;导出 DOCX 的 ZIP 文件头与可打开性断言保持覆盖。
+- 修复任务取消通知语义:取消终态现在写入独立的 `task_cancelled` 类型并显示“任务已取消”,不再被错误归类为失败通知;新增任务服务回归测试覆盖通知载荷和幂等键。
+- 收紧证据运行时数据库完整性:证据活动表使用带时区时间戳并补充证据到知识库及活动到证据的幂等外键约束,避免运行时建表与 ORM 模型漂移后产生孤立记录。
+- 补齐科研检索失败可观测性:向量检索/重排异常现在在检索运行记录中持久化 `retryable` 与 `dependency`,并在运行详情中返回,便于明确区分暂时性基础设施故障与业务输入错误。未知异常不再一律标记为可重试:仅超时、连接、限流与 vector/model 依赖失败保持可重试,确定性业务错误标记为不可重试,避免无效重放。
+- 新增科研检索失败重试接口 `POST /api/research/search-runs/{run_id}/retry`:仅允许当前用户重试可重试失败,最多 3 次,每次创建保留父运行的子运行并继承原检索配置。
+- 科研检索工作台接入失败重试入口:仅当历史运行标记为可重试时显示“重试失败运行”,提交后自动刷新并打开新的子运行,不可重试的业务错误继续使用普通按配置重跑。
+- 新增真实 Chromium 浏览器回归场景 `backend/test/e2e/test_browser_regression.py`,覆盖可视登录、科研助手/研究工作台/知识库入口路由和通知 API 会话访问;默认不运行,需显式设置 `BROWSER_REGRESSION=1` 与 E2E 凭据,浏览器或服务未准备好时明确跳过,不把 HTTP E2E 冒充浏览器通过。
+- 新增 `backend/scripts/performance_baseline.py` 可重复性能基线工具,并行测量科研搜索与任务查询接口的请求数、并发数、错误数、状态分布及 P50/P95/P99/最大延迟;支持调用方显式传入 P95 预算,超预算或请求失败时返回非零退出码。工具只报告真实运行结果,不内置虚假达标数字。
+- 研究项目报告导出新增 CSV 格式:复用同一份已授权项目/计划/成果快照,以 project、milestone、task、asset 行类型输出可追踪父子关系、状态、截止日期和成果可用性,并使用 UTF-8 BOM 兼容常见表格软件;Markdown/DOCX 行为保持不变。
+- 科研助手运行进入 `human_approval_required` 或 `ask_user_question_required` 状态时,在运行终态记录成功后持久化写入审批/问题通知,使用运行级幂等键避免重复提醒;通知存储异常仅记录日志,不会回滚运行状态。补充审批通知单元回归测试,并修复 `UserNotification` 模型缺少 `UniqueConstraint` 导入导致的模块加载错误。
+- 修复思维导图生成对模型响应格式过于脆弱的问题:解析器现在支持 JSON 代码围栏和带说明文本的响应,并递归校验节点与 children 结构;对空响应、未闭合围栏、截断或非法节点返回明确格式错误,避免生成损坏数据。新增单元回归覆盖合法包裹响应和异常结构。
+- 修复部门删除在默认部门主键不为 1 或默认部门缺失时的错误处理:原路由硬编码将用户迁移到部门 ID 1,在真实数据库中可能触发外键 IntegrityError 并返回 500;现按“默认部门”业务标识解析真实主键,缺失时返回明确的 409,并补充按业务标识验证迁移结果的集成断言。
+
+- 修复研究项目完成状态的并发一致性：原项目/里程碑完成检查与状态写入分属不同事务，并发任务可能在检查后提交，形成“已完成但仍有开放任务”的矛盾状态。现于项目或里程碑行锁保护下复查开放任务，并在计划写事务提交前确认项目仍为进行中；竞态失败统一返回既有 409 业务错误，新增真实 PostgreSQL 双向交错回归测试。里程碑与无里程碑分组的任务创建、以及任务迁入无里程碑分组时，均在分配 `sort_order` 前锁定项目行，并发写入不再读到相同的最大序号；项目已有任务时更新接口不再静默丢弃 `progress`，改为返回 `project_progress_managed_by_tasks`（HTTP 422），提示调用方更新任务状态。
+- 修复 pnpm 10.11 依赖覆盖配置失效：原 `package.json` 中的 `pnpm.overrides` 已被当前 pnpm 明确忽略，虽然现有锁文件仍保留安全版本，但后续重建锁文件可能丢失覆盖。现将覆盖规则迁移到 `pnpm-workspace.yaml`，并让 Web 开发/生产镜像在安装依赖前复制该配置，依赖版本本身保持不变。
+- 修复后端单元测试在 Windows 宿主机上的可移植性：运行时配置测试将未转义的 Windows 路径写入 TOML，导致 fixture 本身解析失败；工作区文件导入测试使用文本模式生成平台相关换行，却固定断言 Linux 字节。现分别使用安全转义的 TOML 字符串和确定的二进制样本，保持测试只验证真实业务行为。
+- 修复科研请求边界的空标题校验：新建里程碑和任务时，原校验会先接受纯空白字符串再将其裁剪为空值，导致空标题可进入服务层并落库；论文元数据更新显式传入 `title: null` 时，原校验器会对 `None` 调用 `strip()` 并抛出内部异常。现统一在请求模型中返回规范的 422 校验错误，并补充单元回归测试。
+- 修复 Node 24 前端单元测试模块桩兼容性：Node 24.14 的 `mock.module()` 仅识别 `namedExports`，24.15 起改用 `exports` 并弃用旧字段，原测试无法同时覆盖两侧版本。现集中按运行时版本生成兼容选项，使基础 API、知识库 API 与科研 API 测试在项目使用的 Node 24 版本中都能执行真实断言且不产生字段弃用告警。
+- 完成 2026-07-28 全项目审计问题闭环：修复 Agent SSE 取消时 PostgreSQL 会话清理可能被再次取消、校验异常原始输入落日志、外部知识库文件与 Dify/Notion 参数错误误报 500、严格图谱检索低排名种子因 PPR 截断触发 `KeyError`；统一 SubAgent 默认禁用敏感工具的安全语义，补充 Semantic Scholar 5xx/超时/网络错误有限重试，异常历史用户评测数据改为显式领域错误，LITE_MODE 在导入科研恢复模块前跳过恢复。统一 pytest session 事件循环和数据库 fixture 生命周期，更新真实文件入队、Viewer 二进制、思维导图及 SubAgent E2E 契约，缺少集成测试管理员凭据或 SubAgent E2E 权限时显式失败，不再以 skip 掩盖环境错误；升级 DOMPurify 并固定安全版本的 PostCSS/Undici。修复后后端 unit、integration、E2E，前端测试、ESLint、生产构建与生产依赖扫描均通过，全仓 Ruff 格式/质量门禁和 Python 依赖一致性检查通过。
+- 修复 Redis 临时故障放大与 worker watcher 崩溃导致正在执行的长任务被取消（R-10）：runtime config sync 线程改为复用单一 Redis 客户端，不再每 5 秒重新解析 Docker Redis DNS；Redis 临时不可用时继续使用已有本地模型快照，缓存重建后保留本地快照，避免短暂故障导致模型列表变空或重复阻塞。worker service command 从外层 `watchfiles` 包装改为直接 `uv run --no-sync --no-dev arq server.worker_main.WorkerSettings`，根因是 Docker Desktop on Windows 下 `WatchfilesRustInternalError: Cannot allocate memory (os error 12)` 偶发崩溃会向 worker 发送 SIGINT 并取消正在执行的 PDF OCR Agent run（第一轮 E2E 唯一失败）。修复后第二轮完整 E2E 11 passed、0 skipped；worker 不再自动热重载，代码变更需重启 worker，这是稳定性与开发热重载之间的明确取舍，API 仍保留 uvicorn reload。
+- 完成依赖漏洞审计与全量回归复验：用 `pip-audit 2.10.1`（查询 OSV 数据库）对容器内 305 个已安装包执行真实扫描，发现 34 项已知漏洞涉及 9 个包（pillow 12.2.0 13 项、pypdf 6.13.3 4 项、pyasn1 0.6.3 3 项、setuptools 81.0.0 2 项、json-repair 0.59.10、langsmith 0.8.7、mcp 1.27.2、nltk 3.9.4、pydantic-settings 2.14.1 各 1 项），记录为待处理依赖升级技术债不混入本轮功能修复；无法审计 torch/torchvision CPU 版本与项目自身 yuxi 包。重跑全量后端回归：unit 1505 passed/1 skipped（MinerU OCR 服务未启动）、integration 187 passed/4 skipped（需 `RUN_MODEL_PROVIDER_CONNECTIVITY=1`），无跨事件循环或连接泄漏。从零 `docker compose down --remove-orphans` + `up -d --build` 重建成功，10 个服务全部启动且基础设施 healthy，worker-dev restart=0，api-dev 启动时 1 次 watchfiles 内存错误致重启后稳定 healthy（Docker Desktop 已知问题），Redis 无 DNS 错误。真实用户主链路浏览器走查 8/8 通过（登录/ResearchCompass 首页/Agent 对话/附件上传/知识库入口/业务子页面/页面跳转）。
+- 商业化审核与登录链路改进：从商业 SaaS 视角对系统进行端到端走查与多维度静态深审，发现并修复多项阻断性问题。恢复缺失的超级管理员账号 `zwj`（数据库中实际不存在导致登录失败），强化登录页 UX：未勾选协议时登录按钮 disabled 并显示"请先勾选协议"，新增"没有账号？立即注册"和"忘记密码？"辅助链接。
+- 新增用户自助注册能力（商业版本必备）：后端 `auth_router.py` 新增公开接口 `POST /api/auth/register`，支持用户名+密码+可选手机号自助开户，自动生成 UID 并分配到默认部门，仅创建普通用户角色（无法通过此接口创建管理员）；接入 `LoginRateLimitMiddleware` 限流（10 次/分钟）防滥用。前端新增 `RegisterView.vue` 注册页（复用登录页品牌布局，含用户名/密码/确认密码/手机号字段+协议勾选+成功提示+自动跳转登录），`auth_api.js` 新增 `register` 函数，`router/index.js` 新增 `/register` 路由。curl 验证：注册成功返回 200+UID，重复用户名返回 409，密码过短返回 422，限流生效；浏览器验证：注册→登录闭环成功。
+- ResearchCompass 完成品牌资源改头换面：用矢量 SVG 替换上游 Yuxi 框架默认的黄色猫头 favicon、avatar.jpg 与 login-bg.jpg，统一为科研罗盘主题。新的 `favicon.svg` 以青蓝色（#046a82）罗盘 + 红北白南指针 + 学术书本小标呈现品牌识别；新增 `avatar.svg` 圆形罗盘头像用于侧边栏；新增 `login-bg.svg` 渐变背景图，包含知识图谱节点连线、中央大罗盘水印、论文文档剪影和"ResearchCompass 科研罗盘"标题文案。`info.template.yaml` 中 organization.avatar 与 organization.login_bg 同步从 `.jpg` 改为 `.svg`，`LoginView.vue` 兜底路径同步更新，删除原默认图片资源。
+- 强化对话智能体的品牌身份约束：`chatbot/prompt.py` 的系统提示词增加显式身份声明规则，禁止 AI 自称「语析」「Yuxi」「yuxi」等任何其他名称，避免 LLM 从工作区路径或包名中误读为系统别名；调整后 AI 在被询问身份时稳定自称 ResearchCompass（科研罗盘）。
+- research-copilot 新增对话内综述导出能力：新增 `research_export_synthesis` 工具，用户在对话中要求"导出综述为 MD"时，AI 调用该工具将已验证成功的证据综述导出为 Markdown 或 DOCX 文件并写入沙盒交付物目录，再通过 `present_artifacts` 工具以可下载文件卡片的形式展示给用户。此前用户只能手动到 /research 工作台点击导出按钮，现在可在对话中直接完成导出。补充跨知识库拒绝和文件写入单元测试。
+- 修复外部论文导入在 Semantic Scholar 返回整数型 `CorpusId`/`PubMed` 外部标识时失败的问题：原 `external_ids` 校验仅接受字符串值，整数标识会触发 `paper_metadata_invalid` 错误；现接受 `str` 与 `int` 类型并将 int 转为字符串存储，同时显式拒绝 `bool`、`list`、`dict` 等无效类型，避免把列表/字典无意义地 `str()` 化。补充单元测试覆盖 int 转字符串与 bool/list 拒绝场景，配置 `SEMANTIC_SCHOLAR_API_KEY` 后完成外部论文导入、引用图谱同步、严格图谱检索与证据综述导出的完整链路验证。
+- ResearchCompass 新增贯穿研究工作台的对话式 AI 研究助手：完整模式登录后默认进入科研罗盘，Lite 模式继续以通用助手为入口；桌面端可在工作区侧栏持续对话，小屏端通过全高抽屉使用。助手会显示并持久化当前知识库、研究项目、页面区域和选中对象，切换项目时隔离会话，刷新后可继续原线程。助手复用现有 Agent 流式运行、工具状态和 Human-in-the-Loop 审批，通过正式领域服务读取项目全貌，创建或更新项目、里程碑与任务，执行论文检索和证据综述，并将成果归集或关联到执行计划；所有读写继续沿用当前用户、知识库和项目权限边界，删除、完成、归档及移除关系等敏感操作必须经过审批。工具完成写入或异步任务后会刷新对应结构化工作区，通用助手和管理入口继续保留为高级能力。
+- 通用对话页（/agent）支持双入口并存：research-copilot 智能体可在通用对话页直接选择，选中后输入区显示知识库和研究项目选择器，切换上下文时自动创建或恢复对应研究会话线程；未选择知识库时禁用发送，避免无上下文对话。默认回退仍为 default-chatbot，research-copilot 不会替代通用助手作为默认智能体。
+- 对话页升级为科研主交互入口：默认入口从 /research 改为 /agent（科研助手），底层默认 agent 从 default-chatbot 替换为 research-copilot，复用框架原生对话页的工具调用展示、文档加载和流式渲染能力；用户进入即自动选中第一个知识库并创建研究会话线程，无需手动切换。/research 工作台保留全部现有功能作为结果检视器和备用入口，两个入口功能一致、均可独立使用。default-chatbot 仍在智能体切换列表中可选。导航"通用助手"更名为"科研助手"以反映新定位。侧边栏新增"新对话"直接入口（带 Plus 图标），无需打开搜索弹窗即可新建会话。修复 `chatThreads.loadThreads` 在拉取会话列表时覆盖 `upsertThread` 注入的科研会话并清空 `currentThreadId` 的问题：后端按 `source` 过滤会从通用列表中排除 research_copilot 会话，导致 `ensureResearchThread` 刚切到的会话被后续 `loadChatsList` 抹掉，发送消息时回退到新建普通会话触发 `invalid_copilot_thread` 409；现在 `loadThreads` 会保留当前选中的会话条目，确保科研助手会话在列表刷新后仍可用。同时修复从已有会话点击"新对话"时 `ensureResearchThread` 不触发导致的 409 错误：`AgentView.vue` 的 `route.params.thread_id` watch 中，当 thread_id 为空且 research-copilot 已选中并有知识库时，追加调用 `ensureResearchThread()`，确保新建会话立即绑定到研究会话线程。数据总览页面的 ECharts 改为按需引入（core + charts + components + renderers 分模块加载），替代全量导入，减少首屏依赖体积并避免 Docker 开发环境中单文件传输超时而导致的模块加载失败。
+- 修复测试环境智能检索返回 0 结果的问题：排查发现历史测试数据被错误索引到 Milvus `default` 数据库，而应用代码正确使用 `yuxi` 数据库（通过 `db.using_database` 显式切换），导致 `yuxi` 库中的集合虽存在但为空、所有向量与 BM25 搜索均返回 0 命中。通过重置文件状态为 `parsed` 并调用文档入库 API 将数据重新索引到正确的 `yuxi` 数据库，同时将论文元数据状态从 `pending_reindex` 更新为 `extracted` 以满足 `list_file_ids_by_filters` 的过滤条件。修复后 `local_hybrid` 模式检索正常返回论文与证据片段，向量、BM25、混合与重排分数均正常计算。
+- 智能检索新增严格图谱模式前置校验：选中"严格图谱"检索模式时自动查询引用图谱状态，图谱未同步或论文/引用关系为空时显示黄色警告并拦截检索提交，引导用户先同步图谱或切换为"本地混合"模式，避免提交后才收到 `graph_not_ready` 错误。智能体编辑弹窗优化关闭交互：取消按钮在图标上传期间同步禁用，遮罩层点击在保存和上传期间禁用，避免操作不一致。主题初始化支持 `prefers-color-scheme`：未保存主题偏好时自动跟随系统暗色模式设置，登录页也能正确适配暗色主题。Semantic Scholar 客户端默认携带 `User-Agent` 请求头，符合 API 最佳实践。开发环境工程化改进：`api.Dockerfile` 调整为安装 dev 依赖组，使容器内可直接运行 `ruff` 进行代码检查与格式化（`make format` / `make lint` 不再依赖宿主环境）；前端 `vite.config.js` 新增 `build.chunkSizeWarningLimit` 配置，消除大型异步 chunk（GraphCanvas、pdfjs-dist、shiki 等已按需加载的第三方库）产生的噪音告警；`.env.template` 补充 `SEMANTIC_SCHOLAR_API_KEY` 配置项及申请指引，明确该 Key 为可选但推荐配置，用于外部论文导入、引用图谱同步和严格图谱检索模式。修复 `test_stream_agent_chat_commits_before_stream_and_persists_langfuse_context` 测试用例：原测试使用非 research-copilot 的 agent_slug 却期望 `research_context` 被注入到运行上下文，与 `_apply_research_runtime_context` 仅对 research-copilot 生效的实现不匹配；修正为使用 `research-copilot` slug 并 mock 线程绑定校验，使测试正确验证 research_context 传播链路。
+- 权限边界深审与 OpenAPI 文档规范化：对 `knowledge_router.py` 和 `research_router.py` 进行权限边界深审，确认 `knowledge_router` 通过路由器级依赖 `_ensure_path_kb_access` 统一校验所有 `kb_id` 路径参数接口的访问权限，`research_router` 的服务层通过 `get_owned_project(uid 过滤)`、`_authorized_run(双重校验)`、`_ensure_access(kb_id 校验)` 等机制完善防护，未发现真实 IDOR 漏洞。`main.py` 的 FastAPI 应用补充 `title`、`description`、`version`、`openapi_tags` 元信息，Swagger UI 文档（`/docs`、`/openapi.json`）展示规范的应用名称与接口分组；`OAuth2PasswordBearer` 已支持文档内"Authorize"按钮鉴权。新增注册功能单元测试 29 项（`test_user_identity_service.py`），覆盖 `validate_username`（合法/非法用户名、长度、字符集）、`generate_uid`（小写化、数字前缀补 u、不可映射名称 fallback）、`generate_unique_uid`（无冲突/单次冲突/多次递增）、`is_valid_phone_number`（合法/非法号码、空值、分隔符归一化）等核心校验逻辑。主导航侧边栏底部新增"使用帮助"入口（`HelpCircle` 图标），与 GitHub 链接并列，链接到文档站点 `https://lpk3215.github.io/ResearchCompass/`，登录页底部已有"问题反馈"和"使用帮助"链接。
+- 忘记密码功能采用管理员重置方案：登录页"忘记密码？"链接点击后提示"如需重置密码，请联系管理员"，管理员通过用户管理页编辑用户时勾选"修改密码"即可重置，无需新增后端接口和邮件/短信基础设施，适合本地部署场景。
+- 阶段 B-F 全链路验收完成：混合检索（local_hybrid）全链路通过——查询改写、向量+BM25+RRF+Cross-Encoder 重排各路评分完整，3 个测试查询 Top1 命中率 100%，PDF 高亮定位 API 可用（Attention 论文含页码+矩形坐标）。知识图谱全链路通过——18/18 篇库内论文全部同步到 Neo4j（500 论文节点/543 引用边/2827 作者），两跳关联以 Attention 为中心可达 41 篇论文，strict_hybrid_citation_graph 检索通过（PPR 扩展 94 篇，Top1 正确命中目标论文）。多 Agent 论文分析全链路通过——LangGraph 四阶段流水线（structure→innovations→methodology→gaps）约 30 秒完成，各阶段输出字段完整。趋势分析数据完整——7 年发表趋势、9 个关键词统计、6 条引用趋势，A/B 盲评评测创建成功（单 Agent vs 多 Agent 对比），SUS 用户评测支持分享链接和 CSV 导出。
+- 修复 Semantic Scholar API 限流导致图谱同步中断：在 `SemanticScholarClient._get` 中添加 1.2 秒请求间最小间隔（仅首次请求生效，重试仍走 backoff 机制），避免连续快速请求触发 429 限流。修改 `academic_graph_sync_service.py` 中无效引用边处理逻辑：将 `raise AcademicGraphSyncError("invalid_citation_edge")` 改为 `logger.warning + continue`，跳过 Semantic Scholar 返回的缺少 paperId/title 的引用边而非中断整批同步。修复后 18 篇论文全部成功同步，strict 图谱检索全链路通过。
+- 修复 `test_export_synthesis_writes_file_and_returns_artifact_path` 在全量并行测试时间歇性失败的问题：原测试使用 `monkeypatch.setattr` 字符串路径 `"yuxi.agents.backends.sandbox.paths.ensure_thread_dirs"`，在全量测试并行运行时因模块 import 顺序问题导致路径解析失败（`AttributeError: 'module' object at yuxi.agents has no attribute 'agents'`）。改为在测试函数内显式 `from yuxi.agents.backends.sandbox import paths as sandbox_paths` 后用对象引用方式 monkeypatch，避免字符串路径解析对模块初始化时序的依赖，全量 unit 测试连续两次稳定通过（1483 passed, 1 skipped）。
+- 前端测试覆盖修复：发现 `web/src/utils/__tests__/` 下 9 个测试文件（passwordValidation、pixelAvatar、svgRenderer、toolApproval、subagentThread、runStreamResume、htmlPreviewRenderer、agentThreadQueueTransition、messageProcessor）使用 Node.js 原生 `assert` 脚本式格式且不在 `test/unit/` 目录下，导致 `npm run test:unit` 从未执行它们（"死测试"）。将其全部迁移到 `web/test/unit/` 目录并统一改写为 `node:test` 格式（`test('name', fn)` + `assert`），删除空目录。迁移后前端测试从 22 项增至 74 项（新增 52 项），覆盖头像生成、SVG 渲染、HTML 预览、工具审批、子智能体线程、流恢复、密码验证、消息处理等关键工具函数，全部通过且 ESLint 无告警。
+- 前端代码清理：删除 `useGraph.js` 中 `handleNodeClick`/`handleEdgeClick` 的 2 处 `console.log` 调试残留（`Node clicked`/`Edge clicked`），删除 `config.js` 中 `refreshConfig` 函数的 `console.log('config', data)` 调试残留。删除未被任何代码引用的遗留资源 `web/src/assets/defaults/agent.png`（品牌资源已替换为 SVG）。清理 `.gitignore` 中已失效的 `web/src/utils/__tests__/` 规则（目录已删除）。
+- 修复后端全量测试收集错误：`test/unit/routers/test_system_router.py` 与 `test/integration/api/test_system_router.py` 同名导致 pytest 同时收集 unit+integration 时报 `import file mismatch` 错误。将集成测试文件重命名为 `test_system_api.py` 以消除 basename 冲突，修复后全量测试（unit+integration+e2e）1515 passed, 168 skipped, 0 errors。
+- 前端死代码清理：删除未被任何文件引用的 `web/src/utils/agentPanelAutoOpen.js`（自项目初始化以来无消费者）和 `web/src/assets/icons/sidebar_left.svg`/`sidebar_right.svg` 两个未引用图标资源。
+- 前端死代码组件清理：删除6个自项目初始化以来未被任何文件引用的 Vue 组件（共741行）：`ViewSwitchHeader.vue`、`LoadingComponent.vue`、`MarkdownContentViewer.vue`、`HeaderComponent.vue`（唯一引用者 ViewSwitchHeader 已先行删除）、`ThemeToggle.vue`（暗色模式通过 theme.js store 实现）、`ChartTool.vue`（不在 ToolCallingResult/index.js 导出中）。清理后前端构建、ESLint、74项测试全部通过。
+- 文档与代码一致性修复：`toolRegistry.js` 的 `TOOL_ICON_MAP` 补全 25 个 `research_*` 工具、`download_kb_file` 与 `install_skill` 图标映射（此前这些工具调用在前端无对应图标）；`docs/agents/tools-system.md` 新增"科研工具 (research)"章节列全 25 个工具，修正 `get_common_kb_tools()` 代码注释为实际返回的 7 个工具（含 `search_file`、`download_kb_file`）；`docs/advanced/configuration.md` 补全 `app.py` 中 9 个配置项的参考表格（含默认值、类型、是否可运行时修改）和 11 个关键环境变量说明；`docs/intro/research-compass.md` 新增"Semantic Scholar API Key 配置"章节说明 `SEMANTIC_SCHOLAR_API_KEY` 的用途与申请入口。
+- 文档品牌统一：将 `docs/agents/sandbox-architecture.md`、`docs/advanced/api-key-integration.md`、`docs/advanced/branding.md`、`docs/advanced/third-party-auth.md` 中将 "Yuxi" 作为产品名引用的描述统一替换为 "ResearchCompass"（保留"开源智能体框架 Yuxi 提供"的框架归属说明），URL 占位符 `your-yuxi-server`/`<your_yuxi_host>` 同步更新为 `your-researchcompass-server`/`<your_researchcompass_host>`。
+- 消除科研代码中 `_now()` 函数的 9 处重复定义：`research_search_service`、`research_synthesis_service`、`research_project_service`、`research_user_study_service`、`academic_graph_sync_service`、`academic_paper_analysis_service`、`academic_paper_analysis_evaluation_service`、`academic_paper_analysis_repository`、`academic_paper_analysis_evaluation_repository` 各自实现了完全相同的 `def _now() -> datetime: return datetime.now(UTC).replace(tzinfo=None)`。统一替换为已有的 `yuxi.utils.datetime_utils.utc_now_naive()`（59 处调用），并清理不再使用的 `from datetime import UTC, datetime`。修改后 unit+integration 测试 1515 passed/168 skipped，ruff 全部通过。
+- 消除 `research_router.py` 中 11 个 `_xxx_http_error` 函数的结构重复：原 `_search_http_error`/`_synthesis_http_error`/`_graph_http_error`/`_analysis_http_error`/`_analysis_evaluation_http_error`/`_trend_http_error`/`_opportunity_http_error`/`_paper_import_http_error`/`_user_study_http_error`/`_project_http_error`/`_copilot_http_error` 每个都重复"`status = {字典}.get(exc.error_type, 502)` + `HTTPException(...)`"模板。提取 `_to_http_error(exc, status_map, *, headers=None, default_status=502)` helper 和 11 个 `_XXX_STATUS_MAP` 字典常量；59 处调用全部改为直接调用 helper，其中 `_user_study` 调用保留 `Retry-After` header 逻辑。修改后相关 325 测试全部通过、ruff 全部通过。
+- 完成 PyMilvus ORM API 到 MilvusClient API 的迁移：`milvus.py`、`manager.py`、`milvus_graph_vector_store.py` 中所有 `connections.connect/disconnect`、`db.list_database/using_database`、ORM `Collection(using=alias)` 调用全部替换为 `MilvusClient` 实例方法（`client.list_databases/create_database/use_database`、`client.has_collection/drop_collection/describe_collection`、`client.insert/search/hybrid_search/query/delete`）。移除 `connection_alias` 概念，`_get_milvus_collection` 返回集合名称字符串而非 Collection 对象，`_insert_chunks_to_stores` 改为行式 dict 批量插入，`_collection_supports_bm25` 通过 `describe_collection` + `CollectionSchema.construct_from_dict` 验证 schema。同步更新 `test_milvus_kb.py`：移除未定义的 `FakeCollection`，统一使用 `FakeMilvusClient` mock，修正 search 断言参数名（`param`→`search_params`、`rerank`→`ranker`）和 insert 断言（列式→行式 dict）。迁移后 51 项 Milvus 相关测试全部通过，全量 unit 测试 1505 passed/1 skipped，api-dev 日志无 `PyMilvusDeprecationWarning`。
+- 完成依赖漏洞升级（R-07/E-07）：将 `pypdf` 约束从 `>=6.13.3` 升级到 `>=6.14.2`（修复 4 项 DoS/无限循环漏洞），新增 `mcp>=1.28.1,<2.0.0` 约束（修复 WebSocket transport 缺 Host/Origin 校验漏洞，同时避免 mcp 2.0.0 的 `RequestContext` 破坏性 `ImportError`），新增 `pymilvus<3.1` 约束（确保在 ORM API 移除前完成 MilvusClient 迁移）；通过 `uv lock` + `uv sync` 实际升级 pillow 12.2.0→12.3.0（修复 9 项漏洞）、pyasn1 0.6.3→0.6.4（修复 3 项漏洞）、pydantic-settings 2.14.1→2.14.2（修复 1 项漏洞）、json-repair 0.59.10→0.61.7、langsmith 0.8.7→0.10.11。`pip-audit` 从 34 项降至 3 项剩余（nltk 3.9.4 路径遍历无修复版本、setuptools 81.0.0 构建时 Unicode 规范化绕过 2 项，setuptools 83.0.0 因 torch 2.12.1+cpu 依赖链阻断无法升级）。Neo4j `notifications_min_severity='ERROR'` 因 neo4j driver 6.2.0 与 server 5.26.28 不兼容（连接直接失败）已回退，R-08 保留为非阻断技术债。前端 `ResearchCompassView.vue` 的 `.research-content` 新增 `overflow-x: hidden`，修复"用户评测"标签被右侧面板遮挡的问题。从零部署验证通过（`docker compose down --remove-orphans` + `up -d --build`），全量回归通过：后端 unit 1505 passed/1 skipped、integration 187 passed/4 skipped、e2e 9 passed/2 skipped，前端 74 passed、ESLint、生产构建、Ruff 全绿。
+- 修复引用图谱页在千级节点数据下卡死：一次渲染 1300+ 节点、1500+ 边时开启 G6 力导向动画会让布局每帧重算并持续抢占主线程，页面长时间无响应。现将布局动画关闭（一次性收敛）并调整 `d3-force` 迭代与斥力参数，图谱在数秒内完成渲染且可拖动缩放、点选节点查看关系证据。
+- 修复 Semantic Scholar 免费额度被并发请求击穿导致引用图谱同步必然失败：客户端原有的 1.2 秒最小请求间隔只在串行调用时有效，而同步服务用 `asyncio.gather` 并发拉取「引用」与「参考文献」，两个请求同时打到免费额度，稳定触发 429（`semantic_scholar_rate_limited`）。现为 `SemanticScholarClient` 增加 `asyncio.Lock`，把间隔判定与请求发送纳入同一临界区，使并发调用真正排队；修复后一次完整同步处理 11 篇论文、生成 1342 篇图谱论文与 1539 条引用，0 元数据冲突。
+- 修复本地原生启动时根 `.env` 未加载导致模型密钥缺失：`yuxi/__init__.py` 使用相对当前工作目录的 `load_dotenv(".env")`，以 `backend/` 为 cwd 启动时只会读到 `backend/.env`（数据服务地址），而 `DEEPSEEK_API_KEY`、`SEMANTIC_SCHOLAR_API_KEY` 等模型密钥在仓库根 `.env`，导致 `model_providers` 中 `api_key_env` 解析为空、对话一律「智能体运行失败」。现按本地开发环境启动指南统一使用 `uv run --no-sync --env-file ../.env` 启动 API 与 worker，并把运行日志固定输出到 `backend/saves/logs/`，避免同类问题再次出现在“能启动但模型不可用”的隐蔽状态。
+- 完成 90 项浏览器全功能验证并固化为记录：按用户可触达路径覆盖认证、研究工作台 29 项、科研助手 18 项、知识与工具管理 14 项、Agent 管理 7 项、工作区 4 项、数据总览与其它页面 5 项、后端接口 6 组，全部以真实浏览器操作与真实接口请求完成并记录证据，详见仓库内 `docs/project/验证记录-2026-10-20.md`。验证期间另修复 worker 缺失时 run 永久 pending、研究助手无法切换智能体、沙箱地址解析失败三处问题（见同文档修复项 D-1～D-3）。
+- 文档体系重整与上手引导：根目录不再堆放过程文档，立项方案、规划与决策、功能实现跟踪表、历史目标、错误清单与验收记录统一迁入 `docs/project/`（通过 VitePress `srcExclude` 排除发布），根目录只保留入口文件；同时新增两篇面向使用者的指引——《能力全景》回答“它能干什么”，《从选题到成稿》把建库、读论文、找证据、写综述、推进课题、章节映射与自评自证串成一条可执行流水线，并补齐论文结构→平台产出的映射表与可直接复用的提示词。README、README.en、VitePress 导航、`.gitattributes` 导出忽略规则同步更新。
+- 沉淀作者个人编码规范与能力缺口计划：新增 `docs/develop-guides/coding-rules.md`（默认生效的 17 条编码规则，纳入开发指南导航与 AGENTS 文档地图）；新增 `docs/project/2026-10-21-capability-gaps-and-dual-channel-plan.md`，用 G-01 至 G-16 追踪“人工界面 / AI 工具”双通道缺口、产出物闭环与三批修复计划，后续修复均在该文档登记状态与验收证据。
+- 研究域能力双通道补齐：为原先只能在科研罗盘工作台点击的能力补上 AI 工具，`research_*` 工具由 26 个扩到 61 个，新增论文分析（运行/读取）、项目报告与论文元数据导出、证据列表/录入/验证/审计、引用图谱同步与网络/两跳关系/冲突查询、趋势与机会、风险登记与状态流转/活动、任务依赖增删、用户评测列表/创建/报告/关闭/CSV 导出、分析对比创建与报告、外部论文搜索与导入、RAG 评估基准与结果查询及发起评估（仅管理员）。工具与 HTTP 路由共用同一 service 与同一套权限校验，导出类工具统一写入沙箱 outputs 并提示调用 `present_artifacts` 交付；证据验证、风险状态流转、依赖移除、评测关闭四类不可逆操作纳入默认审批清单。research-copilot 工具清单与系统提示同步更新，`docs/agents/tools-system.md` 补齐工具表，能力矩阵状态回填 G-01 至 G-09、G-11 为已接入，G-10 部分完成（基准创建与消融实验创建仍待补）。
+- 新增科研交付物服务与四个双通道入口：`research_deliverable_service` 统一渲染文献卡片（元数据 + 最新分析摘要，Markdown/JSON）、论文分析报告 Markdown、单篇论文分层摘要（一句话/一段/一页，模型生成）与组会汇报包（大纲、对比表、讲稿要点，Markdown/单页 HTML）；HTTP 新增 `GET /papers/cards`、`GET /paper-analysis-runs/{id}/export`、`POST /papers/{id}/brief`、`POST /presentation-packs`，工具新增 `research_export_paper_cards`、`research_export_paper_analysis`、`research_generate_paper_brief`、`research_generate_presentation_pack`（工具总数 61 到 65）。界面在论文库导出下拉新增卡片与汇报包入口，在论文分析页新增“导出 Markdown”与“分层摘要”；分析导出同时兼容 `stage_results` 与 `result` 两种运行快照结构，缺字段时显式写“未明确提供”。
+- 论文导出新增期刊引文样式：在 BibTeX/RIS/Markdown/CSV/纯文本之外，支持 GB/T 7714、APA、IEEE 三种参考文献样式。`EXPORT_FORMATS` 新增 `gb7714/apa/ieee` 并统一由 `render_papers_citation` 按存储元数据渲染，作者姓名按原文输出、不做缩写与机构推断，缺失字段直接省略；论文库导出下拉与 `research_export_papers` 工具同步支持三种样式。
+- 引用图谱支持快照导出：新增 `GET /api/research/databases/{kb_id}/academic-graph/export`（`format=csv|graphml`，`limit` 最大 500）与 `research_export_academic_graph` 工具，导出节点（论文/作者/主题）、边（CITES / AUTHORED / HAS_TOPIC）以及最近一次同步运行标识；CSV 用 `record_type` 列区分节点与边并对公式样式单元格加前导单引号，GraphML 对标识与文本转义；界面顶部工具栏新增“导出图谱”下拉。
+- 新增论文结构图（SVG）：`GET /api/research/databases/{kb_id}/papers/{paper_id}/structure-diagram?kind=method|topics` 与 `research_export_paper_diagram` 工具，方法流程图取自最新分析的方法步骤（无分析时回退到结构提取的方法描述），主题图以论文关键词为中心辐射；输出为单文件 SVG，白底、内联样式，可直接在工作区预览与下载；论文分析页新增“结构图”下拉。引用脉络图待 G-22 补齐。
+- 新增科研数据导出：`GET /api/research/databases/{kb_id}/exports/{kind}` 与 `research_export_research_data` 工具，支持 `eval_run`（RAG 评估逐题结果）、`eval_experiment`（消融实验报告）、`trends`（发表与关键词趋势）、`opportunities`（机会排序）四类数据的 JSON/CSV 导出；JSON 带 `generated_at` 与数据指纹（kb_id、run/experiment id、年份区间），CSV 为通用平铺（嵌套字段以 JSON 文本保留）并在首行写入指纹注释。评估类导出仅管理员可用，CSV 页面入口待补。
+- 新增文献对比矩阵：`GET /api/research/databases/{kb_id}/comparison-matrix?paper_ids=&format=markdown|csv` 与 `research_export_comparison_matrix` 工具，2 到 20 篇论文按“论文/年份/来源/研究问题/方法/数据集/结论/局限”成表；内容来自元数据与最近一次分析，未生成分析或原文未说明的单元格标注“证据不足”而非留空；论文库导出下拉新增 Markdown 与 CSV 两项。
+- 新增综述转选题与页面入口：`GET /api/research/synthesis-runs/{run_id}/topics` 与 `POST /api/research/synthesis-runs/{run_id}/topics/tasks` 把已验证综述的研究空白、后续方向与未支持结论整理为选题清单，并可批量建为当前项目任务（1–20 条）；证据综述页新增“转选题”下拉，工具栏新增“导出数据”下拉（趋势/机会 JSON·CSV）。
+- 新增研究工具一致性守卫脚本：`backend/scripts/check_research_tool_parity.py` 比较 `RESEARCH_TOOLS` 定义与 research-copilot 启用清单，不一致时返回退出码 1 并列出差异工具；当前实跑 `defined=72 enabled=72`，用于防止新增工具只改一处导致 AI 拿不到。
+- 统一对外定位口径并限定研究助手能力边界：README 首屏改用“证据可追溯的科研工作台”，并明确写作、协作与投稿不在当前范围；能力全景补充研究助手不执行系统命令、不直接写任意文件的限制，文件类产出统一走导出工具；research-copilot 系统提示同步要求不得声称已保存不存在的文件。
+- 前端设计系统与视觉交互统一改造（系统性优化，非单点调色）：
+  - **令牌层**：`base.css` / `base.dark.css` 补齐交互语义、状态色、背景/边框/填充语义别名、透明变体、遮罩与反色表面、间距/圆角/字号/行高/字重刻度、焦点环、过渡、层级与浮层阴影；主色拆为“填充面”(`--primary-fill*`) 与“文字态”(`--primary-text*`)，浅色与暗色模式各自取到满足前景对比度的色值；`--light-*` / `--dark-*` 半透明族补齐缺失档位。
+  - **Ant Design 打通**：`stores/theme.js` 原先硬编码主色 `#24839b`（与 `--main-600` 差一档）、`colorLink` 直接写 `var(...)` 导致 AntD 无法派生 hover/active、字体栈与正文不一致；现改为运行时读取 CSS 变量构建主题，切换主题时先切 `.dark` 再重建，`App.vue` 挂载后补一次 `refreshTheme()`。按钮、输入框、表格、弹窗、标签、空态、加载态的基础外观自动跟随令牌，不再逐个组件覆写。
+  - **全局样式**：`main.css` 移除全局 `* { font-weight: normal }`（该重置会连同 UA 的 `b { font-weight: bolder }` 一起覆盖，导致 `<strong>` 与标题不加粗），改为显式的 `h1`–`h6` / `p` / `strong` / `small` / `code` / `blockquote` / 列表排版层级，补齐 `:focus-visible` 焦点环、`::selection`、`:target` 滚动避让、`tabular-nums` 数字对齐、长文本断行、锚点滚动避让与 `prefers-reduced-motion` 适配。
+  - **组件层**：约 30 个组件/视图的硬编码色值、阴影与遮罩替换为令牌；`dashboard.css` 重建图表渐变、统计值与表格层级（统计标题去掉 `text-transform: uppercase` 中文不适用）；知识图谱节点/边配色由硬编码 hex 改为运行时读取 `--chart-palette-*` 与语义色令牌，主题切换后不再残留浅色模式色值；图谱构建进度条渐变改为读取 Ant Design 主题令牌。
+  - **缺陷修复**：全仓扫描发现约 20 处引用了未定义的 CSS 变量（如 `--color-error-200/600/800`、`--color-primary-400/600`、`--color-success-200/600`、`--color-warning-200/600`、`--gray-20/30/5/550/650`、`--green-*`、`--main-25`、`--primary-600`、`--primary-color`、`--shadow-100`、`--text-primary`），这类声明会在计算值阶段被整条丢弃，错误/警告文字回退到继承值；已全部映射到现有等价令牌。修复 `AgentFilePreview` 禁用态主色按钮丢失弱化反馈、`--gray-250` 未定义导致 hover 边框失效，以及品牌渐变面板在暗色模式下的前景色。
+  - **规范同步**：`docs/develop-guides/design.md` 补写新的令牌族、Ant Design 同步机制、断点约定与“不得引用未定义变量”的约束；Quick Reference 改为语义令牌优先。
+  - 验证：ESLint 0 问题、前端单测 91/91 通过、生产构建通过；浏览器实测浅色/暗色在桌面、平板、手机三档宽度下无溢出与错位。
+
+## v0.10.0
+
+- ResearchCompass 将“研究项目”升级为完整研究项目执行中心：新增有序里程碑和任务管理，支持任务跨里程碑移动、分组排序、优先级、截止日期、受阻与完成状态；项目进度在存在任务时按完成数量确定性计算，并按逾期、七天内到期和阻塞规则展示可解释健康度。未完成任务会阻止项目完成，里程碑状态随任务完成或重新打开自动同步；已归集的五类研究成果可以多重关联到里程碑或任务，并在源成果失效后继续保留快照和可用性标识。新增不调用模型的 Markdown/DOCX 项目报告，完整包含项目概览、执行计划、关联证据和全部成果。执行计划、成果关系和报告均复用项目所有权及知识库权限边界，写操作进入活动时间线；普通重复关联会在写入前返回业务冲突，不再污染数据库错误日志，前端统一正确处理 `204/205` 空响应，删除项目和执行项后可稳定刷新工作区。桌面、820px 窄屏、390px 移动端和暗色模式完成真实消费者路径验收。
+
+## v0.9.0
+
+- ResearchCompass 新增完整“研究项目”工作区：用户可围绕知识库创建个人课题，管理研究问题、说明、标签、目标日期、进度、下一步行动以及进行中、已完成、已归档生命周期；按类型搜索、分页和批量归集论文、检索运行、证据综述、论文分析与消融实验，维护项目内备注、查看成果统计和最近活动，并从各类成果继续原有研究流程。项目和候选成果同时执行用户、知识库及管理员权限校验，完成后进度固定为 100% 且成果关系只读，归档后项目整体只读；源成果删除后保留快照并明确标记不可用，删除项目不会删除原始成果。桌面、窄屏、移动端和暗色界面均完成真实消费者路径验收，知识库详情深链可保留标签参数并自动打开指定实验报告。
+
+## v0.8.0
+
+- 可复现实验新增固定语料清单导出，确定性记录当前已索引论文的内容哈希、嵌入模型、分块数量和文件大小；消融实验界面新增纯向量、BM25、混合检索、混合检索与知识图谱增强的标准四组预设，减少手工配置偏差，并明确该图谱配置不等同于严格学术引用图谱检索。
+- ResearchCompass 智能检索升级为持久化研究工作台：成功运行保存完整结果快照，历史按用户和知识库隔离并支持分页、置顶、删除、详情恢复和按原配置重跑；运行中记录禁止删除，旧版无快照记录仍保留元数据与重跑入口。前端支持知识库切换请求隔离，并可将研究问题和检索筛选直接带入独立的证据综述运行。
+
+## v0.7.2
+
+- 完成 ResearchCompass 交付收尾基线：统一后端、前端与 Compose 版本，补充科研罗盘 README 和正式用户文档；新增不含秘密的生产环境模板、可重复发布检查脚本、匿名发布归档边界与 PR 检查清单；前端科研 API 契约测试替代原先零测试收集，生产 Compose 支持通过显式环境文件进行配置预检。
+- ResearchCompass 上线前商业级审计（第十三轮）：RAG 消融实验注册为 Tasker 可恢复任务，服务重启后沿用原 task ID；恢复和每个尚未执行的变体开始前都会重新校验创建者未删除、仍具管理员写入角色且仍有源知识库访问权，权限失效会把实验持久化为可解释失败，不再继续调用模型。恢复会跳过已完成且已有完成运行记录的变体，`completed_variants` 改为真实完成数量；外部基线复用完成运行及已落库逐题指标，不会在服务重启后再次调用 Judge、重复写入或重复计费。旧版孤儿实验仅在不存在活跃任务时补建任务，避免与原 task ID 的恢复竞争。评估数据集、运行和实验的全部读写入口补齐逐知识库访问控制，数据集下载/删除会先解析其所属知识库，阻止部门管理员跨知识库读取、导出或删除评估资产。
 - ResearchCompass 上线前商业级审计（第十二轮）：任务执行器新增显式注册的持久化恢复 handler；图谱构建、指定文件解析/入库、按状态批量解析/入库、评估数据集生成与 RAG 评估会持久化恢复所需输入，API 重启或优雅关闭后使用同一 task ID 重新排队执行，用户取消仍保持取消终态。论文元数据同步、论文分析、外部论文导入、学术引用图谱同步与证据综述同样复用原 task ID；前者持久化原操作者并在恢复前重新校验其账户和知识库写入权限，防止失效账户在重启后继续写入，论文分析只重跑未完成的结构化阶段，外部论文导入会将中断的解析状态安全退回可重试状态，学术引用图谱同步逐论文持久化 checkpoint 并对冲突 upsert，证据综述复用已落库的检索快照但仍重新核验证据身份，避免重启后重复检索、重复模型调用或重复外部图谱同步并保持结论可追溯。评估数据集若题目已完整落库会直接完成元数据，否则原子替换题目集，避免重启后重复记录；RAG 评估复用已持久化的逐题结果与指标，跳过已完成题目，不重复检索或调用 Judge。未注册任务继续明确失败，不伪造恢复；上传后新增记录、解析、自动入库的一体化任务因尚未持久化 item 级 file ID checkpoint，暂不自动重放以避免重复创建文档。修复文档解析和入库任务捕获单文件错误后仍返回成功的问题：任务中心现保留完整结果并正确标记 failed，批量任务不再把部分失败伪报为完成；评估任务提交失败也会将已创建的数据集或运行记录写为失败，避免页面永久显示运行中。
 - 安全收敛：任务中心会返回跨业务任务的错误、结果与文档路径，现统一限制为 `superadmin`；普通管理员不再加载、轮询或显示任务中心入口，避免跨部门读取全局任务数据，仍可在各自知识库、评估与科研运行页面查看业务状态。
 - ResearchCompass 上线前商业级审计（第九轮）：后台重启恢复论文元数据同步时，单条入队异常会写入明确错误并继续恢复剩余任务；论文分析、图谱同步、证据综述和外部论文导入恢复会逐条重新校验任务所有者未删除且仍具知识库权限，服务重启取消不再伪装成不可恢复失败。外部导入不再用 `system` 替代失效创建者，第三方元数据在下载 PDF 前校验受数据库约束的 ID、年份、引用数、期刊/会议、DOI 和外部标识，避免下载后才因持久化失败；导入任务名有长度上限。BibTeX 导出键对特殊与非 ASCII 作者名归一为安全标识，避免生成不可导入条目。证据综述前端为详情、历史、创建与再生成请求增加知识库切换代际保护，旧库在途响应不会污染新库视图；用户评测 CSV 对公式前缀转义。Milvus 所有数据库操作显式使用实例连接别名，消除默认连接回退告警。
@@ -438,3 +638,34 @@
 - 前端工具调用渲染出现问题
 - 当前 ReAct 智能体有消息顺序错乱的 bug，且不会默认调用工具
 - 修复文件管理：（1）文件选择的时候会跨数据库；（2）文件校验会算上失败的文件；
+
+- 推进科研闭环基础:项目活动记录增加操作者/状态前后值/前置条件字段,综述运行记录增加外部依赖可重试状态字段并接入失败分类。
+### 研究闭环审计追踪
+
+- 计划、里程碑、任务及项目成果活动写入操作者 UID、状态前后值与前置条件。
+- 综述证据引用写入改为幂等重放，避免任务恢复导致唯一约束冲突。
+- 综述外部依赖失败支持保留父运行的受限重试接口，并修正重试字段 ORM 映射。
+- 证据生命周期增加合法状态转换矩阵、独立审计活动表及审计查询接口。
+- 新增持久化用户通知、任务成功/失败幂等通知写入及通知查询/已读接口。
+- 项目报告集成测试补充 CSV 导出响应、BOM、文件名与核心记录断言。
+- 修复证据录入跨知识库引用漏洞:来源分块必须属于请求知识库,否则拒绝创建。
+- 修复已完成研究项目无法归档/恢复的状态机分支,并补充生命周期回归测试。
+- 补齐运行时证据 schema 的状态约束与生命周期查询索引,避免 ORM/既有数据库结构漂移。
+- 研究项目工作台导出菜单补充 CSV 数据导出,使后端已提供的商业闭环能力可从真实用户界面使用。
+- 补充证据生命周期单测,覆盖跨知识库来源隔离与归档状态不可回退。
+### 2026-08-06
+
+- 修复科研检索重试并发竞态:通过数据库行锁原子占用重试次数,避免并发请求绕过上限创建重复重试运行。
+- 检索重试子运行继承实际重试序号,父子运行历史可完整追踪。
+# 2026-08-06
+
+- 任务失败记录增加 `retryable`、依赖类型和重试次数;可恢复的外部论文导入任务支持受限重试接口,Semantic Scholar 临时网络故障会进入可重试失败态。
+- 通用任务重试改为数据库条件更新原子占用,避免多 API 实例并发重复重试同一任务。
+### 修复外部论文导入对象存储故障重试分类
+
+- 将 MinIO、S3 及对象存储服务异常识别为可重试的 `object_storage` 依赖故障，避免外部存储短暂不可用时任务被错误标记为不可重试。
+
+### 2026-08-06
+
+- 科研计划新增任务依赖闭环：依赖关系持久化、同项目校验、循环依赖拒绝、审计活动、计划返回依赖信息及前端前置任务展示，并补充 Docker API 回归测试。
+- 科研计划前端新增前置任务编辑器,支持同项目任务筛选、依赖增删与失败后保留编辑状态;补充组件回归测试并避免非浏览器渲染环境触发通知副作用。

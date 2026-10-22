@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "77768d4b-3f7c-4c80-8bf0-55443158edf9",
+  "status": "current",
+  "command": "deliver",
+  "type": "sequence",
+  "input": "D:\\Develop\\SourceCode\\agent-projects\\ResearchCompass\\.archify\\sequence-panorama-20261022-153921\\candidate.json",
+  "output": "D:\\Develop\\SourceCode\\agent-projects\\ResearchCompass\\docs\\archify\\sequence-panorama.html",
+  "specification": {
+    "sha256": "16729a3b6a8a3ad1812c6a7c603ab9ef9b67954017b069d99b7efaac0e25b53e",
+    "bytes": 7237
+  },
+  "artifact": {
+    "sha256": "e719592321f14228273ac3986a12a5d32d5a9c787d648d3b15704a4f7653c10c",
+    "bytes": 827954
+  }
+}

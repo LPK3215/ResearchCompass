@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "9e1516db-ed54-4207-a3c7-5fb87a39ebb6",
+  "ok": true,
+  "command": "deliver",
+  "type": "architecture",
+  "input": "D:\\Develop\\SourceCode\\agent-projects\\ResearchCompass\\.archify\\architecture-panorama-20261022-153921\\candidate.json",
+  "output": "D:\\Develop\\SourceCode\\agent-projects\\ResearchCompass\\docs\\archify\\architecture-panorama.html",
+  "specification": {
+    "sha256": "537bef30655d0f48d9b4c34010cc357affd6f6d8cf8fc0355f6fe44702f20239",
+    "bytes": 13458
+  },
+  "artifact": {
+    "sha256": "0f44f139fd14379bf1631596d5d0b1eb54dffdf3966136ce66b632735c2a4acc",
+    "bytes": 849841
+  },
+  "validation": {
+    "checksPassed": 9,
+    "checkCount": 9,
+    "compositionProfile": "showcase",
+    "compositionStatus": "pass",
+    "errors": 0,
+    "warnings": 0
+  },
+  "evidence": {
+    "verified": true,
+    "repository": "https://github.com/LPK3215/ResearchCompass",
+    "revision": "42739c365d0eac8d3090f4907aa88b5e43b4a703",
+    "references": 34
+  },
+  "update": {
+    "status": "unavailable",
+    "installedVersion": null,
+    "availableVersion": null,
+    "releaseNotes": null,
+    "checkedAt": null,
+    "source": null,
+    "noticeRequired": false,
+    "noticeText": null,
+    "reason": "disabled"
+  }
+}

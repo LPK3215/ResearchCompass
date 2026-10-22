@@ -1,6 +1,8 @@
 # 生产部署指南
 
-本文档介绍如何在生产环境中部署 Yuxi。
+> ResearchCompass 基于开源智能体框架 Yuxi 二次开发，本文描述的部署能力来自 Yuxi 底座。
+
+本文档介绍如何在生产环境中部署 ResearchCompass（基于 Yuxi 框架）。
 
 ## 前置要求
 
@@ -21,7 +23,7 @@
 为避免与开发环境冲突，生产环境建议使用 `.env.prod` 文件：
 
 ```bash
-cp .env.template .env.prod
+cp .env.prod.template .env.prod
 ```
 
 编辑 `.env.prod`，设置强密码和必要的 API 密钥：
@@ -38,6 +40,8 @@ SILICONFLOW_API_KEY=
 ```
 
 生产 Compose 会在前七项配置缺失或为空时拒绝启动，并提示具体变量名。`JWT_SECRET_KEY` 和 `SANDBOX_PROVISIONER_TOKEN` 均应至少使用 32 字节随机值并持久保存，可分别使用 `openssl rand -hex 32` 生成；两者不能复用。`YUXI_INSTANCE_ID` 应是每套部署稳定且唯一的实例标识。模型 API 密钥按实际使用的供应商配置。
+
+默认 `LITE_MODE=false`，生产镜像会在构建期生成完整模式前端。设置 `LITE_MODE=true` 后必须带 `--build` 重新构建 Web 镜像；Lite 模式不加载 ResearchCompass、知识库和图谱能力，并以通用助手作为默认入口。
 
 ### 2. 启动服务
 

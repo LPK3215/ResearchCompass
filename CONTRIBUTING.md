@@ -1,18 +1,19 @@
-# Contributing to Yuxi
+# Contributing
 
-感谢你关注 Yuxi。欢迎提交 Issue、改进文档、修复 Bug 或贡献新功能。
+Thanks for your interest in ResearchCompass. Issues, documentation improvements, bug fixes, tests and new features are welcome.
 
-更完整的开发文档可参考 [docs/develop-guides/contributing.md](docs/develop-guides/contributing.md)。
+The **single source of truth** for the contribution process is [`docs/develop-guides/contributing.md`](docs/develop-guides/contributing.md). This root file is a short entry point; the linked guide covers the full workflow. Author-specific coding rules live in [`docs/develop-guides/coding-rules.md`](docs/develop-guides/coding-rules.md) and take priority over general conventions.
 
-## 开始之前
+## Before you start
 
-- 提交前请先搜索现有 [Issues](https://github.com/xerrors/Yuxi/issues)
-- 对于较大的功能改动，建议先开 Issue 讨论方案
-- 保持改动聚焦，避免在一次 PR 中混入无关重构
+- Search the existing [Issues](https://github.com/LPK3215/ResearchCompass/issues) first.
+- For a large feature, open an issue to discuss the design and boundaries before writing code.
+- Keep one PR focused on one clear problem; do not mix unrelated refactors.
+- UI changes should include a screenshot or a short recording.
 
-## 开发方式
+## Development environment
 
-本项目通过 Docker Compose 进行开发，推荐直接在容器环境中调试。
+ResearchCompass is managed with Docker Compose. Run development and tests in the running containers where possible:
 
 ```bash
 docker compose up -d
@@ -20,75 +21,64 @@ docker ps
 docker logs api-dev --tail 100
 ```
 
-项目中的 `api-dev` 和 `web-dev` 默认支持热重载，本地修改代码后通常无需重启容器。
+`api-dev` and `web-dev` support hot reload. See [`docker-compose.yml`](docker-compose.yml) for service definitions and [`docs/develop-guides/local-dev-environment.md`](docs/develop-guides/local-dev-environment.md) for local troubleshooting.
 
-## 提交流程
+## Checks
 
-1. Fork 仓库并创建分支
-2. 在对应目录完成开发与测试
-3. 提交清晰的 Commit Message
-4. 发起 Pull Request，并说明修改内容、原因和验证方式
-5. PR 模板 [PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md) 中的检查项需要在提交前完成
-
-示例：
-
-```bash
-git checkout -b feature/your-change
-git commit -m "feat: add knowledge graph import flow"
-git push origin feature/your-change
-```
-
-## 代码要求
-
-### 通用
-
-- 保持实现简单直接，避免过度设计
-- 只修改当前任务所需内容，不顺手做额外重构
-- 更新相关文档
-- 如有必要，同步更新 [docs/develop-guides/changelog.md](docs/develop-guides/changelog.md)
-- 设计部分请参考 [docs/develop-guides/design.md](docs/develop-guides/design.md)
-
-### 后端
-
-- 使用 Python 3.12+ 风格
-- 提交前运行：
+Run at least:
 
 ```bash
 make format
 make lint
-docker compose exec api uv run pytest
+make test
+make test-web
 ```
 
-- 测试脚本建议放在 `backend/test`
+For the full cold-build gate on Windows:
 
-### 前端
+```powershell
+.\scripts\release_check.ps1
+```
 
-- 使用 `pnpm`
-- API 接口统一放在 `web/src/apis`
-- 优先使用 `lucide-vue-next` 图标
-- 样式使用 `less`
-- 非特殊情况优先复用 [web/src/assets/css/base.css](web/src/assets/css/base.css) 中的颜色变量
+`release_check.ps1` covers image builds, Python lock files, Ruff, backend unit/integration/e2e tests, frontend unit tests, ESLint, the production build and the VitePress documentation build.
 
-## Pull Request 建议
+## Branch, commit and PR
 
-- 标题清晰，能说明变更目标
-- 描述中包含改动内容、影响范围和验证结果
-- 如果涉及 UI，请附截图或录屏
-- 如果涉及接口或行为变化，请补充文档
+Use a clear branch name:
 
-## 提交信息建议
+```bash
+git checkout -b feature/amazing-feature
+git checkout -b fix/chat-stream-interrupt
+git checkout -b docs/update-contributing-guide
+```
 
-推荐使用以下前缀：
+Use a Conventional Commit-style message:
 
-- `feat`
-- `fix`
-- `docs`
-- `refactor`
-- `test`
-- `chore`
+```text
+feat: add knowledge graph import flow
+fix: handle interrupted chat stream
+docs: update local development guide
+```
 
-## 问题反馈
+Push the branch and open a Pull Request using the [PR template](.github/PULL_REQUEST_TEMPLATE.md). Describe:
 
-- Bug 反馈/功能讨论：<https://github.com/xerrors/Yuxi/issues>
+- what changed;
+- why it changed;
+- the affected scope;
+- how it was verified.
 
-感谢你的贡献 ❤️。
+If you add or change a user-visible capability, update the relevant documentation under `docs/` and the authoritative changelog at [`docs/develop-guides/changelog.md`](docs/develop-guides/changelog.md).
+
+## Frontend and backend notes
+
+- Frontend lives in `web/`; use `pnpm`, keep API wrappers in `web/src/apis`, prefer `lucide-vue-next` icons, and reuse the color variables in `web/src/assets/css/base.css`.
+- Backend lives in `backend/`; target Python 3.12–3.13, keep the style pythonic, and put tests under `backend/test/{unit,integration,e2e}`.
+- Never commit `.env`, `.env.prod`, API keys, test accounts or private papers.
+
+## Feedback
+
+- Bugs: <https://github.com/LPK3215/ResearchCompass/issues>
+- Feature discussion: <https://github.com/LPK3215/ResearchCompass/discussions>
+- Security issues: follow [SECURITY.md](SECURITY.md); do not open a public issue.
+
+Every contribution is appreciated.

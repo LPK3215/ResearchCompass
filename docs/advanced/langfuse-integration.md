@@ -1,5 +1,7 @@
 # Langfuse 集成
 
+> 本文描述的能力由开源智能体框架 Yuxi 提供，ResearchCompass 复用该能力作为科研智能体平台的通用底座。
+
 ## 为什么 Yuxi 需要 Langfuse
 
 Langfuse 是一套面向大模型应用的可观测性平台，适合用来观察一次智能体执行过程中到底发生了什么。在 Yuxi 里，一轮用户消息通常不会只对应一次简单的模型调用，它往往会伴随 LangGraph 图执行、工具调用、知识库检索以及多轮中间状态切换。仅靠普通后端日志，虽然也能定位问题，但往往需要在多个文件和多个服务日志之间来回跳转，阅读成本高，而且很难从用户、线程和智能体三个维度统一查看。Langfuse 的价值就在于，它把这些原本分散的执行细节收拢到同一条 trace 里，让你能够从一次对话出发，回看模型输入输出、工具链路、耗时和错误位置。
@@ -16,7 +18,7 @@ Yuxi 对 Langfuse 的映射方式比较直接。一个 Yuxi 用户会映射为 L
 
 ## 如何配置
 
-如果你准备启用 Langfuse，首先需要在 Langfuse Cloud 中创建项目并获取访问凭证。当前版本推荐优先使用云端模式，因为接入成本最低，也更适合先把 tracing 跑通。你需要在运行 Yuxi 的环境中配置 `LANGFUSE_PUBLIC_KEY`、`LANGFUSE_SECRET_KEY` 和 `LANGFUSE_BASE_URL`。其中前两个字段用于鉴权，`LANGFUSE_BASE_URL` 用于指定 Langfuse 服务地址；如果你使用官方云服务，通常可以直接填写 `https://cloud.langfuse.com`。在大多数部署场景下，只要把这些变量写入 `.env` 并通过 Docker Compose 传给 `api` 服务即可生效。
+如果你准备启用 Langfuse，首先需要在 Langfuse Cloud 中创建项目并获取访问凭证。当前版本推荐优先使用云端模式，因为接入成本最低，也更适合先把 tracing 跑通。你需要在运行 ResearchCompass（基于 Yuxi 框架）的环境中配置 `LANGFUSE_PUBLIC_KEY`、`LANGFUSE_SECRET_KEY` 和 `LANGFUSE_BASE_URL`。其中前两个字段用于鉴权，`LANGFUSE_BASE_URL` 用于指定 Langfuse 服务地址；如果你使用官方云服务，通常可以直接填写 `https://cloud.langfuse.com`。在大多数部署场景下，只要把这些变量写入 `.env` 并通过 Docker Compose 传给 `api` 服务即可生效。
 
 从当前实现来看，Langfuse 只有在 key 配置完整时才会被启用。如果没有配置 `LANGFUSE_PUBLIC_KEY` 或 `LANGFUSE_SECRET_KEY`，Yuxi 会自动退化为“不启用 tracing”的状态，正常聊天功能不会因此中断。这意味着 Langfuse 是一个可选增强项，而不是系统启动的前置依赖。对于希望先验证主流程、后续再逐步补全观测能力的部署者来说，这种行为比较友好，因为它降低了接入门槛，也减少了配置错误对主业务的影响。
 

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "bfcb8f5f-f796-4f07-a843-23993a331402",
+  "status": "current",
+  "command": "deliver",
+  "type": "workflow",
+  "input": "D:\\Develop\\SourceCode\\agent-projects\\ResearchCompass\\.archify\\workflow-panorama-20261022-153921\\candidate.json",
+  "output": "D:\\Develop\\SourceCode\\agent-projects\\ResearchCompass\\docs\\archify\\workflow-panorama.html",
+  "specification": {
+    "sha256": "af552b947f101185ccc0946d8a8b30c5d46ceacd6d08f9f886562c8ebe44345e",
+    "bytes": 10264
+  },
+  "artifact": {
+    "sha256": "eb86bb945664e2104f6fd988c07ad93da03fa34974a8efc86d1889cd20df5fb7",
+    "bytes": 838598
+  }
+}

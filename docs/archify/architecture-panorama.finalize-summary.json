@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "D:\\Develop\\SourceCode\\agent-projects\\ResearchCompass\\.archify\\architecture-panorama-20261022-153921\\candidate.json",
+    "sha256": "537bef30655d0f48d9b4c34010cc357affd6f6d8cf8fc0355f6fe44702f20239",
+    "bytes": 13458
+  },
+  "artifact": {
+    "path": "D:\\Develop\\SourceCode\\agent-projects\\ResearchCompass\\docs\\archify\\architecture-panorama.html",
+    "sha256": "0f44f139fd14379bf1631596d5d0b1eb54dffdf3966136ce66b632735c2a4acc",
+    "bytes": 849841
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "D:\\Develop\\SourceCode\\agent-projects\\ResearchCompass\\.archify\\architecture-panorama-20261022-153921\\review-3\\architecture-panorama.finalize.json",
+    "summaryReceipt": "D:\\Develop\\SourceCode\\agent-projects\\ResearchCompass\\.archify\\architecture-panorama-20261022-153921\\review-3\\architecture-panorama.finalize-summary.json",
+    "browserCheckReceipt": "D:\\Develop\\SourceCode\\agent-projects\\ResearchCompass\\.archify\\architecture-panorama-20261022-153921\\review-3\\architecture-panorama.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.2.0",
+    "availableVersion": "3.2.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-10-22T07:39:47.325Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 5266,
+  "browserCheck": {
+    "requested": true,
+    "ran": true
+  },
+  "visualReviewRecommendation": {
+    "action": "inspect-route-readability",
+    "signals": {
+      "routesOverSuggestedBends": 1
+    },
+    "reason": "Automated gates passed, but crossings or detours still need perceptual review before claiming visual quality.",
+    "affectedRoutes": {
+      "crossings": [],
+      "detours": [
+        {
+          "relationship": {
+            "id": "analysis-kb",
+            "from": "analysis",
+            "to": "kb",
+            "label": "context",
+            "collectionIndex": 9,
+            "artifactIndex": 10
+          },
+          "bends": 3,
+          "stretch": 1
+        }
+      ],
+      "truncated": false
+    },
+    "hints": [
+      "analysis → kb needs 3 bends: move node analysis or kb so they share a row or column with matching centers, or sit diagonally with a clear corner."
+    ],
+    "repair": "Trace these relationships at the desktop viewport. For Architecture, use references/architecture-layout-repair.md: reflow a blocked main path or tangled connected scene, and repair an isolated defect locally only when the surrounding composition is accepted. Preserve all semantic content and user-fixed geometry. Rerun finalize once after the edit."
+  }
+}

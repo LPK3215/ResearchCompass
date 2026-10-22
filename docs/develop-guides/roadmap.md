@@ -1,5 +1,7 @@
 # 开发路线图
 
+> 说明：本路线图包含两类条目——来自上游开源框架 Yuxi 的通用能力规划（智能体运行时、知识库、Skills、MCP、沙盒等），以及本仓库 ResearchCompass 针对科研场景的扩展规划。框架上游的 issue 与看板链接指向 Yuxi 仓库。
+
 路线图可能会经常变更，如果有强烈的建议，可以在 [issue](https://github.com/xerrors/Yuxi/issues) 中提。
 
 项目看板（Maintainer Only）：[GitHub Project](https://github.com/users/xerrors/projects/2)

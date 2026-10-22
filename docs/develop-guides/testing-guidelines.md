@@ -1,6 +1,8 @@
 # 测试规范与工作流
 
-本文档用于指导 Yuxi 后续如何创建测试文件、修改测试文件，以及如何验证项目功能。目标是务实、稳定、可执行，不追求过度设计。
+> ResearchCompass 基于开源智能体框架 Yuxi 二次开发，本测试规范同时覆盖框架通用能力与科研业务扩展。
+
+本文档用于指导 ResearchCompass 后续如何创建测试文件、修改测试文件，以及如何验证项目功能。目标是务实、稳定、可执行，不追求过度设计。
 
 ## 1. 测试分层
 
@@ -191,4 +193,14 @@ backend/test/run_tests.sh all
 - 优先保持测试可执行和可信
 - 优先减少假绿和环境耦合
 
-对当前 Yuxi 来说，这就是最务实、也最容易持续执行的测试标准。
+对当前 ResearchCompass 来说，这就是最务实、也最容易持续执行的测试标准。
+
+## 12. 冒烟验收（跨能力族）
+
+- 前置：直跑后端运行在 `127.0.0.1:5050`；Compose 模式用 `make smoke`（默认 `http://127.0.0.1:5051`）。PostgreSQL / Redis / Milvus / Neo4j / MinIO 与本地向量服务可用。
+- 运行：直跑模式 `cd backend && uv run --no-sync --env-file ../.env python scripts/smoke_acceptance.py`；Compose 模式 `make smoke`。
+- 输出：`test-results/smoke-acceptance-<时间戳>.json` 与同名 `.md`；任一必需项失败时退出码为 1。
+- 覆盖：认证、知识库、论文、笔记、筛选、项目、检索、综述、图谱、趋势/机会、交付物、评估、用户评测、多源检索、参考文献导入、AI 工具调用。
+- 数据副作用：在用户自己的论文上创建并删除一条笔记；参考文献导入使用固定 DOI，重复执行幂等。
+- 残留状态处理：上一次智能体运行失败或取消会让线程队列停在 `paused`，此时新提交只入队不派发，脚本会自动调用 `POST /api/agent/thread/{id}/requests/continue` 恢复派发（报告里体现为 `resumed=paused-queue`）；多源检索依赖外网，超时放宽到 180 秒。
+- 固定语料：`scripts/eval/fixed_corpus.json`（28 篇开放获取论文 + 10 个金标准问题），用 `scripts/eval/import_fixed_corpus.py --kb-id <kb>` 批量提交导入。

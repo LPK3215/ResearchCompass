@@ -1,6 +1,6 @@
 # 快速开始指南
 
-欢迎使用 Yuxi（语析），这是一个智能知识库和知识图谱 Agent 开发平台。
+欢迎使用 ResearchCompass（科研罗盘，基于开源智能体框架 Yuxi 二次开发），这是一个面向科研文献检索、分析与证据管理的智能体平台。
 本指南将帮助你在几分钟内启动并运行系统，使你能够利用 LangGraph、RAG 技术和知识图谱构建 AI 驱动的知识应用。
 
 ![系统架构图](https://xerrors.oss-cn-shanghai.aliyuncs.com/github/arch.png)
@@ -20,15 +20,15 @@
 
 ```bash
 # 克隆最新版本
-git clone --branch v0.7.1 --depth 1 https://github.com/xerrors/Yuxi.git
-cd Yuxi
+git clone --branch v0.11.15 --depth 1 https://github.com/LPK3215/ResearchCompass.git
+cd ResearchCompass
 ```
 
 `--depth 1` 标志会创建一个浅克隆，仅包含最新的提交，从而显著减少下载时间和磁盘使用量。下表提供了版本选择的指导。
 
 | 版本 | 适用场景 |
 |------|----------|
-| v0.7.1 | 当前稳定版本，推荐生产使用 |
+| v0.11.15 | 当前稳定版本，推荐生产使用 |
 | main | 开发版本，包含最新特性（可能不稳定） |
 
 ### 步骤二：配置环境变量
@@ -83,7 +83,7 @@ docker compose up --build -d
 make up-lite  # macOS or Linux
 ```
 
-轻量模式仅启动核心服务（前端、后端、PostgreSQL、Redis、MinIO），前端侧边栏会自动隐藏知识库和图谱入口。切换回完整模式只需运行 `make up`。
+轻量模式仅启动核心服务（前端、后端、PostgreSQL、Redis、MinIO），默认入口为 `/agent`，前端侧边栏会隐藏 ResearchCompass、知识库和图谱入口；`/research` 旧链接也会回退到通用助手。切换回完整模式只需运行 `make up`，登录后默认进入 `/research`。
 :::
 
 ### 步骤四：访问系统
@@ -93,7 +93,7 @@ make up-lite  # macOS or Linux
 | 服务 | 地址 |
 |------|------|
 | Web 界面 | http://localhost:5173 |
-| API 文档 | http://localhost:5050/docs |
+| API 文档 | http://localhost:5051/docs |
 
 首次访问时，系统会要求你设置超级管理员账号和密码，请妥善保存。
 

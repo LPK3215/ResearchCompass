@@ -5,9 +5,11 @@ import markdownItTaskCheckbox from 'markdown-it-task-checkbox'
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
   lang: 'zh-CN',
-  title: "Yuxi",
-  description: "语析",
-  base: '/Yuxi/',
+  title: 'ResearchCompass',
+  description: '基于开源智能体框架 Yuxi 二次开发的科研智能体平台',
+  base: '/ResearchCompass/',
+  // 内部项目档案（立项方案/决策/跟踪表/验收记录）只保留在仓库内，不发布到文档站
+  srcExclude: ['project/**'],
   ignoreDeadLinks: [
     /localhost/,
     /CONTRIBUTING$/,
@@ -23,6 +25,9 @@ export default defineConfig({
     // https://vitepress.dev/reference/default-theme-config
     logo: "/favicon.svg",
     nav: [
+      { text: '能干什么', link: '/intro/capabilities' },
+      { text: '怎么用', link: '/intro/research-workflow' },
+      { text: '科研罗盘', link: '/intro/research-compass' },
       { text: '快速开始', link: '/intro/quick-start' },
       { text: '智能体开发', link: '/agents/agents-config' }
     ],
@@ -31,7 +36,11 @@ export default defineConfig({
       {
         text: '简介',
         items: [
-          { text: '什么是 Yuxi？', link: '/intro/project-overview' },
+          { text: '能力全景', link: '/intro/capabilities' },
+          { text: '从选题到成稿', link: '/intro/research-workflow' },
+          { text: '科研罗盘', link: '/intro/research-compass' },
+          { text: 'AI 研究助手', link: '/intro/research-compass#ai-研究助手' },
+          { text: '项目简介', link: '/intro/project-overview' },
           { text: '快速开始', link: '/intro/quick-start' },
           { text: '命令行工具', link: '/intro/cli' },
           { text: '模型配置', link: '/intro/model-config' },
@@ -62,32 +71,36 @@ export default defineConfig({
           { text: '品牌自定义', link: '/advanced/branding' },
           { text: '其他配置', link: '/advanced/misc' },
           { text: '生产部署', link: '/advanced/deployment' },
-          { text: 'API Key 外部集成', link: '/advanced/api-key-integration' }
+          { text: 'API Key 外部集成', link: '/advanced/api-key-integration' },
+          { text: '第三方登录', link: '/advanced/third-party-auth' }
         ]
       },
       {
         text: '开发指南',
         items: [
           { text: '参与贡献', link: '/develop-guides/contributing' },
+          { text: '编码规范（个人规则）', link: '/develop-guides/coding-rules' },
           { text: '开发路线图', link: '/develop-guides/roadmap' },
           { text: '版本变更记录', link: '/develop-guides/changelog' },
           { text: '界面设计规范', link: '/develop-guides/design' },
           { text: '测试规范', link: '/develop-guides/testing-guidelines' },
+          { text: '本地开发环境', link: '/develop-guides/local-dev-environment' },
+          { text: '性能基线', link: '/develop-guides/performance-baseline' },
         ]
       }
     ],
 
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/xerrors/Yuxi' }
+      { icon: 'github', link: 'https://github.com/LPK3215/ResearchCompass' }
     ],
 
     footer: {
       message: '本项目基于 MIT License 开源，欢迎使用和贡献。',
-      copyright: 'Copyright © 2025-present Yuxi'
+      copyright: 'ResearchCompass，基于 Yuxi 开发'
     },
 
     editLink: {
-      pattern: 'https://github.com/xerrors/Yuxi/edit/main/docs/:path',
+      pattern: 'https://github.com/LPK3215/ResearchCompass/edit/main/docs/:path',
       text: '在 GitHub 上编辑此页'
     },
 

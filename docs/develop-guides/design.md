@@ -1,10 +1,10 @@
 # 界面设计规范
 
-本文档定义 Yuxi 前端界面的基础设计规范，适用于 `web/src` 下的新页面、新组件和现有 UI 调整。它同时面向人类开发者和 AI coding agent：修改界面前先阅读本页，优先复用现有组件、CSS 变量和交互模式。
+> ResearchCompass 基于开源智能体框架 ResearchCompass 二次开发，本文档定义其前端界面的基础设计规范，适用于 `web/src` 下的新页面、新组件和现有 UI 调整。它同时面向人类开发者和 AI coding agent：修改界面前先阅读本页，优先复用现有组件、CSS 变量和交互模式。
 
 ## 1. 视觉气质
 
-Yuxi 是知识库、知识图谱与 Agent 开发平台，界面应保持克制、清晰、工程化。设计服务于长时间阅读、配置、调试和数据管理，不做营销页式装饰。
+ResearchCompass 是知识库、知识图谱与 Agent 开发平台，界面应保持克制、清晰、工程化。设计服务于长时间阅读、配置、调试和数据管理，不做营销页式装饰。
 
 核心原则：
 
@@ -29,6 +29,19 @@ Yuxi 是知识库、知识图谱与 Agent 开发平台，界面应保持克制�
 
 主色只用于表达“当前选择、主要操作、关键入口”。不要把主色当作普通装饰色铺在卡片或大面积背景上。
 
+主色进一步拆分为“填充面”和“文字态”两组语义，浅色与暗色模式各自取到满足对比度的色值：
+
+| Token | 使用场景 |
+| --- | --- |
+| `--primary-fill` / `--primary-fill-hover` / `--primary-fill-active` | 主按钮等“主色底 + 反色文字”的填充面 |
+| `--primary-fill-subtle` / `--primary-fill-subtle-hover` | 选中行、浅色提示条等弱填充 |
+| `--primary-text` / `--primary-text-hover` / `--primary-text-active` | 链接、主色文字、强调图标 |
+| `--primary-border` | 主色描边、focus 边框 |
+| `--on-primary-text` | 填充面上的前景文字（白） |
+
+> 填充面与文字态必须分开使用：浅色模式的 `--primary-fill` 较深，暗色模式的 `--primary-fill` 较亮，
+> 两者都能保证白色前景文字满足对比度。直接用 `--main-color` 同时充当背景和文字色会在暗色模式下失效。
+
 ### 中性色
 
 `--gray-*` 是默认界面骨架，用于背景、文本、边框和分割线：
@@ -42,6 +55,26 @@ Yuxi 是知识库、知识图谱与 Agent 开发平台，界面应保持克制�
 | `--gray-600` / `--gray-500` / `--gray-400` | 辅助说明、占位文本、禁用文本 |
 
 文本也可以使用 Ant Design 兼容语义变量：`--color-text`、`--color-text-secondary`、`--color-text-tertiary`。组件内优先选语义变量；需要更细层级时再使用 `--gray-*`。
+
+### 交互状态色
+
+hover、选中、激活、禁用、错误属于交互反馈，统一使用状态色，不自行拼接：
+
+| Token | 使用场景 |
+| --- | --- |
+| `--state-hover-bg` / `--state-hover-bg-strong` | 行、卡片、列表项的 hover 背景 |
+| `--state-hover-border` / `--state-hover-text` | hover 时的边框与文字 |
+| `--state-selected-bg` / `--state-selected-border` / `--state-selected-text` | 选中项、当前激活的标签页 |
+| `--state-active-bg` | 按下、active 态背景 |
+| `--state-disabled-bg` / `--state-disabled-text` / `--state-disabled-border` | 禁用态；禁用态不再响应 hover 强反馈 |
+| `--state-error-bg` / `--state-error-border` / `--state-error-text` | 错误态容器 |
+
+背景、边框、填充、文本也提供了一组与 Ant Design 同名的语义别名，跨组件保持一致：
+
+`--color-bg-page`（页面背景）、`--color-bg-container`（卡片/容器）、`--color-bg-elevated`（浮层）、`--color-bg-subtle`（次级分区）、`--color-bg-muted`（弱提示）；
+`--color-border`、`--color-border-subtle`（分割线）、`--color-border-strong`；
+`--color-fill-hover`、`--color-fill-active`、`--color-fill-disabled`；
+`--color-text`、`--color-text-secondary`、`--color-text-tertiary`、`--color-text-placeholder`、`--color-text-inverse`。
 
 ### 语义色
 
@@ -57,13 +90,51 @@ Yuxi 是知识库、知识图谱与 Agent 开发平台，界面应保持克制�
 
 状态标签建议使用浅背景 + 深文字，例如 `background: var(--color-success-50); color: var(--color-success-700);`。不要只依靠颜色传达状态，必要时配合文字或图标。
 
+语义色只有 `10 / 50 / 100 / 500 / 700 / 900` 六档，不要引用不存在的档位（如 `--color-error-200`）。
+引用未定义的 CSS 变量时，整条声明会在计算值阶段被丢弃，元素会回退到继承值或初始值——错误色、警告色
+尤其容易因此“失效变黑”。新增色值前先确认 token 存在。
+
+### 透明变体与遮罩
+
+| Token | 使用场景 |
+| --- | --- |
+| `--primary-a30` / `--primary-a12` / `--primary-a06` / `--primary-a60` | 主色透明层：渐变、焦点光晕、卡片悬浮阴影 |
+| `--success-a30` / `--success-a15` | 成功态透明层 |
+| `--warning-a30` / `--warning-a15` | 警告态透明层 |
+| `--error-a30` / `--error-a15` / `--error-a80` | 错误态透明层、错误脉冲光晕 |
+| `--overlay-backdrop` / `--overlay-backdrop-strong` | 弹窗、抽屉遮罩 |
+| `--surface-inverse-*` | 始终保持深色的表面：代码块、控制台、图片预览遮罩上的控件 |
+| `--on-brand-*` | 品牌深色面板（登录/注册侧栏等）：固定深色，不随主题反转 |
+
+`--light-*` / `--dark-*` 表示“叠在当前深色/浅色表面上的半透明色”，两套模式中语义会互换；
+需要在两种模式下保持一致的深色表面时，请用 `--surface-inverse-*` 或 `--on-brand-*`，不要用 `--light-*`。
+
 ### 图表色
 
 图表和统计可视化优先使用 `--chart-palette-*`。不要复用错误色、警告色做普通图表分类，避免与状态反馈混淆。
 
+图表、图谱等在 Canvas / 绘图库中需要真实色值时，运行时从 CSS 变量读取：
+
+```js
+const getCSSVariable = (name) =>
+  getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+```
+
+`web/src/utils/chartColors.js` 已封装该模式，知识图谱的节点与边配色同样引用 `--chart-palette-*`，
+并在主题切换时重新取色，保证暗色模式下不会残留浅色模式的硬编码色值。
+
+### Ant Design 主题
+
+`web/src/stores/theme.js` 在运行时读取 CSS 变量构建 Ant Design 主题配置，并由 `App.vue` 的
+`a-config-provider` 注入。切换主题时先切换 `.dark` 类让 CSS 变量生效，再重建 Ant Design 主题。
+
+因此按钮、输入框、表格、弹窗、标签、空状态、加载态等组件的基础外观会自动跟随设计令牌，
+**不需要**为它们逐一覆写 CSS。需要给 Ant Design 组件指定具体色值时，从 `themeStore.currentTheme.token`
+读取，不要写死 hex。
+
 ### 暗色模式
 
-Yuxi 通过 `:root.dark` 覆盖同名 token。新增 UI 必须使用 CSS 变量而不是固定浅色值，并检查浅色、暗色两套表现。
+ResearchCompass 通过 `:root.dark` 覆盖同名 token。新增 UI 必须使用 CSS 变量而不是固定浅色值，并检查浅色、暗色两套表现。
 
 新增组件时至少检查：
 
@@ -75,6 +146,20 @@ Yuxi 通过 `:root.dark` 覆盖同名 token。新增 UI 必须使用 CSS 变量�
 ## 3. 字体与文本层级
 
 全局字体栈定义在 `web/src/assets/css/main.css`，新增组件不要私自引入新字体。代码、命令、路径和技术标识可使用 monospace，优先复用现有 `@mono-font` 或系统 monospace 栈。
+
+`main.css` 已提供全局排版层级（`h1`–`h6`、`p`、`strong`、`small`、`code`、`blockquote`、`ul/ol`），
+组件内可用 scoped 样式覆盖字号与颜色，字重由全局规则兜底：
+
+| Token | 值 | 用途 |
+| --- | --- | --- |
+| `--font-size-xs` / `--font-size-sm` / `--font-size-md` | 12 / 13 / 14px | 辅助说明、tag、小控件 |
+| `--font-size-lg` | 15px | 正文默认 |
+| `--font-size-xl` / `--font-size-2xl` / `--font-size-3xl` / `--font-size-4xl` | 16 / 18 / 20 / 24px | 分组标题到页面标题 |
+| `--line-height-tight` / `--line-height-snug` / `--line-height-base` / `--line-height-relaxed` | 1.25 / 1.4 / 1.6 / 1.75 | 标题、控件、正文、长文 |
+| `--font-weight-regular` / `--font-weight-medium` / `--font-weight-semibold` / `--font-weight-bold` | 400 / 500 / 600 / 700 | 正文、辅助、标题、强调 |
+
+统计值、表格数字使用 `tabular-nums` 保证列对齐；长路径、无空格标识符使用 `.long-text` 或
+`overflow-wrap: anywhere` 避免撑破容器。
 
 建议层级：
 
@@ -120,9 +205,12 @@ Yuxi 通过 `:root.dark` 覆盖同名 token。新增 UI 必须使用 CSS 变量�
 交互状态：
 
 - hover 可以改变 `background`、`border-color`、`color`，不要位移或放大。
-- focus 必须可见，不能移除键盘焦点样式。
+- focus 必须可见，不能移除键盘焦点样式。全局 `:focus-visible` 已提供 `2px` 主色 outline。
 - disabled 使用弱化文本和背景，不绑定 hover 强反馈。
 - loading 应保留按钮宽度，避免布局跳动。
+
+Ant Design 组件的状态由 `stores/theme.js` 的主题配置统一派生，不要为单个组件覆写按钮/输入框的
+hover、active、focus 样式；自研按钮才需要自行补齐上述状态。
 
 ### 输入框与表单
 
@@ -136,13 +224,26 @@ Yuxi 通过 `:root.dark` 覆盖同名 token。新增 UI 必须使用 CSS 变量�
 
 ### 卡片、列表与表格
 
-Yuxi 的信息界面以配置卡片、列表和表格为主，默认使用轻量分层：
+ResearchCompass 的信息界面以配置卡片、列表和表格为主，默认使用轻量分层：
 
-- 普通卡片：`background: var(--gray-0); border: 1px solid var(--gray-150); border-radius: 8px;`
-- 次级区域：可使用 `var(--gray-10)` / `var(--gray-25)` 做轻背景。
-- 点击态列表行：hover 只改变背景或边框，不使用 `transform`。
+- 普通卡片：`background: var(--color-bg-container); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg);`
+- 次级区域：可使用 `var(--color-bg-subtle)` / `var(--color-bg-muted)` 做轻背景。
+- 点击态列表行：hover 只改变背景或边框（`--state-hover-bg`），不使用 `transform`。
 - 表格行内操作保持紧凑，避免每行出现多个高权重按钮。
 - 空状态要说明“当前没有什么”和“下一步可以做什么”，不要只显示图标。
+
+圆角、阴影、层级均有 token，优先复用：
+
+| Token | 值 | 用途 |
+| --- | --- | --- |
+| `--radius-xs` / `--radius-sm` / `--radius-md` | 2 / 4 / 6px | 小徽标、tag、小控件 |
+| `--radius-lg` / `--radius-xl` | 8 / 12px | 卡片、面板 |
+| `--radius-pill` | 999px | 状态标签、头像 |
+| `--shadow-raised` | `0 1px 3px` | 轻浮层、悬浮卡片 |
+| `--shadow-overlay` | `0 4px 12px` | 下拉、气泡 |
+| `--shadow-popover` | `0 8px 24px` | 弹层、悬浮面板 |
+| `--shadow-modal` | `0 16px 48px` | 模态框、抽屉 |
+| `--z-dropdown` ~ `--z-toast` | 1000 ~ 1500 | 层级顺序 |
 
 阴影只用于真实浮层，如弹窗、抽屉、下拉菜单、tooltip。普通卡片和列表不要用阴影制造装饰性层级。
 
@@ -169,16 +270,17 @@ Yuxi 的信息界面以配置卡片、列表和表格为主，默认使用轻量
 
 ## 5. 布局与间距
 
-间距以 4px / 8px 为基础节奏：
+间距以 4px / 8px 为基础节奏，统一使用 `--space-*` 刻度：
 
-| 场景 | 建议值 |
-| --- | --- |
-| 图标与文本间距 | 6px / 8px |
-| 表单项内部间距 | 6px / 8px |
-| 卡片内部 padding | 16px / 20px / 24px |
-| 列表行间距 | 8px / 12px |
-| 页面主要区块间距 | 24px / 32px |
-| 弹窗内容区间距 | 16px / 24px |
+| Token | 值 | 场景 |
+| --- | --- | --- |
+| `--space-1` / `--space-2` | 4 / 8px | 图标与文本间距、表单项内部间距 |
+| `--space-3` / `--space-4` | 12 / 16px | 列表行间距、弹窗内容区间距 |
+| `--space-5` / `--space-6` | 20 / 24px | 卡片内部 padding、页面区块间距 |
+| `--space-8` / `--space-10` / `--space-12` | 32 / 40 / 48px | 页面主要区块间距 |
+| `--page-padding` | 22px（随断点变化） | 页面左右内边距 |
+| `--content-max-width` | 1440px | 正文最大行长容器 |
+| `--header-height` | 45px | 固定头部高度，锚点滚动避让用 |
 
 布局原则：
 
@@ -190,7 +292,7 @@ Yuxi 的信息界面以配置卡片、列表和表格为主，默认使用轻量
 
 ## 6. 深度与层级
 
-Yuxi 默认采用“背景 + 边框”的轻量层级：
+ResearchCompass 默认采用“背景 + 边框”的轻量层级：
 
 | 层级 | 处理方式 | 使用场景 |
 | --- | --- | --- |
@@ -221,6 +323,7 @@ Yuxi 默认采用“背景 + 边框”的轻量层级：
 - 不要把语义色用于纯装饰。
 - 不要新增一次性 helper、样式体系或无复用价值的抽象。
 - 不要硬编码浅色模式色值导致暗色模式失效。
+- 不要引用未定义的 CSS 变量（会让整条声明失效）。
 - 不要在同一区域放置多个同等视觉权重的主操作。
 
 ## 8. 响应式行为
@@ -234,23 +337,38 @@ Yuxi 默认采用“背景 + 边框”的轻量层级：
 - 长文本使用省略号时，应提供 tooltip、title 或详情入口查看完整内容。
 - 图谱、图表、代码块等宽内容应保留横向滚动或自适应缩放策略。
 
+项目已统一采用以下断点（`base.css` 中 `--page-padding` 随断点变化）：
+
+| 断点 | 页面内边距 | 说明 |
+| --- | --- | --- |
+| `>= 1440px` | 30px | 宽屏，正文行长由 `--content-max-width` 限制 |
+| `768px - 1199px` | 18px | 平板 |
+| `<= 767px` | 14px | 手机，正文降为 `--font-size-md`，表单纵向堆叠 |
+
+移动端使用 `@media (pointer: coarse)` 将 `.lucide-icon-btn` 最小尺寸提升到 40px；
+全局已适配 `prefers-reduced-motion`，在用户开启“减少动态效果”时关闭过渡与动画。
+
 ## 9. Agent Prompt Guide
 
-AI agent 修改或生成 Yuxi UI 时，优先按这一节执行。
+AI agent 修改或生成 ResearchCompass UI 时，优先按这一节执行。
 
 ### Quick Reference
 
-- 页面背景：`var(--gray-0)`
-- 次级背景：`var(--gray-10)` / `var(--gray-25)`
-- 主要文本：`var(--color-text)` 或 `var(--gray-900)`
-- 次级文本：`var(--color-text-secondary)` 或 `var(--gray-600)`
-- 边框：`var(--gray-150)` / `var(--gray-200)`
-- 主色：`var(--main-color)`
-- 卡片圆角：`8px`
-- 小控件圆角：`4px` / `6px`
-- 状态标签圆角：`999px`
+- 页面背景：`var(--color-bg-page)`
+- 次级背景：`var(--color-bg-subtle)` / `var(--color-bg-muted)`
+- 卡片背景：`var(--color-bg-container)`，边框 `var(--color-border-subtle)`
+- 主要文本：`var(--color-text)`
+- 次级文本：`var(--color-text-secondary)` / `var(--color-text-tertiary)`
+- 主色填充面：`var(--primary-fill)`（配 `var(--on-primary-text)`）
+- 主色文字/链接：`var(--primary-text)`
+- 状态标签圆角：`var(--radius-pill)`，文字 `--font-size-xs`
+- 卡片圆角：`var(--radius-lg)`（8px）
+- 小控件圆角：`var(--radius-sm)` / `var(--radius-md)`（4px / 6px）
 - 常规图标尺寸：`16px` / `18px` / `20px`
-- 卡片 padding：`16px` / `20px` / `24px`
+- 卡片 padding：`var(--space-4)` / `var(--space-5)` / `var(--space-6)`
+- 页面内边距：`var(--page-padding)`
+- 浮层阴影：`var(--shadow-raised)` / `var(--shadow-overlay)` / `var(--shadow-popover)` / `var(--shadow-modal)`
+- 过渡时长：`--transition-duration-fast`（120ms）/ `--transition-duration-base`（180ms）
 - 普通 hover：只改变背景、边框或文字颜色
 
 ### Example Prompts
@@ -258,7 +376,7 @@ AI agent 修改或生成 Yuxi UI 时，优先按这一节执行。
 实现配置卡片：
 
 ```text
-实现一个 Yuxi 风格的配置卡片：背景使用 var(--gray-0)，边框 1px solid var(--gray-150)，圆角 8px，不加阴影。标题使用 var(--color-text)，说明文字使用 var(--color-text-secondary)。hover 只轻微改变边框或背景，不使用 transform。
+实现一个 ResearchCompass 风格的配置卡片：背景使用 var(--gray-0)，边框 1px solid var(--gray-150)，圆角 8px，不加阴影。标题使用 var(--color-text)，说明文字使用 var(--color-text-secondary)。hover 只轻微改变边框或背景，不使用 transform。
 ```
 
 实现工具栏按钮：
@@ -287,5 +405,7 @@ AI agent 修改或生成 Yuxi UI 时，优先按这一节执行。
 
 - `web/src/assets/css/base.css`：浅色模式 token
 - `web/src/assets/css/base.dark.css`：暗色模式 token
-- `web/src/assets/css/main.css`：全局字体、布局基础样式和 `lucide-icon-btn`
+- `web/src/assets/css/main.css`：全局排版、焦点环、布局基础样式和 `lucide-icon-btn`
+- `web/src/stores/theme.js`：Ant Design 主题与设计令牌的同步层
+- `web/src/utils/chartColors.js`：图表调色板的运行时读取工具
 - [Awesome DESIGN.md](https://github.com/VoltAgent/awesome-design-md)：面向 AI agent 的 `DESIGN.md` 样例集合

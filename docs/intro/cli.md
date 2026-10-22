@@ -1,6 +1,6 @@
 # 命令行工具
 
-`yuxi-cli` 是 Yuxi 的命令行客户端，适合在本地脚本或终端中管理远程实例、登录账号、上传知识库文件，以及运行部分智能体任务。
+`yuxi-cli` 是 ResearchCompass 所基于的开源框架 Yuxi 的命令行客户端，适合在本地脚本或终端中管理远程实例、登录账号、上传知识库文件，以及运行部分智能体任务。
 
 ## 安装
 
@@ -20,7 +20,7 @@ uvx --from yuxi-cli yuxi --help
 
 ## 配置远程实例
 
-先添加一个 Yuxi 实例地址，再设为当前默认 remote：
+先添加一个 ResearchCompass 实例地址，再设为当前默认 remote：
 
 ```bash
 yuxi remote add local http://localhost:5173
