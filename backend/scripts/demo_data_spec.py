@@ -97,6 +97,8 @@ COLUMN_REMAP: dict[str, dict[str, str]] = {
         "source_kb_id": "kb",
         "dataset_id": "dataset",
         "baseline_variant_id": "variant",
+        # 消融实验可能挂在研究任务上，任务主键导入时会改写，必须一起重映射。
+        "task_id": "task",
         "created_by": "owner",
     },
     "evaluation_experiment_variants": {
@@ -138,6 +140,34 @@ REMAP_KEY_PLAN_TARGETS: dict[str, str] = {
     "study": "research_user_studies",
     "invite": "research_user_study_invites",
 }
+
+# chunk 快照里随包导出的分析结果字段：导入时原样写回，避免 chunk 级分析结论丢失。
+CHUNK_ANALYSIS_FIELDS: tuple[str, ...] = ("extraction_result",)
+
+# 重映射目标 -> 物理引用目标 ``(表名, 列名)``。
+# 导入后做跨表引用（孤儿）校验时按这张表逐列核对，``token`` 目标没有对应外键列。
+REFERENCE_TARGET: dict[str, tuple[str, str]] = {
+    "kb": ("knowledge_bases", "kb_id"),
+    "owner": ("users", "uid"),
+    "paper": ("academic_papers", "paper_id"),
+    "paper_row": ("academic_papers", "id"),
+    "chunk": ("knowledge_chunks", "chunk_id"),
+}
+
+
+def reference_target(target: str) -> tuple[str, str] | None:
+    """把重映射目标翻译成物理引用目标 ``(表名, 列名)``。
+
+    ``token``（研究邀请码哈希）不对应任何外键列，返回 ``None``。
+    """
+    if target in REFERENCE_TARGET:
+        return REFERENCE_TARGET[target]
+    table_name = REMAP_KEY_PLAN_TARGETS.get(target)
+    if table_name is None:
+        return None
+    key_column = BUSINESS_KEY_COLUMN.get(table_name)
+    return (table_name, key_column) if key_column else None
+
 
 # 自引用外键：``表名 -> 自引用列``。导入时父行必须先于子行写入，否则外键校验失败。
 SELF_REFERENCE_PARENT_COLUMN: dict[str, str] = {

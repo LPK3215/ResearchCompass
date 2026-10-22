@@ -29,6 +29,7 @@ import sys
 import time
 import traceback
 import uuid
+from collections.abc import Callable
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -411,6 +412,31 @@ def _order_parents_first(rows: list[dict[str, Any]], key_column: str, parent_col
     return sorted(rows, key=lambda row: depth(row, frozenset()))
 
 
+def _apply_column_remap(
+    values: dict[str, Any],
+    remap: dict[str, str],
+    resolve: Callable[[str, Any], Any],
+    nullable: dict[str, bool],
+) -> tuple[dict[str, Any], int, bool]:
+    """按重映射约定改写一行里的跨表引用。
+
+    返回 ``(改写后的取值, 未能解析的引用数, 是否需要整行跳过)``。
+    原值为空的外键保持为空：空引用是合法状态，不算「未能解析」。
+    引用无法映射时，允许为空的列置空并计数，不允许为空的列需要整行跳过。
+    """
+    unresolved_count = 0
+    for column_name, target in remap.items():
+        if column_name not in values or values[column_name] is None:
+            continue
+        resolved = resolve(target, values[column_name])
+        if resolved is None:
+            if not nullable.get(column_name, True):
+                return values, unresolved_count, True
+            unresolved_count += 1
+        values[column_name] = resolved
+    return values, unresolved_count, False
+
+
 async def _import_business_data(
     *,
     kb_id: str,
@@ -420,10 +446,16 @@ async def _import_business_data(
     paper_rows: dict[int, int],
     chunk_ids: dict[str, str],
     key_plan: dict[str, dict[str, str]],
-) -> dict[str, int]:
-    """写入业务快照，返回每张表实际写入的行数。"""
+) -> tuple[dict[str, int], dict[str, int], dict[str, int]]:
+    """写入业务快照。
+
+    返回 ``(已写入行数, 跳过行数, 未能解析引用的行数)``，均按表统计。
+    写入使用 ``ON CONFLICT DO NOTHING``：重复导入同一个包不会报错，
+    已存在的行按“已存在”跳过，不影响其余表的写入。
+    """
     from demo_data_spec import BUSINESS_KEY_COLUMN, COLUMN_REMAP, REMAP_KEY_PLAN_TARGETS, SELF_REFERENCE_PARENT_COLUMN
-    from sqlalchemy import Date, DateTime, insert
+    from sqlalchemy import Date, DateTime
+    from sqlalchemy.dialects.postgresql import insert
     from yuxi.storage.postgres.column_types import UTCDateTime
     from yuxi.storage.postgres.manager import pg_manager
     from yuxi.storage.postgres.models_knowledge import Base
@@ -447,6 +479,8 @@ async def _import_business_data(
         return key_plan.get(table_name, {}).get(str(value))
 
     written: dict[str, int] = {}
+    skipped: dict[str, int] = {}
+    unresolved: dict[str, int] = {}
     async with pg_manager.get_async_session_context() as session:
         for table_name, rows in business.items():
             if not rows:
@@ -465,6 +499,8 @@ async def _import_business_data(
             if parent_column and key_column:
                 rows = _order_parents_first(rows, key_column, parent_column)
             count = 0
+            skipped_count = 0
+            unresolved_count = 0
             for row in rows:
                 values = {key: value for key, value in row.items() if key in column_names and key != "id"}
                 if key_column and key_column in values:
@@ -475,22 +511,28 @@ async def _import_business_data(
                 for column_name in date_columns:
                     if isinstance(values.get(column_name), str):
                         values[column_name] = date.fromisoformat(values[column_name])
-                skip = False
-                for column_name, target in remap.items():
-                    if column_name not in values:
-                        continue
-                    resolved = _resolve(target, values[column_name])
-                    if resolved is None and not table.c[column_name].nullable:
-                        print(f"  跳过 {table_name} 记录：{column_name} 无法映射到目标环境")
-                        skip = True
-                        break
-                    values[column_name] = resolved
+                values, unresolved_refs, skip = _apply_column_remap(
+                    values,
+                    remap,
+                    _resolve,
+                    {column.name: bool(column.nullable) for column in table.columns},
+                )
+                unresolved_count += unresolved_refs
                 if skip:
+                    print(f"  跳过 {table_name} 记录：存在无法映射到目标环境的必填引用")
+                    skipped_count += 1
                     continue
-                await session.execute(insert(table).values(**values))
-                count += 1
+                result = await session.execute(insert(table).values(**values).on_conflict_do_nothing())
+                if result.rowcount:
+                    count += 1
+                else:
+                    skipped_count += 1
             written[table_name] = count
-    return written
+            if skipped_count:
+                skipped[table_name] = skipped_count
+            if unresolved_count:
+                unresolved[table_name] = unresolved_count
+    return written, skipped, unresolved
 
 
 def _discover_bundles(data_dir: Path) -> list[Path]:
@@ -541,11 +583,13 @@ async def _import_bundle(
     )
 
     written: dict[str, int] = {}
+    skipped: dict[str, int] = {}
+    unresolved: dict[str, int] = {}
     if business:
         print("导入业务快照……")
         async with pg_manager.get_async_session_context() as session:
             key_plan = await _plan_business_keys(session, business)
-        written = await _import_business_data(
+        written, skipped, unresolved = await _import_business_data(
             kb_id=target_kb_id,
             business=business,
             owner_uid=owner_uid,
@@ -560,7 +604,10 @@ async def _import_bundle(
         "name": manifest.get("source_kb", {}).get("name", ""),
         "papers": len(paper_ids),
         "chunks": len(chunk_ids),
+        "expected": manifest.get("counts", {}),
         "business": written,
+        "business_skipped": skipped,
+        "business_unresolved": unresolved,
     }
 
 
@@ -597,6 +644,18 @@ async def import_demo(
         await pg_manager.close()
 
 
+def _compare_expected(expected: dict[str, Any], written: dict[str, int]) -> list[tuple[str, int, int]]:
+    """对比导出快照的行数与实际写入行数，返回不一致的 ``(表名, 期望, 实际)``。"""
+    mismatches: list[tuple[str, int, int]] = []
+    for table, expected_count in expected.items():
+        if table in {"papers", "papers_with_pdf", "chunks", "papers_without_pdf"}:
+            continue
+        actual = written.get(table, 0)
+        if int(expected_count) != actual:
+            mismatches.append((table, int(expected_count), actual))
+    return mismatches
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="导入 ResearchCompass 演示数据（语料 + 业务快照）")
     parser.add_argument("--data-dir", default=str(DEFAULT_DATA_DIR), help="演示数据目录，默认仓库根目录 demo_data/")
@@ -624,6 +683,7 @@ def main() -> int:
         traceback.print_exc()
         return 1
 
+    mismatched = False
     for summary in summaries:
         print(
             f"导入完成：知识库《{summary['name']}》（{summary['kb_id']}），"
@@ -632,7 +692,19 @@ def main() -> int:
         for table, count in summary["business"].items():
             if count:
                 print(f"  业务表 {table}: {count} 行")
-    return 0
+        for table, count in summary["business_skipped"].items():
+            print(f"  业务表 {table}: 跳过 {count} 行（已存在或无法映射）")
+        for table, count in summary["business_unresolved"].items():
+            print(f"  业务表 {table}: {count} 行的引用未能在目标环境解析，对应字段已置空")
+        differences = _compare_expected(summary["expected"], summary["business"])
+        if differences:
+            mismatched = True
+            print("  行数与导出快照不一致：")
+            for table, expected_count, actual in differences:
+                print(f"    - {table}: 期望 {expected_count} 行，实际 {actual} 行")
+        else:
+            print("  行数与导出快照一致")
+    return 1 if mismatched else 0
 
 
 if __name__ == "__main__":

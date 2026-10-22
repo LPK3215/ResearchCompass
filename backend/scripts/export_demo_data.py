@@ -73,11 +73,36 @@ def _slugify(title: str) -> str:
     return (slug or "paper")[:80]
 
 
-async def _export_papers(session, kb_id: str, papers_dir: Path, *, dry_run: bool) -> list[dict[str, Any]]:
-    """导出论文元数据与 PDF 原文，返回 manifest 中的论文条目。"""
-    from sqlalchemy import select
+def _read_paper_bytes(source_path: str, *, dry_run: bool) -> bytes | None:
+    """定位论文 PDF 原文；找不到时返回 ``None``。
+
+    试运行只判定“是否可导出”，不真正下载也不落盘。
+    """
     from yuxi.knowledge.utils.kb_utils import is_minio_url, parse_minio_url
     from yuxi.storage.minio.client import get_minio_client
+
+    if is_minio_url(source_path):
+        if dry_run:
+            return b""
+        bucket_name, object_name = parse_minio_url(source_path)
+        return get_minio_client().download_file(bucket_name, object_name)
+    local_path = Path(source_path)
+    if not local_path.is_file():
+        return None
+    return b"" if dry_run else local_path.read_bytes()
+
+
+async def _export_papers(
+    session, kb_id: str, papers_dir: Path, *, dry_run: bool
+) -> tuple[list[dict[str, Any]], set[str], list[dict[str, Any]]]:
+    """导出论文元数据与 PDF 原文。
+
+    返回 ``(论文条目, 可恢复的文件 ID 集合, 未能取到原文的文件清单)``。
+    只有取到原文的文件才会被标记为可恢复——导入端按文件重建 chunk，
+    没有原文的文件即使导出了 chunk 也无法在目标环境恢复。
+    """
+    from sqlalchemy import select
+    from yuxi.knowledge.utils.kb_utils import is_minio_url, parse_minio_url
     from yuxi.storage.postgres.models_knowledge import AcademicPaper, KnowledgeFile
 
     paper_rows = list(
@@ -102,6 +127,8 @@ async def _export_papers(session, kb_id: str, papers_dir: Path, *, dry_run: bool
     )
 
     entries: list[dict[str, Any]] = []
+    missing_files: list[dict[str, Any]] = []
+    restorable_file_ids: set[str] = set()
     used_names: set[str] = set()
     for paper in paper_rows:
         file_row = file_rows.get(str(paper.file_id)) if paper.file_id else None
@@ -126,8 +153,19 @@ async def _export_papers(session, kb_id: str, papers_dir: Path, *, dry_run: bool
         }
 
         source_path = (file_row.minio_url or file_row.path) if file_row else None
-        if source_path and is_minio_url(source_path):
-            bucket_name, object_name = parse_minio_url(source_path)
+        data = _read_paper_bytes(source_path, dry_run=dry_run) if source_path else None
+        if data is None:
+            # 取不到原文的论文分两种：没有关联知识文件，或原文存放位置不可达。
+            missing_files.append(
+                {
+                    "file_id": str(paper.file_id) if paper.file_id else None,
+                    "filename": file_row.filename if file_row else None,
+                    "paper_id": str(paper.paper_id),
+                    "reason": "原文存放位置不可达" if source_path else "没有关联的知识文件",
+                    "title": str(paper.title),
+                }
+            )
+        else:
             pdf_name = f"{_slugify(paper.title)}.pdf"
             suffix = 1
             while pdf_name in used_names:
@@ -137,22 +175,38 @@ async def _export_papers(session, kb_id: str, papers_dir: Path, *, dry_run: bool
             entry["pdf_file"] = f"papers/{pdf_name}"
             if not dry_run:
                 papers_dir.mkdir(parents=True, exist_ok=True)
-                data = get_minio_client().download_file(bucket_name, object_name)
                 (papers_dir / pdf_name).write_bytes(data)
                 entry["pdf_sha256"] = hashlib.sha256(data).hexdigest()
                 entry["pdf_bytes"] = len(data)
-                entry["pdf_object"] = f"{bucket_name}/{object_name}"
+                if is_minio_url(source_path):
+                    bucket_name, object_name = parse_minio_url(source_path)
+                    entry["pdf_object"] = f"{bucket_name}/{object_name}"
+            restorable_file_ids.add(str(paper.file_id))
         entries.append(entry)
-    return entries
+    return entries, restorable_file_ids, missing_files
 
 
-async def _export_chunks(session, kb_id: str, paper_entries: list[dict[str, Any]]) -> dict[str, Any]:
-    """导出每个 chunk 的正文与定位元数据；论文快照在导入时按 manifest 回填。"""
-    from demo_data_spec import REDUNDANT_CHUNK_METADATA_KEYS
+async def _export_chunks(
+    session,
+    kb_id: str,
+    paper_entries: list[dict[str, Any]],
+    restorable_file_ids: set[str],
+) -> dict[str, Any]:
+    """导出每个 chunk 的正文与定位元数据；论文快照在导入时按 manifest 回填。
+
+    只导出可恢复文件的 chunk：导入端以 PDF 原文为锚点重建 chunk，
+    取不到原文的文件即使导出正文也无法在目标环境恢复。
+    """
+    from demo_data_spec import CHUNK_ANALYSIS_FIELDS, REDUNDANT_CHUNK_METADATA_KEYS
     from sqlalchemy import select
     from yuxi.storage.postgres.models_knowledge import KnowledgeChunk
 
-    file_ids = [str(entry["source_file_id"]) for entry in paper_entries if entry.get("source_file_id")]
+    file_to_paper = {
+        str(entry["source_file_id"]): str(entry["paper_id"])
+        for entry in paper_entries
+        if entry.get("source_file_id") and str(entry["source_file_id"]) in restorable_file_ids
+    }
+    file_ids = list(file_to_paper)
     if not file_ids:
         return {}
     rows = list(
@@ -166,24 +220,24 @@ async def _export_chunks(session, kb_id: str, paper_entries: list[dict[str, Any]
         .scalars()
         .all()
     )
-    file_to_paper = {str(entry["source_file_id"]): str(entry["paper_id"]) for entry in paper_entries}
     chunks: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
         metadata = dict(row.chunk_metadata or {})
         for key in REDUNDANT_CHUNK_METADATA_KEYS:
             metadata.pop(key, None)
-        chunks.setdefault(file_to_paper.get(str(row.file_id), ""), []).append(
-            {
-                "chunk_id": str(row.chunk_id),
-                "chunk_index": int(row.chunk_index),
-                "content": row.content,
-                "start_char_pos": row.start_char_pos,
-                "end_char_pos": row.end_char_pos,
-                "start_token_pos": row.start_token_pos,
-                "end_token_pos": row.end_token_pos,
-                "chunk_metadata": _jsonable(metadata),
-            }
-        )
+        record = {
+            "chunk_id": str(row.chunk_id),
+            "chunk_index": int(row.chunk_index),
+            "content": row.content,
+            "start_char_pos": row.start_char_pos,
+            "end_char_pos": row.end_char_pos,
+            "start_token_pos": row.start_token_pos,
+            "end_token_pos": row.end_token_pos,
+            "chunk_metadata": _jsonable(metadata),
+        }
+        for field in CHUNK_ANALYSIS_FIELDS:
+            record[field] = _jsonable(getattr(row, field, None))
+        chunks.setdefault(file_to_paper.get(str(row.file_id), ""), []).append(record)
     return chunks
 
 
@@ -239,18 +293,22 @@ async def _export_one_kb(session, kb_id: str, bundle_dir: Path, *, dry_run: bool
     )
     file_id_by_paper = {str(row.paper_id): str(row.file_id) for row in paper_rows if row.file_id}
 
-    paper_entries = await _export_papers(session, kb_id, bundle_dir / "papers", dry_run=dry_run)
+    paper_entries, restorable_file_ids, missing_files = await _export_papers(
+        session, kb_id, bundle_dir / "papers", dry_run=dry_run
+    )
     for entry in paper_entries:
         entry["source_file_id"] = file_id_by_paper.get(str(entry["paper_id"]))
 
-    chunks = await _export_chunks(session, kb_id, paper_entries)
+    chunks = await _export_chunks(session, kb_id, paper_entries, restorable_file_ids)
     business_data = await _export_business_data(session, kb_id)
 
+    chunk_count_by_paper = {paper_id: len(items) for paper_id, items in chunks.items()}
     for entry in paper_entries:
+        entry["chunk_count"] = chunk_count_by_paper.get(str(entry["paper_id"]), 0)
         entry.pop("source_file_id", None)
 
     manifest = {
-        "schema_version": 1,
+        "schema_version": 2,
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "source_kb": {
             "kb_id": kb_id,
@@ -263,10 +321,12 @@ async def _export_one_kb(session, kb_id: str, bundle_dir: Path, *, dry_run: bool
             "mindmap": _jsonable(kb_row.mindmap),
         },
         "papers": paper_entries,
+        "papers_without_pdf": missing_files,
         "counts": {
             "papers": len(paper_entries),
             "papers_with_pdf": sum(1 for entry in paper_entries if entry.get("pdf_file")),
             "chunks": sum(len(items) for items in chunks.values()),
+            "papers_without_pdf": len(missing_files),
             **{table: len(rows) for table, rows in business_data.items()},
         },
     }
@@ -298,10 +358,18 @@ async def export(*, kb_ids: list[str], output_dir: Path, dry_run: bool) -> int:
                     f"，chunk {counts['chunks']} 个"
                 )
                 for table, count in counts.items():
-                    if table in {"papers", "papers_with_pdf", "chunks"}:
+                    if table in {"papers", "papers_with_pdf", "chunks", "papers_without_pdf"}:
                         continue
                     if count:
                         print(f"  业务表 {table}: {count} 行")
+                missing_files = manifest.get("papers_without_pdf") or []
+                if missing_files:
+                    print(f"  警告：{len(missing_files)} 篇论文没有可恢复的原文，其 chunk 未导出：")
+                    for item in missing_files:
+                        print(
+                            f"    - {item.get('title') or item.get('filename') or item.get('paper_id')}"
+                            f"（{item.get('reason')}）"
+                        )
         return 0
     finally:
         await pg_manager.close()

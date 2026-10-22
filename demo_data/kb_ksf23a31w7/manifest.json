@@ -1,6 +1,6 @@
 {
-  "schema_version": 1,
-  "generated_at": "2026-10-22T00:51:36",
+  "schema_version": 2,
+  "generated_at": "2026-10-22T13:07:59",
   "source_kb": {
     "kb_id": "kb_ksf23a31w7",
     "name": "ResearchCompass 演示备选库",
@@ -69,7 +69,8 @@
       "pdf_file": "papers/react-synergizing-reasoning-and-acting-in-language-models.pdf",
       "pdf_sha256": "f285b0971ae4a790e402fb93966bed3adde2cf0a04977d08b2b40d6ab0cace69",
       "pdf_bytes": 633805,
-      "pdf_object": "knowledgebases/kb_ksf23a31w7/upload/ReAct Synergizing Reasoning and Acting in Language Models-99832586d55f-25a5fe7f52.pdf"
+      "pdf_object": "knowledgebases/kb_ksf23a31w7/upload/ReAct Synergizing Reasoning and Acting in Language Models-99832586d55f-25a5fe7f52.pdf",
+      "chunk_count": 43
     },
     {
       "paper_id": "ref_28a760ef248842682741adbf",
@@ -92,7 +93,8 @@
       "metadata_status": "extracted",
       "metadata_revision": 1,
       "indexed_revision": 0,
-      "source_file_name": null
+      "source_file_name": null,
+      "chunk_count": 0
     },
     {
       "paper_id": "ref_e2b471171902239340a229da",
@@ -118,7 +120,87 @@
       "metadata_status": "extracted",
       "metadata_revision": 1,
       "indexed_revision": 0,
-      "source_file_name": null
+      "source_file_name": null,
+      "chunk_count": 0
+    },
+    {
+      "paper_id": "s2_156d217b0a911af97fa1b5a71dc909ccef7a8028",
+      "source_row_id": 161,
+      "title": "SciBERT: A Pretrained Language Model for Scientific Text",
+      "abstract": "Obtaining large-scale annotated data for NLP tasks in the scientific domain is challenging and expensive. We release SciBERT, a pretrained language model based on BERT (Devlin et. al., 2018) to address the lack of high-quality, large-scale labeled scientific data. SciBERT leverages unsupervised pretraining on a large multi-domain corpus of scientific publications to improve performance on downstream scientific NLP tasks. We evaluate on a suite of tasks including sequence tagging, sentence classification and dependency parsing, with datasets from a variety of scientific domains. We demonstrate statistically significant improvements over BERT and achieve new state-of-the-art results on several of these tasks. The code and pretrained models are available at https://github.com/allenai/scibert/.",
+      "authors": [
+        "Iz Beltagy",
+        "Kyle Lo",
+        "Arman Cohan"
+      ],
+      "publication_year": 2019,
+      "venue": "Conference on Empirical Methods in Natural Language Processing",
+      "doi": "10.18653/v1/d19-1371",
+      "keywords": [
+        "Computer Science"
+      ],
+      "language": "en",
+      "external_ids": {
+        "ACL": "D19-1371",
+        "DOI": "10.18653/v1/D19-1371",
+        "MAG": "2973154071",
+        "DBLP": "conf/emnlp/BeltagyLC19",
+        "ArXiv": "1903.10676",
+        "CorpusId": "202558505",
+        "SemanticScholar": "156d217b0a911af97fa1b5a71dc909ccef7a8028"
+      },
+      "citation_count": 4027,
+      "metadata_source": "semantic_scholar",
+      "metadata_status": "extracted",
+      "metadata_revision": 1,
+      "indexed_revision": 1,
+      "source_file_name": "SciBERT A Pretrained Language Model for Scientific Text-156d217b0a91.pdf",
+      "pdf_file": "papers/scibert-a-pretrained-language-model-for-scientific-text.pdf",
+      "pdf_sha256": "6cd768c13674657bdd1e314ef7ee378e929f6cacdd1c7e6be1cba6149d8fbe7b",
+      "pdf_bytes": 120281,
+      "pdf_object": "knowledgebases/kb_ksf23a31w7/upload/SciBERT A Pretrained Language Model for Scientific Text-156d217b0a91-25077ad44e.pdf",
+      "chunk_count": 10
+    },
+    {
+      "paper_id": "s2_1733eb7792f7a43dd21f51f4d1017a1bffd217b5",
+      "source_row_id": 142,
+      "title": "Lost in the Middle: How Language Models Use Long Contexts",
+      "abstract": "While recent language models have the ability to take long contexts as input, relatively little is known about how well they use longer context. We analyze the performance of language models on two tasks that require identifying relevant information in their input contexts: multi-document question answering and key-value retrieval. We find that performance can degrade significantly when changing the position of relevant information, indicating that current language models do not robustly make use of information in long input contexts. In particular, we observe that performance is often highest when relevant information occurs at the beginning or end of the input context, and significantly degrades when models must access relevant information in the middle of long contexts, even for explicitly long-context models. Our analysis provides a better understanding of how language models use their input context and provides new evaluation protocols for future long-context language models.",
+      "authors": [
+        "Nelson F. Liu",
+        "Kevin Lin",
+        "John Hewitt",
+        "Ashwin Paranjape",
+        "Michele Bevilacqua",
+        "F. Petroni",
+        "Percy Liang"
+      ],
+      "publication_year": 2023,
+      "venue": "Transactions of the Association for Computational Linguistics",
+      "doi": "10.1162/tacl_a_00638",
+      "keywords": [
+        "Computer Science"
+      ],
+      "language": "en",
+      "external_ids": {
+        "ACL": "2024.tacl-1.9",
+        "DOI": "10.1162/tacl_a_00638",
+        "DBLP": "journals/corr/abs-2307-03172",
+        "ArXiv": "2307.03172",
+        "CorpusId": "259360665",
+        "SemanticScholar": "1733eb7792f7a43dd21f51f4d1017a1bffd217b5"
+      },
+      "citation_count": 5606,
+      "metadata_source": "semantic_scholar",
+      "metadata_status": "extracted",
+      "metadata_revision": 1,
+      "indexed_revision": 1,
+      "source_file_name": "Lost in the Middle How Language Models Use Long Contexts-1733eb7792f7.pdf",
+      "pdf_file": "papers/lost-in-the-middle-how-language-models-use-long-contexts.pdf",
+      "pdf_sha256": "653b29619eae2ae4b361d7bdcdc06db4bedcb1b0eabe31814036beca8c1af0b1",
+      "pdf_bytes": 747542,
+      "pdf_object": "knowledgebases/kb_ksf23a31w7/upload/Lost in the Middle How Language Models Use Long Contexts-1733eb7792f7-2a9f8ba33c.pdf",
+      "chunk_count": 25
     },
     {
       "paper_id": "s2_1b6e810ce0afd0dd093f789d2b2742d047e316d5",
@@ -158,7 +240,47 @@
       "pdf_file": "papers/chain-of-thought-prompting-elicits-reasoning-in-large-language-models.pdf",
       "pdf_sha256": "7d9f878c23b460e4566aa4ec9201b1abfb3b8faefb2b1356e411cb90fef72a12",
       "pdf_bytes": 891773,
-      "pdf_object": "knowledgebases/kb_ksf23a31w7/upload/Chain of Thought Prompting Elicits Reasoning in Large Language Models-1b6e810ce0af-f83dbc5998.pdf"
+      "pdf_object": "knowledgebases/kb_ksf23a31w7/upload/Chain of Thought Prompting Elicits Reasoning in Large Language Models-1b6e810ce0af-f83dbc5998.pdf",
+      "chunk_count": 57
+    },
+    {
+      "paper_id": "s2_1d40f07569482d24e3335ffb31394d4bf1567e6f",
+      "source_row_id": 157,
+      "title": "RAPTOR: Recursive Abstractive Processing for Tree-Organized Retrieval",
+      "abstract": "Retrieval-augmented language models can better adapt to changes in world state and incorporate long-tail knowledge. However, most existing methods retrieve only short contiguous chunks from a retrieval corpus, limiting holistic understanding of the overall document context. We introduce the novel approach of recursively embedding, clustering, and summarizing chunks of text, constructing a tree with differing levels of summarization from the bottom up. At inference time, our RAPTOR model retrieves from this tree, integrating information across lengthy documents at different levels of abstraction. Controlled experiments show that retrieval with recursive summaries offers significant improvements over traditional retrieval-augmented LMs on several tasks. On question-answering tasks that involve complex, multi-step reasoning, we show state-of-the-art results; for example, by coupling RAPTOR retrieval with the use of GPT-4, we can improve the best performance on the QuALITY benchmark by 20% in absolute accuracy.",
+      "authors": [
+        "Parth Sarthi",
+        "Salman Abdullah",
+        "Aditi Tuli",
+        "Shubh Khanna",
+        "Anna Goldie",
+        "Christopher D. Manning"
+      ],
+      "publication_year": 2024,
+      "venue": "International Conference on Learning Representations",
+      "doi": "10.48550/arxiv.2401.18059",
+      "keywords": [
+        "Computer Science"
+      ],
+      "language": "en",
+      "external_ids": {
+        "DOI": "10.48550/arXiv.2401.18059",
+        "DBLP": "conf/iclr/SarthiATKGM24",
+        "ArXiv": "2401.18059",
+        "CorpusId": "267334785",
+        "SemanticScholar": "1d40f07569482d24e3335ffb31394d4bf1567e6f"
+      },
+      "citation_count": 812,
+      "metadata_source": "semantic_scholar",
+      "metadata_status": "extracted",
+      "metadata_revision": 1,
+      "indexed_revision": 1,
+      "source_file_name": "RAPTOR Recursive Abstractive Processing for Tree-Organized Retrieval-1d40f0756948.pdf",
+      "pdf_file": "papers/raptor-recursive-abstractive-processing-for-tree-organized-retrieval.pdf",
+      "pdf_sha256": "01319e2e6e6ecfd504ee1bbda41d023f9e060bd3505ab3c161baa1d6d696cf75",
+      "pdf_bytes": 2547113,
+      "pdf_object": "knowledgebases/kb_ksf23a31w7/upload/RAPTOR Recursive Abstractive Processing for Tree-Organized Retrieval-1d40f0756948-07270eb4e2.pdf",
+      "chunk_count": 28
     },
     {
       "paper_id": "s2_204e3073870fae3d05bcbc2f6a8e263d9b72e776",
@@ -198,7 +320,843 @@
       "pdf_file": "papers/attention-is-all-you-need.pdf",
       "pdf_sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697",
       "pdf_bytes": 2215244,
-      "pdf_object": "knowledgebases/kb_ksf23a31w7/upload/Attention is All you Need-204e3073870f-25e609fbe7.pdf"
+      "pdf_object": "knowledgebases/kb_ksf23a31w7/upload/Attention is All you Need-204e3073870f-25e609fbe7.pdf",
+      "chunk_count": 13
+    },
+    {
+      "paper_id": "s2_268d347e8a55b5eb82fb5e7d2f800e33c75ab18a",
+      "source_row_id": 155,
+      "title": "An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale",
+      "abstract": "While the Transformer architecture has become the de-facto standard for natural language processing tasks, its applications to computer vision remain limited. In vision, attention is either applied in conjunction with convolutional networks, or used to replace certain components of convolutional networks while keeping their overall structure in place. We show that this reliance on CNNs is not necessary and a pure transformer applied directly to sequences of image patches can perform very well on image classification tasks. When pre-trained on large amounts of data and transferred to multiple mid-sized or small image recognition benchmarks (ImageNet, CIFAR-100, VTAB, etc.), Vision Transformer (ViT) attains excellent results compared to state-of-the-art convolutional networks while requiring substantially fewer computational resources to train.",
+      "authors": [
+        "A. Dosovitskiy",
+        "Lucas Beyer",
+        "Alexander Kolesnikov",
+        "Dirk Weissenborn",
+        "Xiao-Hua Zhai",
+        "T. Unterthiner",
+        "Mostafa Dehghani",
+        "M. Minderer",
+        "G. Heigold",
+        "S. Gelly",
+        "J. Uszkoreit",
+        "N. Houlsby"
+      ],
+      "publication_year": 2020,
+      "venue": "International Conference on Learning Representations",
+      "doi": null,
+      "keywords": [
+        "Computer Science"
+      ],
+      "language": "en",
+      "external_ids": {
+        "MAG": "3094502228",
+        "DBLP": "journals/corr/abs-2010-11929",
+        "ArXiv": "2010.11929",
+        "CorpusId": "225039882",
+        "SemanticScholar": "268d347e8a55b5eb82fb5e7d2f800e33c75ab18a"
+      },
+      "citation_count": 72102,
+      "metadata_source": "semantic_scholar",
+      "metadata_status": "extracted",
+      "metadata_revision": 1,
+      "indexed_revision": 1,
+      "source_file_name": "An Image is Worth 16x16 Words Transformers for Image Recognition at Scale-268d347e8a55.pdf",
+      "pdf_file": "papers/an-image-is-worth-16x16-words-transformers-for-image-recognition-at-scale.pdf",
+      "pdf_sha256": "8ce7b83971a14508ca711a27c875c9b6914c4f6767cf3150fb1ca6c07aa056d6",
+      "pdf_bytes": 3743814,
+      "pdf_object": "knowledgebases/kb_ksf23a31w7/upload/An Image is Worth 16x16 Words Transformers for Image Recognition at Scale-268d347e8a55-9fc0e3edbf.pdf",
+      "chunk_count": 28
+    },
+    {
+      "paper_id": "s2_2cbb8de53759e75411bc528518947a3094fbce3a",
+      "source_row_id": 160,
+      "title": "Billion-Scale Similarity Search with GPUs",
+      "abstract": "Similarity search finds application in database systems handling complex data such as images or videos, which are typically represented by high-dimensional features and require specific indexing structures. This paper tackles the problem of better utilizing GPUs for this task. While GPUs excel at data parallel tasks such as distance computation, prior approaches in this domain are bottlenecked by algorithms that expose less parallelism, such as <inline-formula><tex-math notation=\"LaTeX\">$k$</tex-math><alternatives><mml:math><mml:mi>k</mml:mi></mml:math><inline-graphic xlink:href=\"johnson-ieq1-2921572.gif\"/></alternatives></inline-formula>-min selection, or make poor use of the memory hierarchy. We propose a novel design for <inline-formula><tex-math notation=\"LaTeX\">$k$</tex-math><alternatives><mml:math><mml:mi>k</mml:mi></mml:math><inline-graphic xlink:href=\"johnson-ieq2-2921572.gif\"/></alternatives></inline-formula>-selection. We apply it in different similarity search scenarios, by optimizing brute-force, approximate and compressed-domain search based on product quantization. In all these setups, we outperform the state of the art by large margins. Our implementation operates at up to 55 percent of theoretical peak performance, enabling a nearest neighbor implementation that is 8.5 × faster than prior GPU state of the art. It enables the construction of a high accuracy <inline-formula><tex-math notation=\"LaTeX\">$k$</tex-math><alternatives><mml:math><mml:mi>k</mml:mi></mml:math><inline-graphic xlink:href=\"johnson-ieq3-2921572.gif\"/></alternatives></inline-formula>-NN graph on 95 million images from the <sc>Yfcc100M</sc> dataset in 35 minutes, and of a graph connecting 1 billion vectors in less than 12 hours on 4 Maxwell Titan X GPUs. We have open-sourced our approach for the sake of comparison and reproducibility.",
+      "authors": [
+        "Jeff Johnson",
+        "Matthijs Douze",
+        "H. Jégou"
+      ],
+      "publication_year": 2017,
+      "venue": "IEEE Transactions on Big Data",
+      "doi": "10.1109/tbdata.2019.2921572",
+      "keywords": [
+        "Computer Science"
+      ],
+      "language": "en",
+      "external_ids": {
+        "DOI": "10.1109/tbdata.2019.2921572",
+        "MAG": "2998702515",
+        "DBLP": "journals/tbd/JohnsonDJ21",
+        "ArXiv": "1702.08734",
+        "CorpusId": "926364",
+        "SemanticScholar": "2cbb8de53759e75411bc528518947a3094fbce3a"
+      },
+      "citation_count": 6178,
+      "metadata_source": "semantic_scholar",
+      "metadata_status": "extracted",
+      "metadata_revision": 1,
+      "indexed_revision": 1,
+      "source_file_name": "Billion-Scale Similarity Search with GPUs-2cbb8de53759.pdf",
+      "pdf_file": "papers/billion-scale-similarity-search-with-gpus.pdf",
+      "pdf_sha256": "89b2371b261846059d416bdf1423b15a6e3cc7d1b2d5dc2729ee5f6c3399049a",
+      "pdf_bytes": 1233821,
+      "pdf_object": "knowledgebases/kb_ksf23a31w7/upload/Billion-Scale Similarity Search with GPUs-2cbb8de53759-a1ff2a72b8.pdf",
+      "chunk_count": 28
+    },
+    {
+      "paper_id": "s2_53d128ea815bcc0526856eb5a9c42cc977cb36a7",
+      "source_row_id": 143,
+      "title": "Toolformer: Language Models Can Teach Themselves to Use Tools",
+      "abstract": "Language models (LMs) exhibit remarkable abilities to solve new tasks from just a few examples or textual instructions, especially at scale. They also, paradoxically, struggle with basic functionality, such as arithmetic or factual lookup, where much simpler and smaller models excel. In this paper, we show that LMs can teach themselves to use external tools via simple APIs and achieve the best of both worlds. We introduce Toolformer, a model trained to decide which APIs to call, when to call them, what arguments to pass, and how to best incorporate the results into future token prediction. This is done in a self-supervised way, requiring nothing more than a handful of demonstrations for each API. We incorporate a range of tools, including a calculator, a Q\\&A system, two different search engines, a translation system, and a calendar. Toolformer achieves substantially improved zero-shot performance across a variety of downstream tasks, often competitive with much larger models, without sacrificing its core language modeling abilities.",
+      "authors": [
+        "Timo Schick",
+        "Jane Dwivedi-Yu",
+        "Roberto Dessì",
+        "R. Raileanu",
+        "M. Lomeli",
+        "Eric Hambro",
+        "Luke Zettlemoyer",
+        "Nicola Cancedda",
+        "Thomas Scialom"
+      ],
+      "publication_year": 2023,
+      "venue": "Neural Information Processing Systems",
+      "doi": "10.48550/arxiv.2302.04761",
+      "keywords": [
+        "Computer Science"
+      ],
+      "language": "en",
+      "external_ids": {
+        "DOI": "10.48550/arXiv.2302.04761",
+        "DBLP": "journals/corr/abs-2302-04761",
+        "ArXiv": "2302.04761",
+        "CorpusId": "256697342",
+        "SemanticScholar": "53d128ea815bcc0526856eb5a9c42cc977cb36a7"
+      },
+      "citation_count": 6264,
+      "metadata_source": "semantic_scholar",
+      "metadata_status": "extracted",
+      "metadata_revision": 1,
+      "indexed_revision": 1,
+      "source_file_name": "Toolformer Language Models Can Teach Themselves to Use Tools-53d128ea815b.pdf",
+      "pdf_file": "papers/toolformer-language-models-can-teach-themselves-to-use-tools.pdf",
+      "pdf_sha256": "6d7483d94653008e40c2058a1c22441c92e3713dae278b6361e8efc447c99522",
+      "pdf_bytes": 657966,
+      "pdf_object": "knowledgebases/kb_ksf23a31w7/upload/Toolformer Language Models Can Teach Themselves to Use Tools-53d128ea815b-4313f7c9e1.pdf",
+      "chunk_count": 31
+    },
+    {
+      "paper_id": "s2_57e849d0de13ed5f91d086936296721d4ff75a75",
+      "source_row_id": 150,
+      "title": "LLaMA: Open and Efficient Foundation Language Models",
+      "abstract": "We introduce LLaMA, a collection of foundation language models ranging from 7B to 65B parameters. We train our models on trillions of tokens, and show that it is possible to train state-of-the-art models using publicly available datasets exclusively, without resorting to proprietary and inaccessible datasets. In particular, LLaMA-13B outperforms GPT-3 (175B) on most benchmarks, and LLaMA-65B is competitive with the best models, Chinchilla-70B and PaLM-540B. We release all our models to the research community.",
+      "authors": [
+        "Hugo Touvron",
+        "Thibaut Lavril",
+        "Gautier Izacard",
+        "X. Martinet",
+        "M. Lachaux",
+        "Timothée Lacroix",
+        "Baptiste Rozière",
+        "Naman Goyal",
+        "Eric Hambro",
+        "Faisal Azhar",
+        "Aurélien Rodriguez",
+        "A. Joulin",
+        "E. Grave",
+        "Guillaume Lample"
+      ],
+      "publication_year": 2023,
+      "venue": "arXiv.org",
+      "doi": null,
+      "keywords": [
+        "Computer Science"
+      ],
+      "language": "en",
+      "external_ids": {
+        "DBLP": "journals/corr/abs-2302-13971",
+        "ArXiv": "2302.13971",
+        "CorpusId": "257219404",
+        "SemanticScholar": "57e849d0de13ed5f91d086936296721d4ff75a75"
+      },
+      "citation_count": 22114,
+      "metadata_source": "semantic_scholar",
+      "metadata_status": "extracted",
+      "metadata_revision": 1,
+      "indexed_revision": 1,
+      "source_file_name": "LLaMA Open and Efficient Foundation Language Models-57e849d0de13.pdf",
+      "pdf_file": "papers/llama-open-and-efficient-foundation-language-models.pdf",
+      "pdf_sha256": "2e663675ae36ad12adb2f5a05281bac2747ecf8d23d92bedd9f937a89fee7136",
+      "pdf_bytes": 726566,
+      "pdf_object": "knowledgebases/kb_ksf23a31w7/upload/LLaMA Open and Efficient Foundation Language Models-57e849d0de13-5cb3731d82.pdf",
+      "chunk_count": 40
+    },
+    {
+      "paper_id": "s2_5bbc2b5aa6c63c6a2cfccf095d6020b063ad47ac",
+      "source_row_id": 162,
+      "title": "Corrective Retrieval Augmented Generation",
+      "abstract": "Large language models (LLMs) inevitably exhibit hallucinations since the accuracy of generated texts cannot be secured solely by the parametric knowledge they encapsulate. Although retrieval-augmented generation (RAG) is a practicable complement to LLMs, it relies heavily on the relevance of retrieved documents, raising concerns about how the model behaves if retrieval goes wrong. To this end, we propose the Corrective Retrieval Augmented Generation (CRAG) to improve the robustness of generation. Specifically, a lightweight retrieval evaluator is designed to assess the overall quality of retrieved documents for a query, returning a confidence degree based on which different knowledge retrieval actions can be triggered. Since retrieval from static and limited corpora can only return sub-optimal documents, large-scale web searches are utilized as an extension for augmenting the retrieval results. Besides, a decompose-then-recompose algorithm is designed for retrieved documents to selectively focus on key information and filter out irrelevant information in them. CRAG is plug-and-play and can be seamlessly coupled with various RAG-based approaches. Experiments on four datasets covering short- and long-form generation tasks show that CRAG can significantly improve the performance of RAG-based approaches.",
+      "authors": [
+        "Shi-Qi Yan",
+        "Jia-Chen Gu",
+        "Yun Zhu",
+        "Zhen-Hua Ling"
+      ],
+      "publication_year": 2024,
+      "venue": "arXiv.org",
+      "doi": "10.48550/arxiv.2401.15884",
+      "keywords": [
+        "Computer Science"
+      ],
+      "language": "en",
+      "external_ids": {
+        "DOI": "10.48550/arXiv.2401.15884",
+        "DBLP": "journals/corr/abs-2401-15884",
+        "ArXiv": "2401.15884",
+        "CorpusId": "267312595",
+        "SemanticScholar": "5bbc2b5aa6c63c6a2cfccf095d6020b063ad47ac"
+      },
+      "citation_count": 339,
+      "metadata_source": "semantic_scholar",
+      "metadata_status": "extracted",
+      "metadata_revision": 1,
+      "indexed_revision": 1,
+      "source_file_name": "Corrective Retrieval Augmented Generation-5bbc2b5aa6c6.pdf",
+      "pdf_file": "papers/corrective-retrieval-augmented-generation.pdf",
+      "pdf_sha256": "975aa1fd3c1b603126e93ff99d6504858b61301bf1d34c9df88ebe53a0b026cb",
+      "pdf_bytes": 667756,
+      "pdf_object": "knowledgebases/kb_ksf23a31w7/upload/Corrective Retrieval Augmented Generation-5bbc2b5aa6c6-ddfef0b5e8.pdf",
+      "chunk_count": 24
+    },
+    {
+      "paper_id": "s2_5c126ae3421f05768d8edd97ecd44b1364e2c99a",
+      "source_row_id": 156,
+      "title": "Denoising Diffusion Probabilistic Models",
+      "abstract": "We present high quality image synthesis results using diffusion probabilistic models, a class of latent variable models inspired by considerations from nonequilibrium thermodynamics. Our best results are obtained by training on a weighted variational bound designed according to a novel connection between diffusion probabilistic models and denoising score matching with Langevin dynamics, and our models naturally admit a progressive lossy decompression scheme that can be interpreted as a generalization of autoregressive decoding. On the unconditional CIFAR10 dataset, we obtain an Inception score of 9.46 and a state-of-the-art FID score of 3.17. On 256x256 LSUN, we obtain sample quality similar to ProgressiveGAN. Our implementation is available at this https URL",
+      "authors": [
+        "Jonathan Ho",
+        "Ajay Jain",
+        "P. Abbeel"
+      ],
+      "publication_year": 2020,
+      "venue": "Neural Information Processing Systems",
+      "doi": null,
+      "keywords": [
+        "Computer Science",
+        "Mathematics"
+      ],
+      "language": "en",
+      "external_ids": {
+        "MAG": "3100572490",
+        "DBLP": "journals/corr/abs-2006-11239",
+        "ArXiv": "2006.11239",
+        "CorpusId": "219955663",
+        "SemanticScholar": "5c126ae3421f05768d8edd97ecd44b1364e2c99a"
+      },
+      "citation_count": 36720,
+      "metadata_source": "semantic_scholar",
+      "metadata_status": "extracted",
+      "metadata_revision": 1,
+      "indexed_revision": 1,
+      "source_file_name": "Denoising Diffusion Probabilistic Models-5c126ae3421f.pdf",
+      "pdf_file": "papers/denoising-diffusion-probabilistic-models.pdf",
+      "pdf_sha256": "aee5e07a802e8dfd2a386374c94fd61d1d056cb7e1e0fec4f28e8120ff5d8505",
+      "pdf_bytes": 10267274,
+      "pdf_object": "knowledgebases/kb_ksf23a31w7/upload/Denoising Diffusion Probabilistic Models-5c126ae3421f-859e93ab53.pdf",
+      "chunk_count": 19
+    },
+    {
+      "paper_id": "s2_60b8ad6177230ad5402af409a6edb5af441baeb4",
+      "source_row_id": 154,
+      "title": "ColBERT: Efficient and Effective Passage Search via Contextualized Late Interaction over BERT",
+      "abstract": "Recent progress in Natural Language Understanding (NLU) is driving fast-paced advances in Information Retrieval (IR), largely owed to fine-tuning deep language models (LMs) for document ranking. While remarkably effective, the ranking models based on these LMs increase computational cost by orders of magnitude over prior approaches, particularly as they must feed each query-document pair through a massive neural network to compute a single relevance score. To tackle this, we present ColBERT, a novel ranking model that adapts deep LMs (in particular, BERT) for efficient retrieval. ColBERT introduces a late interaction architecture that independently encodes the query and the document using BERT and then employs a cheap yet powerful interaction step that models their fine-grained similarity. By delaying and yet retaining this fine-granular interaction, ColBERT can leverage the expressiveness of deep LMs while simultaneously gaining the ability to pre-compute document representations offline, considerably speeding up query processing. Crucially, ColBERT's pruning-friendly interaction mechanism enables leveraging vector-similarity indexes for end-to-end retrieval directly from millions of documents. We extensively evaluate ColBERT using two recent passage search datasets. Results show that ColBERT's effectiveness is competitive with existing BERT-based models (and outperforms every non-BERT baseline), while executing two orders-of-magnitude faster and requiring up to four orders-of-magnitude fewer FLOPs per query.",
+      "authors": [
+        "O. Khattab",
+        "M. Zaharia"
+      ],
+      "publication_year": 2020,
+      "venue": "Annual International ACM SIGIR Conference on Research and Development in Information Retrieval",
+      "doi": "10.1145/3397271.3401075",
+      "keywords": [
+        "Computer Science"
+      ],
+      "language": "en",
+      "external_ids": {
+        "DOI": "10.1145/3397271.3401075",
+        "MAG": "3021397474",
+        "DBLP": "journals/corr/abs-2004-12832",
+        "ArXiv": "2004.12832",
+        "CorpusId": "216553223",
+        "SemanticScholar": "60b8ad6177230ad5402af409a6edb5af441baeb4"
+      },
+      "citation_count": 2680,
+      "metadata_source": "semantic_scholar",
+      "metadata_status": "extracted",
+      "metadata_revision": 1,
+      "indexed_revision": 1,
+      "source_file_name": "ColBERT Efficient and Effective Passage Search via Contextualized Late Interaction over BERT-60b8ad617723.pdf",
+      "pdf_file": "papers/colbert-efficient-and-effective-passage-search-via-contextualized-late-interacti.pdf",
+      "pdf_sha256": "2e487d9b96e3c2e5e286d843e98a066adc0442faa3a6e8ddbd1771221bf9ae14",
+      "pdf_bytes": 4918165,
+      "pdf_object": "knowledgebases/kb_ksf23a31w7/upload/ColBERT Efficient and Effective Passage Search via Contextualized Late Interaction over BERT-60b8ad617723-bb096e412f.pdf",
+      "chunk_count": 23
+    },
+    {
+      "paper_id": "s2_659bf9ce7175e1ec266ff54359e2bd76e0b7ff31",
+      "source_row_id": 163,
+      "title": "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks",
+      "abstract": "Large pre-trained language models have been shown to store factual knowledge in their parameters, and achieve state-of-the-art results when fine-tuned on downstream NLP tasks. However, their ability to access and precisely manipulate knowledge is still limited, and hence on knowledge-intensive tasks, their performance lags behind task-specific architectures. Additionally, providing provenance for their decisions and updating their world knowledge remain open research problems. Pre-trained models with a differentiable access mechanism to explicit non-parametric memory can overcome this issue, but have so far been only investigated for extractive downstream tasks. We explore a general-purpose fine-tuning recipe for retrieval-augmented generation (RAG) -- models which combine pre-trained parametric and non-parametric memory for language generation. We introduce RAG models where the parametric memory is a pre-trained seq2seq model and the non-parametric memory is a dense vector index of Wikipedia, accessed with a pre-trained neural retriever. We compare two RAG formulations, one which conditions on the same retrieved passages across the whole generated sequence, the other can use different passages per token. We fine-tune and evaluate our models on a wide range of knowledge-intensive NLP tasks and set the state-of-the-art on three open domain QA tasks, outperforming parametric seq2seq models and task-specific retrieve-and-extract architectures. For language generation tasks, we find that RAG models generate more specific, diverse and factual language than a state-of-the-art parametric-only seq2seq baseline.",
+      "authors": [
+        "Patrick Lewis",
+        "Ethan Perez",
+        "Aleksandra Piktus",
+        "F. Petroni",
+        "Vladimir Karpukhin",
+        "Naman Goyal",
+        "Heinrich Kuttler",
+        "M. Lewis",
+        "Wen-tau Yih",
+        "Tim Rocktäschel",
+        "Sebastian Riedel",
+        "Douwe Kiela"
+      ],
+      "publication_year": 2020,
+      "venue": "Neural Information Processing Systems",
+      "doi": null,
+      "keywords": [
+        "Computer Science"
+      ],
+      "language": "en",
+      "external_ids": {
+        "MAG": "3027879771",
+        "DBLP": "conf/nips/LewisPPPKGKLYR020",
+        "ArXiv": "2005.11401",
+        "CorpusId": "218869575",
+        "SemanticScholar": "659bf9ce7175e1ec266ff54359e2bd76e0b7ff31"
+      },
+      "citation_count": 19849,
+      "metadata_source": "semantic_scholar",
+      "metadata_status": "extracted",
+      "metadata_revision": 1,
+      "indexed_revision": 1,
+      "source_file_name": "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks-659bf9ce7175.pdf",
+      "pdf_file": "papers/retrieval-augmented-generation-for-knowledge-intensive-nlp-tasks.pdf",
+      "pdf_sha256": "23e3249e9a1e75418d82efecab0ea8c4d033b89c93742f63208d47ce01f21233",
+      "pdf_bytes": 885323,
+      "pdf_object": "knowledgebases/kb_ksf23a31w7/upload/Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks-659bf9ce7175-670738e3bd.pdf",
+      "chunk_count": 24
+    },
+    {
+      "paper_id": "s2_699a2e3b653c69aff5cf7a9923793b974f8ca164",
+      "source_row_id": 141,
+      "title": "Efficient and Robust Approximate Nearest Neighbor Search Using Hierarchical Navigable Small World Graphs",
+      "abstract": "We present a new approach for the approximate K-nearest neighbor search based on navigable small world graphs with controllable hierarchy (Hierarchical NSW, HNSW). The proposed solution is fully graph-based, without any need for additional search structures (typically used at the coarse search stage of the most proximity graph techniques). Hierarchical NSW incrementally builds a multi-layer structure consisting of a hierarchical set of proximity graphs (layers) for nested subsets of the stored elements. The maximum layer in which an element is present is selected randomly with an exponentially decaying probability distribution. This allows producing graphs similar to the previously studied Navigable Small World (NSW) structures while additionally having the links separated by their characteristic distance scales. Starting the search from the upper layer together with utilizing the scale separation boosts the performance compared to NSW and allows a logarithmic complexity scaling. Additional employment of a heuristic for selecting proximity graph neighbors significantly increases performance at high recall and in case of highly clustered data. Performance evaluation has demonstrated that the proposed general metric space search index is able to strongly outperform previous opensource state-of-the-art vector-only approaches. Similarity of the algorithm to the skip list structure allows straightforward balanced distributed implementation.",
+      "authors": [
+        "Yury Malkov",
+        "D. A. Yashunin"
+      ],
+      "publication_year": 2016,
+      "venue": "IEEE Transactions on Pattern Analysis and Machine Intelligence",
+      "doi": "10.1109/tpami.2018.2889473",
+      "keywords": [
+        "Medicine",
+        "Computer Science",
+        "Mathematics"
+      ],
+      "language": "en",
+      "external_ids": {
+        "DOI": "10.1109/TPAMI.2018.2889473",
+        "MAG": "2953234795",
+        "DBLP": "journals/corr/MalkovY16",
+        "ArXiv": "1603.09320",
+        "PubMed": "30602420",
+        "CorpusId": "8915893",
+        "SemanticScholar": "699a2e3b653c69aff5cf7a9923793b974f8ca164"
+      },
+      "citation_count": 2852,
+      "metadata_source": "semantic_scholar",
+      "metadata_status": "extracted",
+      "metadata_revision": 1,
+      "indexed_revision": 1,
+      "source_file_name": "Efficient and Robust Approximate Nearest Neighbor Search Using Hierarchical Navigable Small World Graphs-699a2e3b653c.pdf",
+      "pdf_file": "papers/efficient-and-robust-approximate-nearest-neighbor-search-using-hierarchical-navi.pdf",
+      "pdf_sha256": "f78da128a3ea9ac08d37cfe6c4b641f371f88adb677d6d2bf637d90bad8d414a",
+      "pdf_bytes": 2636958,
+      "pdf_object": "knowledgebases/kb_ksf23a31w7/upload/Efficient and Robust Approximate Nearest Neighbor Search Using Hierarchical Navigable Small World Graphs-699a2e3b653c-0c3b9a8393.pdf",
+      "chunk_count": 26
+    },
+    {
+      "paper_id": "s2_6f870f7f02a8c59c3e23f407f3ef00dd1dcf8fc4",
+      "source_row_id": 153,
+      "title": "Learning Transferable Visual Models From Natural Language Supervision",
+      "abstract": "State-of-the-art computer vision systems are trained to predict a fixed set of predetermined object categories. This restricted form of supervision limits their generality and usability since additional labeled data is needed to specify any other visual concept. Learning directly from raw text about images is a promising alternative which leverages a much broader source of supervision. We demonstrate that the simple pre-training task of predicting which caption goes with which image is an efficient and scalable way to learn SOTA image representations from scratch on a dataset of 400 million (image, text) pairs collected from the internet. After pre-training, natural language is used to reference learned visual concepts (or describe new ones) enabling zero-shot transfer of the model to downstream tasks. We study the performance of this approach by benchmarking on over 30 different existing computer vision datasets, spanning tasks such as OCR, action recognition in videos, geo-localization, and many types of fine-grained object classification. The model transfers non-trivially to most tasks and is often competitive with a fully supervised baseline without the need for any dataset specific training. For instance, we match the accuracy of the original ResNet-50 on ImageNet zero-shot without needing to use any of the 1.28 million training examples it was trained on. We release our code and pre-trained model weights at https://github.com/OpenAI/CLIP.",
+      "authors": [
+        "A. Radford",
+        "Jong Wook Kim",
+        "Chris Hallacy",
+        "A. Ramesh",
+        "Gabriel Goh",
+        "S. Agarwal",
+        "G. Sastry",
+        "Amanda Askell",
+        "Pamela Mishkin",
+        "Jack Clark",
+        "G. Krueger",
+        "I. Sutskever"
+      ],
+      "publication_year": 2021,
+      "venue": "International Conference on Machine Learning",
+      "doi": null,
+      "keywords": [
+        "Computer Science"
+      ],
+      "language": "en",
+      "external_ids": {
+        "DBLP": "conf/icml/RadfordKHRGASAM21",
+        "ArXiv": "2103.00020",
+        "CorpusId": "231591445",
+        "SemanticScholar": "6f870f7f02a8c59c3e23f407f3ef00dd1dcf8fc4"
+      },
+      "citation_count": 58256,
+      "metadata_source": "semantic_scholar",
+      "metadata_status": "extracted",
+      "metadata_revision": 1,
+      "indexed_revision": 1,
+      "source_file_name": "Learning Transferable Visual Models From Natural Language Supervision-6f870f7f02a8.pdf",
+      "pdf_file": "papers/learning-transferable-visual-models-from-natural-language-supervision.pdf",
+      "pdf_sha256": "6478b6e571a7d6fcd846d8ef77bfd60c285f1986abb8f475eedc43de403074f5",
+      "pdf_bytes": 6813639,
+      "pdf_object": "knowledgebases/kb_ksf23a31w7/upload/Learning Transferable Visual Models From Natural Language Supervision-6f870f7f02a8-61e6a84c2f.pdf",
+      "chunk_count": 98
+    },
+    {
+      "paper_id": "s2_807600ef43073cd9c59d4208ee710e90cf14efa8",
+      "source_row_id": 164,
+      "title": "BEIR: A Heterogenous Benchmark for Zero-shot Evaluation of Information Retrieval Models",
+      "abstract": "Existing neural information retrieval (IR) models have often been studied in homogeneous and narrow settings, which has considerably limited insights into their out-of-distribution (OOD) generalization capabilities. To address this, and to facilitate researchers to broadly evaluate the effectiveness of their models, we introduce Benchmarking-IR (BEIR), a robust and heterogeneous evaluation benchmark for information retrieval. We leverage a careful selection of 18 publicly available datasets from diverse text retrieval tasks and domains and evaluate 10 state-of-the-art retrieval systems including lexical, sparse, dense, late-interaction and re-ranking architectures on the BEIR benchmark. Our results show BM25 is a robust baseline and re-ranking and late-interaction-based models on average achieve the best zero-shot performances, however, at high computational costs. In contrast, dense and sparse-retrieval models are computationally more efficient but often underperform other approaches, highlighting the considerable room for improvement in their generalization capabilities. We hope this framework allows us to better evaluate and understand existing retrieval systems, and contributes to accelerating progress towards better robust and generalizable systems in the future. BEIR is publicly available at https://github.com/UKPLab/beir.",
+      "authors": [
+        "Nandan Thakur",
+        "Nils Reimers",
+        "Andreas Ruckl'e",
+        "Abhishek Srivastava",
+        "I. Gurevych"
+      ],
+      "publication_year": 2021,
+      "venue": "NeurIPS Datasets and Benchmarks",
+      "doi": null,
+      "keywords": [
+        "Computer Science"
+      ],
+      "language": "en",
+      "external_ids": {
+        "DBLP": "journals/corr/abs-2104-08663",
+        "ArXiv": "2104.08663",
+        "CorpusId": "233296016",
+        "SemanticScholar": "807600ef43073cd9c59d4208ee710e90cf14efa8"
+      },
+      "citation_count": 2176,
+      "metadata_source": "semantic_scholar",
+      "metadata_status": "extracted",
+      "metadata_revision": 1,
+      "indexed_revision": 1,
+      "source_file_name": "BEIR A Heterogenous Benchmark for Zero-shot Evaluation of Information Retrieval Models-807600ef4307.pdf",
+      "pdf_file": "papers/beir-a-heterogenous-benchmark-for-zero-shot-evaluation-of-information-retrieval-.pdf",
+      "pdf_sha256": "1925755aeb627123d1a63c66f02e5aa2432f7e92751a02bea7c8c3b6bbb6ec33",
+      "pdf_bytes": 2094824,
+      "pdf_object": "knowledgebases/kb_ksf23a31w7/upload/BEIR A Heterogenous Benchmark for Zero-shot Evaluation of Information Retrieval Models-807600ef4307-60b65b2a62.pdf",
+      "chunk_count": 41
+    },
+    {
+      "paper_id": "s2_832fff14d2ed50eb7969c4c4b976c35776548f56",
+      "source_row_id": 148,
+      "title": "REALM: Retrieval-Augmented Language Model Pre-Training",
+      "abstract": "Language model pre-training has been shown to capture a surprising amount of world knowledge, crucial for NLP tasks such as question answering. However, this knowledge is stored implicitly in the parameters of a neural network, requiring ever-larger networks to cover more facts. \nTo capture knowledge in a more modular and interpretable way, we augment language model pre-training with a latent knowledge retriever, which allows the model to retrieve and attend over documents from a large corpus such as Wikipedia, used during pre-training, fine-tuning and inference. For the first time, we show how to pre-train such a knowledge retriever in an unsupervised manner, using masked language modeling as the learning signal and backpropagating through a retrieval step that considers millions of documents. \nWe demonstrate the effectiveness of Retrieval-Augmented Language Model pre-training (REALM) by fine-tuning on the challenging task of Open-domain Question Answering (Open-QA). We compare against state-of-the-art models for both explicit and implicit knowledge storage on three popular Open-QA benchmarks, and find that we outperform all previous methods by a significant margin (4-16% absolute accuracy), while also providing qualitative benefits such as interpretability and modularity.",
+      "authors": [
+        "Kelvin Guu",
+        "Kenton Lee",
+        "Zora Tung",
+        "Panupong Pasupat",
+        "Ming-Wei Chang"
+      ],
+      "publication_year": 2020,
+      "venue": "International Conference on Machine Learning",
+      "doi": null,
+      "keywords": [
+        "Computer Science"
+      ],
+      "language": "en",
+      "external_ids": {
+        "MAG": "3034671305",
+        "DBLP": "conf/icml/GuuLTPC20",
+        "ArXiv": "2002.08909",
+        "CorpusId": "211204736",
+        "SemanticScholar": "832fff14d2ed50eb7969c4c4b976c35776548f56"
+      },
+      "citation_count": 3542,
+      "metadata_source": "semantic_scholar",
+      "metadata_status": "extracted",
+      "metadata_revision": 1,
+      "indexed_revision": 1,
+      "source_file_name": "REALM Retrieval-Augmented Language Model Pre-Training-832fff14d2ed.pdf",
+      "pdf_file": "papers/realm-retrieval-augmented-language-model-pre-training.pdf",
+      "pdf_sha256": "0ec1a7ab3de5514c6d3baa8af0322816d4ee7cd4c14b9f2c450cbc9da9e6b363",
+      "pdf_bytes": 419037,
+      "pdf_object": "knowledgebases/kb_ksf23a31w7/upload/REALM Retrieval-Augmented Language Model Pre-Training-832fff14d2ed-b766d61b82.pdf",
+      "chunk_count": 20
+    },
+    {
+      "paper_id": "s2_88a74e972898de887ad9587d4c87c3a9f03f1dc5",
+      "source_row_id": 151,
+      "title": "MTEB: Massive Text Embedding Benchmark",
+      "abstract": "Text embeddings are commonly evaluated on a small set of datasets from a single task not covering their possible applications to other tasks. It is unclear whether state-of-the-art embeddings on semantic textual similarity (STS) can be equally well applied to other tasks like clustering or reranking. This makes progress in the field difficult to track, as various models are constantly being proposed without proper evaluation. To solve this problem, we introduce the Massive Text Embedding Benchmark (MTEB). MTEB spans 8 embedding tasks covering a total of 58 datasets and 112 languages. Through the benchmarking of 33 models on MTEB, we establish the most comprehensive benchmark of text embeddings todate. We find that no particular text embedding method dominates across all tasks. This suggests that the field has yet to converge on a universal text embedding method and scale it up sufficiently to provide state-of-theart results on all embedding tasks. MTEB comes with open-source code and a public leaderboard at https://github.com/embeddings-benchmark/mteb.",
+      "authors": [
+        "Niklas Muennighoff",
+        "Nouamane Tazi",
+        "L. Magne",
+        "Nils Reimers"
+      ],
+      "publication_year": 2022,
+      "venue": "Conference of the European Chapter of the Association for Computational Linguistics",
+      "doi": "10.18653/v1/2023.eacl-main.148",
+      "keywords": [
+        "Computer Science"
+      ],
+      "language": "en",
+      "external_ids": {
+        "ACL": "2023.eacl-main.148",
+        "DOI": "10.18653/v1/2023.eacl-main.148",
+        "DBLP": "conf/eacl/MuennighoffTMR23",
+        "ArXiv": "2210.07316",
+        "CorpusId": "252907685",
+        "SemanticScholar": "88a74e972898de887ad9587d4c87c3a9f03f1dc5"
+      },
+      "citation_count": 1127,
+      "metadata_source": "semantic_scholar",
+      "metadata_status": "extracted",
+      "metadata_revision": 1,
+      "indexed_revision": 1,
+      "source_file_name": "MTEB Massive Text Embedding Benchmark-88a74e972898.pdf",
+      "pdf_file": "papers/mteb-massive-text-embedding-benchmark.pdf",
+      "pdf_sha256": "bfd15786180a6546e5bf1361fe42356a884517a6497c27ef6994f444be75e91f",
+      "pdf_bytes": 769075,
+      "pdf_object": "knowledgebases/kb_ksf23a31w7/upload/MTEB Massive Text Embedding Benchmark-88a74e972898-a9ab57a782.pdf",
+      "chunk_count": 41
+    },
+    {
+      "paper_id": "s2_90abbc2cf38462b954ae1b772fac9532e2ccd8b0",
+      "source_row_id": 144,
+      "title": "Language Models are Few-Shot Learners",
+      "abstract": "Recent work has demonstrated substantial gains on many NLP tasks and benchmarks by pre-training on a large corpus of text followed by fine-tuning on a specific task. While typically task-agnostic in architecture, this method still requires task-specific fine-tuning datasets of thousands or tens of thousands of examples. By contrast, humans can generally perform a new language task from only a few examples or from simple instructions - something which current NLP systems still largely struggle to do. Here we show that scaling up language models greatly improves task-agnostic, few-shot performance, sometimes even reaching competitiveness with prior state-of-the-art fine-tuning approaches. Specifically, we train GPT-3, an autoregressive language model with 175 billion parameters, 10x more than any previous non-sparse language model, and test its performance in the few-shot setting. For all tasks, GPT-3 is applied without any gradient updates or fine-tuning, with tasks and few-shot demonstrations specified purely via text interaction with the model. GPT-3 achieves strong performance on many NLP datasets, including translation, question-answering, and cloze tasks, as well as several tasks that require on-the-fly reasoning or domain adaptation, such as unscrambling words, using a novel word in a sentence, or performing 3-digit arithmetic. At the same time, we also identify some datasets where GPT-3's few-shot learning still struggles, as well as some datasets where GPT-3 faces methodological issues related to training on large web corpora. Finally, we find that GPT-3 can generate samples of news articles which human evaluators have difficulty distinguishing from articles written by humans. We discuss broader societal impacts of this finding and of GPT-3 in general.",
+      "authors": [
+        "Tom B. Brown",
+        "Benjamin Mann",
+        "Nick Ryder",
+        "Melanie Subbiah",
+        "J. Kaplan",
+        "Prafulla Dhariwal",
+        "Arvind Neelakantan",
+        "Pranav Shyam",
+        "G. Sastry",
+        "Amanda Askell",
+        "S. Agarwal",
+        "A. Herbert-Voss",
+        "G. Krueger",
+        "T. Henighan",
+        "R. Child",
+        "A. Ramesh",
+        "Daniel M. Ziegler",
+        "Jeff Wu",
+        "Clemens Winter",
+        "Christopher Hesse",
+        "Mark Chen",
+        "Eric Sigler",
+        "Mateusz Litwin",
+        "Scott Gray",
+        "Benjamin Chess",
+        "Jack Clark",
+        "Christopher Berner",
+        "Sam McCandlish",
+        "A. Radford",
+        "I. Sutskever",
+        "D. Amodei"
+      ],
+      "publication_year": 2020,
+      "venue": "Neural Information Processing Systems",
+      "doi": null,
+      "keywords": [
+        "Computer Science"
+      ],
+      "language": "en",
+      "external_ids": {
+        "MAG": "3030163527",
+        "DBLP": "conf/nips/BrownMRSKDNSSAA20",
+        "ArXiv": "2005.14165",
+        "CorpusId": "218971783",
+        "SemanticScholar": "90abbc2cf38462b954ae1b772fac9532e2ccd8b0"
+      },
+      "citation_count": 64989,
+      "metadata_source": "semantic_scholar",
+      "metadata_status": "extracted",
+      "metadata_revision": 1,
+      "indexed_revision": 1,
+      "source_file_name": "Language Models are Few-Shot Learners-90abbc2cf384.pdf",
+      "pdf_file": "papers/language-models-are-few-shot-learners.pdf",
+      "pdf_sha256": "97fd272f1fdfc18677462d0292f5fbf26ca86b4d1b485c2dba03269b643a0e83",
+      "pdf_bytes": 6768044,
+      "pdf_object": "knowledgebases/kb_ksf23a31w7/upload/Language Models are Few-Shot Learners-90abbc2cf384-b8649c660a.pdf",
+      "chunk_count": 99
+    },
+    {
+      "paper_id": "s2_93d63ec754f29fa22572615320afe0521f7ec66d",
+      "source_row_id": 149,
+      "title": "Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks",
+      "abstract": "BERT (Devlin et al., 2018) and RoBERTa (Liu et al., 2019) has set a new state-of-the-art performance on sentence-pair regression tasks like semantic textual similarity (STS). However, it requires that both sentences are fed into the network, which causes a massive computational overhead: Finding the most similar pair in a collection of 10,000 sentences requires about 50 million inference computations (~65 hours) with BERT. The construction of BERT makes it unsuitable for semantic similarity search as well as for unsupervised tasks like clustering. In this publication, we present Sentence-BERT (SBERT), a modification of the pretrained BERT network that use siamese and triplet network structures to derive semantically meaningful sentence embeddings that can be compared using cosine-similarity. This reduces the effort for finding the most similar pair from 65 hours with BERT / RoBERTa to about 5 seconds with SBERT, while maintaining the accuracy from BERT. We evaluate SBERT and SRoBERTa on common STS tasks and transfer learning tasks, where it outperforms other state-of-the-art sentence embeddings methods.",
+      "authors": [
+        "Nils Reimers",
+        "Iryna Gurevych"
+      ],
+      "publication_year": 2019,
+      "venue": "Conference on Empirical Methods in Natural Language Processing",
+      "doi": "10.18653/v1/d19-1410",
+      "keywords": [
+        "Computer Science"
+      ],
+      "language": "en",
+      "external_ids": {
+        "ACL": "D19-1410",
+        "DOI": "10.18653/v1/D19-1410",
+        "MAG": "2971193649",
+        "DBLP": "journals/corr/abs-1908-10084",
+        "ArXiv": "1908.10084",
+        "CorpusId": "201646309",
+        "SemanticScholar": "93d63ec754f29fa22572615320afe0521f7ec66d"
+      },
+      "citation_count": 21496,
+      "metadata_source": "semantic_scholar",
+      "metadata_status": "extracted",
+      "metadata_revision": 1,
+      "indexed_revision": 1,
+      "source_file_name": "Sentence-BERT Sentence Embeddings using Siamese BERT-Networks-93d63ec754f2.pdf",
+      "pdf_file": "papers/sentence-bert-sentence-embeddings-using-siamese-bert-networks.pdf",
+      "pdf_sha256": "92366d22fc0521350d6cbe0ad72bcee754f90e88181d7b4a8e2adb1e7e594fec",
+      "pdf_bytes": 548961,
+      "pdf_object": "knowledgebases/kb_ksf23a31w7/upload/Sentence-BERT Sentence Embeddings using Siamese BERT-Networks-93d63ec754f2-c3516b59d8.pdf",
+      "chunk_count": 18
+    },
+    {
+      "paper_id": "s2_a8ca46b171467ceb2d7652fbfb67fe701ad86092",
+      "source_row_id": 145,
+      "title": "LoRA: Low-Rank Adaptation of Large Language Models",
+      "abstract": "An important paradigm of natural language processing consists of large-scale pre-training on general domain data and adaptation to particular tasks or domains. As we pre-train larger models, full fine-tuning, which retrains all model parameters, becomes less feasible. Using GPT-3 175B as an example -- deploying independent instances of fine-tuned models, each with 175B parameters, is prohibitively expensive. We propose Low-Rank Adaptation, or LoRA, which freezes the pre-trained model weights and injects trainable rank decomposition matrices into each layer of the Transformer architecture, greatly reducing the number of trainable parameters for downstream tasks. Compared to GPT-3 175B fine-tuned with Adam, LoRA can reduce the number of trainable parameters by 10,000 times and the GPU memory requirement by 3 times. LoRA performs on-par or better than fine-tuning in model quality on RoBERTa, DeBERTa, GPT-2, and GPT-3, despite having fewer trainable parameters, a higher training throughput, and, unlike adapters, no additional inference latency. We also provide an empirical investigation into rank-deficiency in language model adaptation, which sheds light on the efficacy of LoRA. We release a package that facilitates the integration of LoRA with PyTorch models and provide our implementations and model checkpoints for RoBERTa, DeBERTa, and GPT-2 at https://github.com/microsoft/LoRA.",
+      "authors": [
+        "J. Hu",
+        "Ye-Long Shen",
+        "Phillip Wallis",
+        "Zeyuan Allen-Zhu",
+        "Yuanzhi Li",
+        "She-An Wang",
+        "Lu Wang",
+        "Wei-Zhu Chen"
+      ],
+      "publication_year": 2021,
+      "venue": "International Conference on Learning Representations",
+      "doi": null,
+      "keywords": [
+        "Computer Science"
+      ],
+      "language": "en",
+      "external_ids": {
+        "DBLP": "conf/iclr/HuSWALWWC22",
+        "ArXiv": "2106.09685",
+        "CorpusId": "235458009",
+        "SemanticScholar": "a8ca46b171467ceb2d7652fbfb67fe701ad86092"
+      },
+      "citation_count": 24679,
+      "metadata_source": "semantic_scholar",
+      "metadata_status": "extracted",
+      "metadata_revision": 1,
+      "indexed_revision": 1,
+      "source_file_name": "LoRA Low-Rank Adaptation of Large Language Models-a8ca46b17146.pdf",
+      "pdf_file": "papers/lora-low-rank-adaptation-of-large-language-models.pdf",
+      "pdf_sha256": "e9a0d3128767db616085dc0f4e6e455e672e89af823e8ed1282793682787395a",
+      "pdf_bytes": 1609513,
+      "pdf_object": "knowledgebases/kb_ksf23a31w7/upload/LoRA Low-Rank Adaptation of Large Language Models-a8ca46b17146-a15c155237.pdf",
+      "chunk_count": 50
+    },
+    {
+      "paper_id": "s2_b26f2037f769d5ffc5f7bdcec2de8da28ec14bee",
+      "source_row_id": 147,
+      "title": "Dense Passage Retrieval for Open-Domain Question Answering",
+      "abstract": "Open-domain question answering relies on efficient passage retrieval to select candidate contexts, where traditional sparse vector space models, such as TF-IDF or BM25, are the de facto method. In this work, we show that retrieval can be practically implemented using dense representations alone, where embeddings are learned from a small number of questions and passages by a simple dual-encoder framework. When evaluated on a wide range of open-domain QA datasets, our dense retriever outperforms a strong Lucene-BM25 system largely by 9%-19% absolute in terms of top-20 passage retrieval accuracy, and helps our end-to-end QA system establish new state-of-the-art on multiple open-domain QA benchmarks.",
+      "authors": [
+        "Vladimir Karpukhin",
+        "Barlas Oğuz",
+        "Sewon Min",
+        "Patrick Lewis",
+        "Ledell Yu Wu",
+        "Sergey Edunov",
+        "Danqi Chen",
+        "Wen-tau Yih"
+      ],
+      "publication_year": 2020,
+      "venue": "Conference on Empirical Methods in Natural Language Processing",
+      "doi": "10.18653/v1/2020.emnlp-main.550",
+      "keywords": [
+        "Computer Science"
+      ],
+      "language": "en",
+      "external_ids": {
+        "ACL": "2020.emnlp-main.550",
+        "DOI": "10.18653/v1/2020.emnlp-main.550",
+        "MAG": "3015883388",
+        "DBLP": "conf/emnlp/KarpukhinOMLWEC20",
+        "ArXiv": "2004.04906",
+        "CorpusId": "215737187",
+        "SemanticScholar": "b26f2037f769d5ffc5f7bdcec2de8da28ec14bee"
+      },
+      "citation_count": 7409,
+      "metadata_source": "semantic_scholar",
+      "metadata_status": "extracted",
+      "metadata_revision": 1,
+      "indexed_revision": 1,
+      "source_file_name": "Dense Passage Retrieval for Open-Domain Question Answering-b26f2037f769.pdf",
+      "pdf_file": "papers/dense-passage-retrieval-for-open-domain-question-answering.pdf",
+      "pdf_sha256": "3e67fc1a9977715acf722d85f0b7d124b03715e975f6310a4d6c12094190912f",
+      "pdf_bytes": 383508,
+      "pdf_object": "knowledgebases/kb_ksf23a31w7/upload/Dense Passage Retrieval for Open-Domain Question Answering-b26f2037f769-c463d7dab7.pdf",
+      "chunk_count": 25
+    },
+    {
+      "paper_id": "s2_c1799bf28d1ae93e1631be5b59196ee1e568f538",
+      "source_row_id": 152,
+      "title": "From Local to Global: A Graph RAG Approach to Query-Focused Summarization",
+      "abstract": "The use of retrieval-augmented generation (RAG) to retrieve relevant information from an external knowledge source enables large language models (LLMs) to answer questions over private and/or previously unseen document collections. However, RAG fails on global questions directed at an entire text corpus, such as\"What are the main themes in the dataset?\", since this is inherently a query-focused summarization (QFS) task, rather than an explicit retrieval task. Prior QFS methods, meanwhile, do not scale to the quantities of text indexed by typical RAG systems. To combine the strengths of these contrasting methods, we propose GraphRAG, a graph-based approach to question answering over private text corpora that scales with both the generality of user questions and the quantity of source text. Our approach uses an LLM to build a graph index in two stages: first, to derive an entity knowledge graph from the source documents, then to pregenerate community summaries for all groups of closely related entities. Given a question, each community summary is used to generate a partial response, before all partial responses are again summarized in a final response to the user. For a class of global sensemaking questions over datasets in the 1 million token range, we show that GraphRAG leads to substantial improvements over a conventional RAG baseline for both the comprehensiveness and diversity of generated answers.",
+      "authors": [
+        "Darren Edge",
+        "Ha Trinh",
+        "Newman Cheng",
+        "Joshua Bradley",
+        "A. Chao",
+        "Apurva Mody",
+        "Steven Truitt",
+        "Jonathan Larson"
+      ],
+      "publication_year": 2024,
+      "venue": "arXiv.org",
+      "doi": null,
+      "keywords": [
+        "Computer Science"
+      ],
+      "language": "en",
+      "external_ids": {
+        "DBLP": "journals/corr/abs-2404-16130",
+        "ArXiv": "2404.16130",
+        "CorpusId": "269363075",
+        "SemanticScholar": "c1799bf28d1ae93e1631be5b59196ee1e568f538"
+      },
+      "citation_count": 2402,
+      "metadata_source": "semantic_scholar",
+      "metadata_status": "extracted",
+      "metadata_revision": 1,
+      "indexed_revision": 1,
+      "source_file_name": "From Local to Global A Graph RAG Approach to Query-Focused Summarization-c1799bf28d1a.pdf",
+      "pdf_file": "papers/from-local-to-global-a-graph-rag-approach-to-query-focused-summarization.pdf",
+      "pdf_sha256": "730f1a9f38d16689900969a3eeeb1b31e45eda1dcc1f37a043afa90aff76c867",
+      "pdf_bytes": 6893854,
+      "pdf_object": "knowledgebases/kb_ksf23a31w7/upload/From Local to Global A Graph RAG Approach to Query-Focused Summarization-c1799bf28d1a-db5c2bf198.pdf",
+      "chunk_count": 33
+    },
+    {
+      "paper_id": "s2_d766bffc357127e0dc86dd69561d5aeb520d6f4c",
+      "source_row_id": 159,
+      "title": "Training language models to follow instructions with human feedback",
+      "abstract": "Making language models bigger does not inherently make them better at following a user's intent. For example, large language models can generate outputs that are untruthful, toxic, or simply not helpful to the user. In other words, these models are not aligned with their users. In this paper, we show an avenue for aligning language models with user intent on a wide range of tasks by fine-tuning with human feedback. Starting with a set of labeler-written prompts and prompts submitted through the OpenAI API, we collect a dataset of labeler demonstrations of the desired model behavior, which we use to fine-tune GPT-3 using supervised learning. We then collect a dataset of rankings of model outputs, which we use to further fine-tune this supervised model using reinforcement learning from human feedback. We call the resulting models InstructGPT. In human evaluations on our prompt distribution, outputs from the 1.3B parameter InstructGPT model are preferred to outputs from the 175B GPT-3, despite having 100x fewer parameters. Moreover, InstructGPT models show improvements in truthfulness and reductions in toxic output generation while having minimal performance regressions on public NLP datasets. Even though InstructGPT still makes simple mistakes, our results show that fine-tuning with human feedback is a promising direction for aligning language models with human intent.",
+      "authors": [
+        "Long Ouyang",
+        "Jeff Wu",
+        "Xu Jiang",
+        "Diogo Almeida",
+        "Carroll L. Wainwright",
+        "Pamela Mishkin",
+        "Chong Zhang",
+        "S. Agarwal",
+        "Katarina Slama",
+        "Alex Ray",
+        "John D. Schulman",
+        "Jacob Hilton",
+        "Fraser Kelton",
+        "Luke E. Miller",
+        "M. Simens",
+        "Amanda Askell",
+        "Peter Welinder",
+        "Paul F. Christiano",
+        "Jan Leike",
+        "Ryan J. Lowe"
+      ],
+      "publication_year": 2022,
+      "venue": "Neural Information Processing Systems",
+      "doi": "10.52202/068431-2011",
+      "keywords": [
+        "Computer Science"
+      ],
+      "language": "en",
+      "external_ids": {
+        "DOI": "10.52202/068431-2011",
+        "DBLP": "journals/corr/abs-2203-02155",
+        "ArXiv": "2203.02155",
+        "CorpusId": "246426909",
+        "SemanticScholar": "d766bffc357127e0dc86dd69561d5aeb520d6f4c"
+      },
+      "citation_count": 25197,
+      "metadata_source": "semantic_scholar",
+      "metadata_status": "extracted",
+      "metadata_revision": 1,
+      "indexed_revision": 1,
+      "source_file_name": "Training language models to follow instructions with human feedback-d766bffc3571.pdf",
+      "pdf_file": "papers/training-language-models-to-follow-instructions-with-human-feedback.pdf",
+      "pdf_sha256": "c1984bb50a5b90fddb895fdc3a0f72e5bc977148c9f63ef6040cbe7a3e1f0d98",
+      "pdf_bytes": 1797405,
+      "pdf_object": "knowledgebases/kb_ksf23a31w7/upload/Training language models to follow instructions with human feedback-d766bffc3571-25b4833ff5.pdf",
+      "chunk_count": 75
+    },
+    {
+      "paper_id": "s2_ddbd8fe782ac98e9c64dd98710687a962195dd9b",
+      "source_row_id": 158,
+      "title": "Self-RAG: Learning to Retrieve, Generate, and Critique through Self-Reflection",
+      "abstract": "Despite their remarkable capabilities, large language models (LLMs) often produce responses containing factual inaccuracies due to their sole reliance on the parametric knowledge they encapsulate. Retrieval-Augmented Generation (RAG), an ad hoc approach that augments LMs with retrieval of relevant knowledge, decreases such issues. However, indiscriminately retrieving and incorporating a fixed number of retrieved passages, regardless of whether retrieval is necessary, or passages are relevant, diminishes LM versatility or can lead to unhelpful response generation. We introduce a new framework called Self-Reflective Retrieval-Augmented Generation (Self-RAG) that enhances an LM's quality and factuality through retrieval and self-reflection. Our framework trains a single arbitrary LM that adaptively retrieves passages on-demand, and generates and reflects on retrieved passages and its own generations using special tokens, called reflection tokens. Generating reflection tokens makes the LM controllable during the inference phase, enabling it to tailor its behavior to diverse task requirements. Experiments show that Self-RAG (7B and 13B parameters) significantly outperforms state-of-the-art LLMs and retrieval-augmented models on a diverse set of tasks. Specifically, Self-RAG outperforms ChatGPT and retrieval-augmented Llama2-chat on Open-domain QA, reasoning and fact verification tasks, and it shows significant gains in improving factuality and citation accuracy for long-form generations relative to these models.",
+      "authors": [
+        "Akari Asai",
+        "Zeqiu Wu",
+        "Yizhong Wang",
+        "Avirup Sil",
+        "Hannaneh Hajishirzi"
+      ],
+      "publication_year": 2023,
+      "venue": "International Conference on Learning Representations",
+      "doi": null,
+      "keywords": [
+        "Computer Science"
+      ],
+      "language": "en",
+      "external_ids": {
+        "DBLP": "conf/iclr/AsaiWWSH24",
+        "ArXiv": "2310.11511",
+        "CorpusId": "264288947",
+        "SemanticScholar": "ddbd8fe782ac98e9c64dd98710687a962195dd9b"
+      },
+      "citation_count": 2907,
+      "metadata_source": "semantic_scholar",
+      "metadata_status": "extracted",
+      "metadata_revision": 1,
+      "indexed_revision": 1,
+      "source_file_name": "Self-RAG Learning to Retrieve, Generate, and Critique through Self-Reflection-ddbd8fe782ac.pdf",
+      "pdf_file": "papers/self-rag-learning-to-retrieve-generate-and-critique-through-self-reflection.pdf",
+      "pdf_sha256": "d9eaa1398abac0df67a9d0933a5bf8b6d9d83d2e72da2a486073cd842dd52978",
+      "pdf_bytes": 1405127,
+      "pdf_object": "knowledgebases/kb_ksf23a31w7/upload/Self-RAG Learning to Retrieve, Generate, and Critique through Self-Reflection-ddbd8fe782ac-118a1750a8.pdf",
+      "chunk_count": 40
     },
     {
       "paper_id": "s2_df2b0e26d0599ce3e70df8a9da02e51594e0e992",
@@ -236,26 +1194,82 @@
       "pdf_file": "papers/bert-pre-training-of-deep-bidirectional-transformers-for-language-understanding.pdf",
       "pdf_sha256": "5692a5514787a8c6727b4ff3b726a3385798bc68e12138d1d4af83947e2acf6e",
       "pdf_bytes": 775166,
-      "pdf_object": "knowledgebases/kb_ksf23a31w7/upload/BERT Pre-training of Deep Bidirectional Transformers for Language Understanding-df2b0e26d059-1f99ea99ac.pdf"
+      "pdf_object": "knowledgebases/kb_ksf23a31w7/upload/BERT Pre-training of Deep Bidirectional Transformers for Language Understanding-df2b0e26d059-1f99ea99ac.pdf",
+      "chunk_count": 26
+    },
+    {
+      "paper_id": "s2_ea8c46e193d5121e440daf96edfd15a47151c293",
+      "source_row_id": 146,
+      "title": "Leveraging Passage Retrieval with Generative Models for Open Domain Question Answering",
+      "abstract": "Generative models for open domain question answering have proven to be competitive, without resorting to external knowledge. While promising, this approach requires to use models with billions of parameters, which are expensive to train and query. In this paper, we investigate how much these models can benefit from retrieving text passages, potentially containing evidence. We obtain state-of-the-art results on the Natural Questions and TriviaQA open benchmarks. Interestingly, we observe that the performance of this method significantly improves when increasing the number of retrieved passages. This is evidence that sequence-to-sequence models offers a flexible framework to efficiently aggregate and combine evidence from multiple passages.",
+      "authors": [
+        "Gautier Izacard",
+        "E. Grave"
+      ],
+      "publication_year": 2020,
+      "venue": "Conference of the European Chapter of the Association for Computational Linguistics",
+      "doi": "10.18653/v1/2021.eacl-main.74",
+      "keywords": [
+        "Computer Science"
+      ],
+      "language": "en",
+      "external_ids": {
+        "ACL": "2021.eacl-main.74",
+        "DOI": "10.18653/v1/2021.eacl-main.74",
+        "MAG": "3039017601",
+        "DBLP": "conf/eacl/IzacardG21",
+        "ArXiv": "2007.01282",
+        "CorpusId": "220302360",
+        "SemanticScholar": "ea8c46e193d5121e440daf96edfd15a47151c293"
+      },
+      "citation_count": 2175,
+      "metadata_source": "semantic_scholar",
+      "metadata_status": "extracted",
+      "metadata_revision": 1,
+      "indexed_revision": 1,
+      "source_file_name": "Leveraging Passage Retrieval with Generative Models for Open Domain Question Answering-ea8c46e193d5.pdf",
+      "pdf_file": "papers/leveraging-passage-retrieval-with-generative-models-for-open-domain-question-ans.pdf",
+      "pdf_sha256": "f1ee7e927c3fb31beb2146f8c205692a91b40dadd65d80e025c6686e4d430953",
+      "pdf_bytes": 326612,
+      "pdf_object": "knowledgebases/kb_ksf23a31w7/upload/Leveraging Passage Retrieval with Generative Models for Open Domain Question Answering-ea8c46e193d5-40237893a7.pdf",
+      "chunk_count": 8
+    }
+  ],
+  "papers_without_pdf": [
+    {
+      "file_id": null,
+      "filename": null,
+      "paper_id": "ref_28a760ef248842682741adbf",
+      "reason": "没有关联的知识文件",
+      "title": "Smoke Acceptance Reference"
+    },
+    {
+      "file_id": null,
+      "filename": null,
+      "paper_id": "ref_e2b471171902239340a229da",
+      "reason": "没有关联的知识文件",
+      "title": "Deep Residual Learning for Image Recognition"
     }
   ],
   "counts": {
-    "papers": 6,
-    "papers_with_pdf": 4,
-    "chunks": 139,
+    "papers": 30,
+    "papers_with_pdf": 28,
+    "chunks": 993,
+    "papers_without_pdf": 2,
     "research_paper_notes": 0,
     "academic_paper_screenings": 0,
     "academic_paper_tags": 0,
-    "research_search_runs": 1,
-    "research_synthesis_runs": 0,
+    "research_search_runs": 29,
+    "research_synthesis_runs": 17,
     "academic_paper_analysis_runs": 0,
-    "evaluation_datasets": 0,
-    "evaluation_dataset_items": 0,
-    "evaluation_runs": 0,
-    "evaluation_experiments": 0,
-    "evaluation_experiment_variants": 0,
+    "evaluation_datasets": 1,
+    "evaluation_dataset_items": 10,
+    "evaluation_runs": 4,
+    "evaluation_run_items": 40,
+    "evaluation_experiments": 2,
+    "evaluation_experiment_variants": 4,
     "research_user_studies": 0,
     "research_projects": 0,
-    "research_evidence": 0
+    "research_evidence": 993
   }
 }

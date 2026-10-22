@@ -1,6 +1,6 @@
 {
-  "schema_version": 1,
-  "generated_at": "2026-10-22T00:51:35",
+  "schema_version": 2,
+  "generated_at": "2026-10-22T13:07:56",
   "source_kb": {
     "kb_id": "kb_jxhcpxnqlu",
     "name": "ResearchCompass Demo",
@@ -162,7 +162,8 @@
       "pdf_file": "papers/lightrag-simple-and-fast-retrieval-augmented-generation.pdf",
       "pdf_sha256": "bd72eebf611df1366b251c16ce4eac7aac699e519783c586feb2c5c43899347a",
       "pdf_bytes": 1123301,
-      "pdf_object": "knowledgebases/kb_jxhcpxnqlu/upload/LightRAG Simple and Fast Retrieval-Augmented Generation-1ea143c34b9b-312ea08114.pdf"
+      "pdf_object": "knowledgebases/kb_jxhcpxnqlu/upload/LightRAG Simple and Fast Retrieval-Augmented Generation-1ea143c34b9b-312ea08114.pdf",
+      "chunk_count": 23
     },
     {
       "paper_id": "s2_204e3073870fae3d05bcbc2f6a8e263d9b72e776",
@@ -202,7 +203,8 @@
       "pdf_file": "papers/attention-is-all-you-need.pdf",
       "pdf_sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697",
       "pdf_bytes": 2215244,
-      "pdf_object": "knowledgebases/kb_jxhcpxnqlu/upload/Attention is All you Need-204e3073870f-25e609fbe7.pdf"
+      "pdf_object": "knowledgebases/kb_jxhcpxnqlu/upload/Attention is All you Need-204e3073870f-25e609fbe7.pdf",
+      "chunk_count": 13
     },
     {
       "paper_id": "s2_46f9f7b8f88f72e12cbdb21e3311f995eb6e65c5",
@@ -244,7 +246,8 @@
       "pdf_file": "papers/retrieval-augmented-generation-for-large-language-models-a-survey.pdf",
       "pdf_sha256": "396a0fadeb4cd40f5c8ccc36b73a0815f6cb4d7f6bfa53b6c48c1f9aba7c7e02",
       "pdf_bytes": 1662567,
-      "pdf_object": "knowledgebases/kb_jxhcpxnqlu/upload/Retrieval-Augmented Generation for Large Language Models A Survey-46f9f7b8f88f-0561b2ad4f.pdf"
+      "pdf_object": "knowledgebases/kb_jxhcpxnqlu/upload/Retrieval-Augmented Generation for Large Language Models A Survey-46f9f7b8f88f-0561b2ad4f.pdf",
+      "chunk_count": 39
     },
     {
       "paper_id": "s2_4e71624e90960cb003e311a0fe3b8be4c2863239",
@@ -277,7 +280,8 @@
       "pdf_file": "papers/multihop-rag-benchmarking-retrieval-augmented-generation-for-multi-hop-queries.pdf",
       "pdf_sha256": "743155d9b0541c99a7f6fb89772fc0856cf32989db61204bb6796fe293cf0fcb",
       "pdf_bytes": 1895706,
-      "pdf_object": "knowledgebases/kb_jxhcpxnqlu/upload/MultiHop-RAG Benchmarking Retrieval-Augmented Generation for Multi-Hop Queries-4e71624e9096-f23a816bec.pdf"
+      "pdf_object": "knowledgebases/kb_jxhcpxnqlu/upload/MultiHop-RAG Benchmarking Retrieval-Augmented Generation for Multi-Hop Queries-4e71624e9096-f23a816bec.pdf",
+      "chunk_count": 22
     },
     {
       "paper_id": "s2_659bf9ce7175e1ec266ff54359e2bd76e0b7ff31",
@@ -321,7 +325,8 @@
       "pdf_file": "papers/retrieval-augmented-generation-for-knowledge-intensive-nlp-tasks.pdf",
       "pdf_sha256": "23e3249e9a1e75418d82efecab0ea8c4d033b89c93742f63208d47ce01f21233",
       "pdf_bytes": 885323,
-      "pdf_object": "knowledgebases/kb_jxhcpxnqlu/upload/Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks-659bf9ce7175-670738e3bd.pdf"
+      "pdf_object": "knowledgebases/kb_jxhcpxnqlu/upload/Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks-659bf9ce7175-670738e3bd.pdf",
+      "chunk_count": 24
     },
     {
       "paper_id": "s2_79e57387a664a5d7b128b2790a8f38f827e09124",
@@ -361,7 +366,8 @@
       "pdf_file": "papers/retrieval-augmented-generation-evaluation-in-the-era-of-large-language-models-a-.pdf",
       "pdf_sha256": "8d06049a175f650f5ded3d84f4c641d3ffcfe6ddeec6992b56d4665e97a278b8",
       "pdf_bytes": 6488146,
-      "pdf_object": "knowledgebases/kb_jxhcpxnqlu/upload/Retrieval Augmented Generation Evaluation in the Era of Large Language Models A Comprehensive Survey-79e57387a664-b20c593c8a.pdf"
+      "pdf_object": "knowledgebases/kb_jxhcpxnqlu/upload/Retrieval Augmented Generation Evaluation in the Era of Large Language Models A Comprehensive Survey-79e57387a664-b20c593c8a.pdf",
+      "chunk_count": 49
     },
     {
       "paper_id": "s2_a41d4a3b005c8ec4f821e6ee96672d930ca9596c",
@@ -401,7 +407,8 @@
       "pdf_file": "papers/g-retriever-retrieval-augmented-generation-for-textual-graph-understanding-and-q.pdf",
       "pdf_sha256": "c88093cd95417a12b8c7166ecc1132c9b52d077a4f73f84e7100e25722902b98",
       "pdf_bytes": 4747389,
-      "pdf_object": "knowledgebases/kb_jxhcpxnqlu/upload/G-Retriever Retrieval-Augmented Generation for Textual Graph Understanding and Question Answering-a41d4a3b005c-2ed61ec63d.pdf"
+      "pdf_object": "knowledgebases/kb_jxhcpxnqlu/upload/G-Retriever Retrieval-Augmented Generation for Textual Graph Understanding and Question Answering-a41d4a3b005c-2ed61ec63d.pdf",
+      "chunk_count": 30
     },
     {
       "paper_id": "s2_b798cf6af813638fab09a8af6ad0f3df6c241485",
@@ -437,7 +444,8 @@
       "pdf_file": "papers/benchmarking-retrieval-augmented-generation-for-medicine.pdf",
       "pdf_sha256": "fbe057c591a4ba5b543f109b7c89075124ff188428011b314fb6737f6fd16b76",
       "pdf_bytes": 884447,
-      "pdf_object": "knowledgebases/kb_jxhcpxnqlu/upload/Benchmarking Retrieval-Augmented Generation for Medicine-b798cf6af813-a7b7ecb9b1.pdf"
+      "pdf_object": "knowledgebases/kb_jxhcpxnqlu/upload/Benchmarking Retrieval-Augmented Generation for Medicine-b798cf6af813-a7b7ecb9b1.pdf",
+      "chunk_count": 31
     },
     {
       "paper_id": "s2_ba7952e7c4fb891c36980ca19f94251257da6eb7",
@@ -474,7 +482,8 @@
       "pdf_file": "papers/agentic-retrieval-augmented-generation-a-survey-on-agentic-rag.pdf",
       "pdf_sha256": "e1041580a2fecec215b203f5232d558cd6e2802af3d4f5f04fe8bff5080460f8",
       "pdf_bytes": 14269078,
-      "pdf_object": "knowledgebases/kb_jxhcpxnqlu/upload/Agentic Retrieval-Augmented Generation A Survey on Agentic RAG-ba7952e7c4fb-065ef769a8.pdf"
+      "pdf_object": "knowledgebases/kb_jxhcpxnqlu/upload/Agentic Retrieval-Augmented Generation A Survey on Agentic RAG-ba7952e7c4fb-065ef769a8.pdf",
+      "chunk_count": 40
     },
     {
       "paper_id": "s2_f4e06256ab07727ff4e0465deea83fcf45012354",
@@ -509,7 +518,8 @@
       "pdf_file": "papers/poisonedrag-knowledge-corruption-attacks-to-retrieval-augmented-generation-of-la.pdf",
       "pdf_sha256": "f4ff19ff52ac2f861c9cfa4035b0e265a8ba1e08b6752e8ad931df411f8bdfce",
       "pdf_bytes": 1079052,
-      "pdf_object": "knowledgebases/kb_jxhcpxnqlu/upload/PoisonedRAG Knowledge Corruption Attacks to Retrieval-Augmented Generation of Large Language Models-f4e06256ab07-92e2bb554b.pdf"
+      "pdf_object": "knowledgebases/kb_jxhcpxnqlu/upload/PoisonedRAG Knowledge Corruption Attacks to Retrieval-Augmented Generation of Large Language Models-f4e06256ab07-92e2bb554b.pdf",
+      "chunk_count": 51
     },
     {
       "paper_id": "s2_f5e9e5bbe22f0263be1f1ce88c66978a2b927772",
@@ -546,17 +556,20 @@
       "pdf_file": "papers/ragas-automated-evaluation-of-retrieval-augmented-generation.pdf",
       "pdf_sha256": "6c24762a3f277fd120ed1adf34b01420ecf92f18ff6d1b5435fa0a09cb804ecb",
       "pdf_bytes": 231984,
-      "pdf_object": "knowledgebases/kb_jxhcpxnqlu/upload/RAGAs Automated Evaluation of Retrieval Augmented Generation-f5e9e5bbe22f-1ee9053cef.pdf"
+      "pdf_object": "knowledgebases/kb_jxhcpxnqlu/upload/RAGAs Automated Evaluation of Retrieval Augmented Generation-f5e9e5bbe22f-1ee9053cef.pdf",
+      "chunk_count": 14
     }
   ],
+  "papers_without_pdf": [],
   "counts": {
     "papers": 11,
     "papers_with_pdf": 11,
     "chunks": 336,
+    "papers_without_pdf": 0,
     "research_paper_notes": 0,
     "academic_paper_screenings": 2,
     "academic_paper_tags": 0,
-    "research_search_runs": 48,
+    "research_search_runs": 56,
     "research_synthesis_runs": 5,
     "academic_paper_analysis_runs": 7,
     "evaluation_datasets": 2,
