@@ -1,7 +1,6 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, computed, provide, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
-import { GithubOutlined } from '@ant-design/icons-vue'
 import {
   BarChart3,
   ClipboardList,
@@ -435,19 +434,10 @@ provide('settingsModal', {
           <NotificationCenter />
           <span v-if="!sidebarCollapsed" class="nav-text">通知</span>
         </div>
-        <div class="github nav-item" @click.stop>
-          <a-tooltip placement="right" :open="sidebarCollapsed ? undefined : false">
-            <template #title>欢迎 Star</template>
-            <a href="https://github.com/LPK3215/ResearchCompass" target="_blank" class="github-link">
-              <GithubOutlined class="icon" />
-              <span class="nav-text">GitHub</span>
-            </a>
-          </a-tooltip>
-        </div>
-        <div class="github nav-item" @click.stop>
+        <div class="sidebar-footer-link nav-item" @click.stop>
           <a-tooltip placement="right" :open="sidebarCollapsed ? undefined : false">
             <template #title>使用帮助文档</template>
-            <a href="https://lpk3215.github.io/ResearchCompass/" target="_blank" class="github-link">
+            <a href="https://lpk3215.github.io/ResearchCompass/" target="_blank" class="sidebar-footer-anchor">
               <HelpCircle class="icon" />
               <span class="nav-text">使用帮助</span>
             </a>
@@ -607,7 +597,7 @@ div.header,
 
   .sidebar-brand,
   :deep(.conversation-nav-section:not(.sidebar-conversations)),
-  .github,
+  .sidebar-footer-link,
   .user-info {
     flex-shrink: 0;
   }
@@ -776,13 +766,13 @@ div.header,
       color: var(--main-color);
     }
 
-    &.github {
+    &.sidebar-footer-link {
       margin-bottom: 8px;
       &:hover {
         border-color: transparent;
       }
 
-      .github-link {
+      .sidebar-footer-anchor {
         display: flex;
         align-items: center;
         width: 100%;
@@ -957,8 +947,8 @@ div.header,
         pointer-events: none;
       }
 
-      &.github {
-        .github-link {
+      &.sidebar-footer-link {
+        .sidebar-footer-anchor {
           justify-content: flex-start;
         }
       }
