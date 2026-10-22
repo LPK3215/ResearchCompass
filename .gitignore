@@ -88,3 +88,6 @@ docs/vibe
 .taskr/
 .codebuddy/
 v011-*.png
+
+### local Archify build workspace (candidates and review evidence)
+.archify/

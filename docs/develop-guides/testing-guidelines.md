@@ -197,8 +197,8 @@ backend/test/run_tests.sh all
 
 ## 12. 冒烟验收（跨能力族）
 
-- 前置：后端运行在 `127.0.0.1:5050`，PostgreSQL / Redis / Milvus / Neo4j / MinIO 与本地向量服务可用。
-- 运行：`cd backend && uv run --no-sync --env-file ../.env python scripts/smoke_acceptance.py`
+- 前置：直跑后端运行在 `127.0.0.1:5050`；Compose 模式用 `make smoke`（默认 `http://127.0.0.1:5051`）。PostgreSQL / Redis / Milvus / Neo4j / MinIO 与本地向量服务可用。
+- 运行：直跑模式 `cd backend && uv run --no-sync --env-file ../.env python scripts/smoke_acceptance.py`；Compose 模式 `make smoke`。
 - 输出：`test-results/smoke-acceptance-<时间戳>.json` 与同名 `.md`；任一必需项失败时退出码为 1。
 - 覆盖：认证、知识库、论文、笔记、筛选、项目、检索、综述、图谱、趋势/机会、交付物、评估、用户评测、多源检索、参考文献导入、AI 工具调用。
 - 数据副作用：在用户自己的论文上创建并删除一条笔记；参考文献导入使用固定 DOI，重复执行幂等。

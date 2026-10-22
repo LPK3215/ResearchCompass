@@ -1,0 +1,23 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check (backend)
+        entry: uv run --project backend ruff check --config backend/pyproject.toml --fix backend/package backend/server backend/scripts
+        language: system
+        files: ^backend/.*\.py$
+        pass_filenames: false
+
+      - id: ruff-format
+        name: ruff format (backend)
+        entry: uv run --project backend ruff format --config backend/pyproject.toml backend/package backend/server backend/scripts
+        language: system
+        files: ^backend/.*\.py$
+        pass_filenames: false
+
+      - id: web-lint
+        name: eslint (web)
+        entry: pnpm --dir web lint:check
+        language: system
+        files: ^web/
+        pass_filenames: false

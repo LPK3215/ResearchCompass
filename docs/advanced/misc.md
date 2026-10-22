@@ -47,7 +47,7 @@ LLM 检测会增加用户交互的延迟，请根据实际需求选择是否启�
    ```
 3. 重启服务：
    ```bash
-   docker compose up -d api-dev web-dev
+   docker compose up -d api web
    ```
 
 ### 使用方式
@@ -63,7 +63,7 @@ LLM 检测会增加用户交互的延迟，请根据实际需求选择是否启�
 | 端口 | 服务 | 说明 |
 |------|------|------|
 | 5173 | Web 前端 | 用户界面 |
-| 5050 | API 后端 | 核心服务接口 |
+| 5051 | API 后端（Compose 宿主端口） | 核心服务接口；容器内监听 5050 |
 | 7474 | Neo4j HTTP | 图数据库管理界面 |
 | 7687 | Neo4j Bolt | 图数据库连接 |
 | 9000/9001 | MinIO | 对象存储 |
@@ -81,5 +81,5 @@ LLM 检测会增加用户交互的延迟，请根据实际需求选择是否启�
 ### 快速访问
 
 - Web 界面：http://localhost:5173
-- API 文档：http://localhost:5050/docs
+- API 文档：http://localhost:5051/docs
 - Neo4j 管理：http://localhost:7474

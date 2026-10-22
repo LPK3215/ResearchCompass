@@ -1,8 +1,11 @@
 
-.PHONY: up up-lite down logs lint format seed reset
+.PHONY: up up-lite down logs lint format seed reset test test-web smoke eval-baseline eval-ablation eval-synthesis docs-build
 
 PYTEST_ARGS ?=
 BACKEND_PYTHON ?= $(shell cat backend/.python-version)
+KB_ID ?=
+EVAL_ARGS ?=
+SMOKE_BASE_URL ?= http://127.0.0.1:5051
 
 up:
 	@if [ ! -f .env ]; then \
@@ -57,3 +60,31 @@ lint:
 	cd backend && UV_PYTHON=$(BACKEND_PYTHON) uv run ruff check package server scripts
 	cd backend && UV_PYTHON=$(BACKEND_PYTHON) uv run ruff check --select I package server scripts
 	cd web && pnpm run lint:check
+
+######################
+# TESTS AND EVALUATION
+######################
+
+test:
+	cd backend && UV_PYTHON=$(BACKEND_PYTHON) uv run pytest $(PYTEST_ARGS)
+
+test-web:
+	cd web && pnpm run test:unit
+
+smoke:
+	cd backend && UV_PYTHON=$(BACKEND_PYTHON) SMOKE_BASE_URL=$(SMOKE_BASE_URL) uv run --no-sync python scripts/smoke_acceptance.py
+
+eval-baseline:
+	@test -n "$(KB_ID)" || (echo "Usage: make eval-baseline KB_ID=kb_xxx"; exit 1)
+	cd backend && UV_PYTHON=$(BACKEND_PYTHON) uv run --no-sync python ../scripts/eval/fixed_corpus_baseline.py --kb-id $(KB_ID) $(EVAL_ARGS)
+
+eval-ablation:
+	@test -n "$(KB_ID)" || (echo "Usage: make eval-ablation KB_ID=kb_xxx"; exit 1)
+	cd backend && UV_PYTHON=$(BACKEND_PYTHON) uv run --no-sync python ../scripts/eval/fixed_corpus_ablation.py --kb-id $(KB_ID) $(EVAL_ARGS)
+
+eval-synthesis:
+	@test -n "$(KB_ID)" || (echo "Usage: make eval-synthesis KB_ID=kb_xxx"; exit 1)
+	cd backend && UV_PYTHON=$(BACKEND_PYTHON) uv run --no-sync python ../scripts/eval/fixed_corpus_synthesis.py --kb-id $(KB_ID) $(EVAL_ARGS)
+
+docs-build:
+	cd docs && pnpm run build

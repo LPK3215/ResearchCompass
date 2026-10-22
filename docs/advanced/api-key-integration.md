@@ -23,9 +23,9 @@ API Key 是一种用于身份验证的密钥字符串，外部系统可以通过
 
 ## 确定 API 访问地址
 
-ResearchCompass 后端服务绑定在 `0.0.0.0:5050`，不会自动探测或对外宣告本机 IP。实际访问地址取决于部署环境：
+ResearchCompass 后端在容器内监听 `0.0.0.0:5050`，不会自动探测或对外宣告本机 IP。开发 Compose 将宿主机 `5051` 映射到容器 `5050`；直接运行 uvicorn 时使用 `5050`。实际访问地址取决于部署环境：
 
-- **本地开发**：`http://localhost:5050`
+- **本地开发（Compose）**：`http://localhost:5051`；直接运行后端：`http://localhost:5050`
 - **生产部署（Nginx 反向代理）**：**强烈建议使用 HTTPS**，即 `https://<服务器域名>`（443 端口）。由于 API Key 会在请求头中以明文形式传输，使用 HTTP（80 端口）会导致密钥在网络传输过程中被窃听或篡改，必须避免
 
 完整的 API 交互流程可参考自动生成的 Swagger 文档：`{base_url}/docs`。
@@ -54,7 +54,7 @@ Authorization: Bearer yxkey_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 import json
 import requests
 
-base_url = "https://your-researchcompass-server"  # 生产环境务必使用 HTTPS；本地开发可改为 http://localhost:5050
+base_url = "https://your-researchcompass-server"  # 生产环境务必使用 HTTPS；本地 Compose 可改为 http://localhost:5051（直跑后端用 5050）
 headers = {
     "Authorization": "Bearer yxkey_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
     "Content-Type": "application/json",

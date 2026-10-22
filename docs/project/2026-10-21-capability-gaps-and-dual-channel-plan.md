@@ -145,7 +145,7 @@
 
 `backend/scripts/smoke_acceptance.py`，覆盖认证、知识库、论文、笔记、筛选、项目、检索、综述、图谱、趋势/机会、交付物、评估、用户评测、多源检索、参考文献导入、AI 工具调用。
 
-- 结果：**54 项通过 / 0 失败**（2026-10-22 复跑，报告 `test-results/smoke-acceptance-20261022-021515.md`；上一轮报告 `test-results/smoke-acceptance-20261022-014947.md`，更早 52 项报告 `test-results/smoke-acceptance-20261021-185959.md`）
+- 结果：**55 项通过 / 0 失败**（2026-10-22 14:13 复跑，报告 `test-results/smoke-acceptance-20261022-141344.md`；上一轮 `test-results/smoke-acceptance-20261022-021515.md` 为 54 项，更早 `test-results/smoke-acceptance-20261022-014947.md` 为 54 项、`test-results/smoke-acceptance-20261021-185959.md` 为 52 项）
 - 其中包含：临时用户改密全流程（旧 Token 401 / 新 Token 200）、AI 助手真实 run `completed`、图谱导出 166 KB、引用洞察 2.6 KB、检索 3 条证据（本地混合检索 78.1 秒，含重排）
 - 脚本加固后额外覆盖两类“环境残留”场景：多源检索超时放宽到 180 秒（实测 123.7 秒）；智能体队列停在 `paused` 时自动 `continue` 恢复派发（报告证据 `resumed=paused-queue`）
 
@@ -340,9 +340,9 @@
 
 已收口：
 
-- [x] 后端全量单测 1689 通过 / 5 跳过 / 0 失败
+- [x] 后端全量单测 1696 通过 / 5 跳过 / 0 失败
 - [x] 前端单测 91 通过；ESLint、生产构建通过
-- [x] 冒烟验收 54/54；报告 `test-results/smoke-acceptance-20261022-021515.md`（含 `paused` 队列自动恢复证据）
+- [x] 冒烟验收 55/55；报告 `test-results/smoke-acceptance-20261022-141344.md`（含 19 个能力族与 `paused` 队列自动恢复证据）
 - [x] 工具一致性 97/97；路由顺序、工具签名、工具文档同步守卫通过
 - [x] 双通道缺口：G-25 合并按钮、G-34 清单导出按钮已补
 - [x] 固定语料 28/28 已真实入库（备选库 30 篇论文 / 28 篇带全文共 993 chunk）

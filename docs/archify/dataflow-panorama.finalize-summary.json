@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "dataflow",
+  "quality": "showcase",
+  "specification": {
+    "path": "D:\\Develop\\SourceCode\\agent-projects\\ResearchCompass\\.archify\\dataflow-panorama-20261022-153921\\candidate.json",
+    "sha256": "7890f905a7f69e58a152fc0fd5f9daac405ebe118cbe53f6baac82cb877a082b",
+    "bytes": 9905
+  },
+  "artifact": {
+    "path": "D:\\Develop\\SourceCode\\agent-projects\\ResearchCompass\\docs\\archify\\dataflow-panorama.html",
+    "sha256": "d4e4c7f34705e12c0e8a6d878af43c1c3f245fc1121e805cc777434c2fdc81b1",
+    "bytes": 835816
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "D:\\Develop\\SourceCode\\agent-projects\\ResearchCompass\\docs\\archify\\dataflow-panorama.finalize.json",
+    "summaryReceipt": "D:\\Develop\\SourceCode\\agent-projects\\ResearchCompass\\docs\\archify\\dataflow-panorama.finalize-summary.json",
+    "browserCheckReceipt": "D:\\Develop\\SourceCode\\agent-projects\\ResearchCompass\\docs\\archify\\dataflow-panorama.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.2.0",
+    "availableVersion": "3.2.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-10-22T07:39:47.325Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 4551,
+  "browserCheck": {
+    "requested": true,
+    "ran": true
+  }
+}

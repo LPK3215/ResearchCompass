@@ -111,7 +111,7 @@ git push origin feature/amazing-feature
 后端目录位于 `backend/`，提交时请注意：
 
 - Python 风格尽量保持 pythonic
-- 优先使用较新的语法，兼容目标为 Python 3.12+
+- 优先使用较新的语法，兼容目标为 Python 3.12–3.13
 - 优先在容器内运行调试和测试命令
 
 示例：

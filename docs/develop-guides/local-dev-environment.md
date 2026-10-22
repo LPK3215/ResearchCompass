@@ -22,6 +22,8 @@
 
 共享 infra 编排在仓库外：`D:\Develop\SourceCode\infra\docker-compose.yml`，容器与卷均为通用命名（`pg`、`redis`、`minio`、`etcd`、`milvus`、`neo4j`，卷 `shared_*`），其他项目可复用，只需建自己的数据库。
 
+> 本文的 `5050` 是宿主机直接运行 uvicorn 的端口；Compose 模式将宿主 `5051` 映射到容器 `5050`。
+
 ## 首次准备
 
 1. 数据库：启动共享 infra 后在 PostgreSQL 中创建项目库 `yuxi`（表结构由后端启动时自动创建）。

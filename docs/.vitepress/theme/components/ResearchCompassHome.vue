@@ -1,17 +1,10 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { withBase } from 'vitepress'
+import siteStats from '../generated-stats.json'
 
 const GITHUB = 'https://github.com/LPK3215/ResearchCompass'
 const DEMO = 'https://www.bilibili.com/video/BV1TZEx6NEit/'
-
-// 关键数字（占位，后续替换为真实数据）
-const stats = [
-  { value: '15+', label: '模型供应商' },
-  { value: '7', label: 'Harness 能力' },
-  { value: 'MIT', label: '开源协议' },
-  { value: 'v0.11', label: '当前版本' }
-]
 
 // Harness 能力中枢（bento）
 // 以下能力由开源框架 Yuxi 提供，ResearchCompass 在此之上扩展科研领域工具与流程
@@ -115,6 +108,14 @@ const providersBottom = (() => {
   return [...rotated, ...rotated]
 })()
 
+// 关键数字：供应商与版本来自 doc_stats.py 的生成结果，能力数量从本页配置派生。
+const stats = computed(() => [
+  { value: String(siteStats.provider_count), label: '模型供应商' },
+  { value: String(capabilities.length), label: 'Harness 能力' },
+  { value: 'MIT', label: '开源协议' },
+  { value: siteStats.release_tag, label: '当前版本' }
+])
+
 // 工作原理
 const steps = [
   { n: '01', title: '配置底座', desc: '管理员接入模型供应商、构建知识库与知识图谱、划分用户与部门权限。' },
@@ -211,7 +212,7 @@ const vReveal = {
         <div class="yx-grid"></div>
       </div>
       <div class="yx-container yx-hero__inner">
-        <span class="yx-badge">v0.11.0 · MIT 开源 · 基于开源框架 Yuxi 二次开发</span>
+        <span class="yx-badge">{{ siteStats.release_tag }} · MIT 开源 · 基于开源框架 Yuxi 二次开发</span>
         <h1 class="yx-hero__title"><span class="yx-accent">ResearchCompass</span></h1>
         <p class="yx-hero__subtitle">贯穿研究项目、证据与交付的对话式科研 Copilot</p>
         <p class="yx-hero__desc">
@@ -456,7 +457,7 @@ const vReveal = {
         </header>
         <div v-reveal class="yx-quick">
           <pre class="yx-code"><code><span class="yx-c-cmt"># 1. 克隆并初始化</span>
-git clone --branch v0.11.0 --depth 1 https://github.com/LPK3215/ResearchCompass.git
+git clone --branch {{ siteStats.release_tag }} --depth 1 https://github.com/LPK3215/ResearchCompass.git
 cd ResearchCompass && ./scripts/init.sh
 
 <span class="yx-c-cmt"># 2. 使用 Docker 启动</span>

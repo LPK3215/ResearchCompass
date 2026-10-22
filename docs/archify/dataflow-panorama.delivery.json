@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "bc05f53d-c940-4d78-afb9-007815f1d129",
+  "status": "current",
+  "command": "deliver",
+  "type": "dataflow",
+  "input": "D:\\Develop\\SourceCode\\agent-projects\\ResearchCompass\\.archify\\dataflow-panorama-20261022-153921\\candidate.json",
+  "output": "D:\\Develop\\SourceCode\\agent-projects\\ResearchCompass\\docs\\archify\\dataflow-panorama.html",
+  "specification": {
+    "sha256": "7890f905a7f69e58a152fc0fd5f9daac405ebe118cbe53f6baac82cb877a082b",
+    "bytes": 9905
+  },
+  "artifact": {
+    "sha256": "d4e4c7f34705e12c0e8a6d878af43c1c3f245fc1121e805cc777434c2fdc81b1",
+    "bytes": 835816
+  }
+}

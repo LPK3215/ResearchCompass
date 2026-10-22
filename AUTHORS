@@ -1,0 +1,9 @@
+# Authors
+
+ResearchCompass is designed and maintained by:
+
+- **LPK3215** <17538703215@163.com> — research workflow, domain tools, evidence synthesis, project execution and evaluation extensions.
+
+The project is built on the open-source [Yuxi](https://github.com/xerrors/Yuxi) agent framework. Upstream Yuxi contributors retain copyright and attribution for the general agent runtime, multi-tenant knowledge base, sandbox and middleware. See [LICENSE](LICENSE) for the full MIT notice and [README.md](README.md#license-and-acknowledgements) for the project acknowledgements.
+
+Additional contributors are recorded in the repository history and on the GitHub contributors page.

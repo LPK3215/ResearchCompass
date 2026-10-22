@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "workflow",
+  "quality": "showcase",
+  "specification": {
+    "path": "D:\\Develop\\SourceCode\\agent-projects\\ResearchCompass\\.archify\\workflow-panorama-20261022-153921\\candidate.json",
+    "sha256": "af552b947f101185ccc0946d8a8b30c5d46ceacd6d08f9f886562c8ebe44345e",
+    "bytes": 10264
+  },
+  "artifact": {
+    "path": "D:\\Develop\\SourceCode\\agent-projects\\ResearchCompass\\docs\\archify\\workflow-panorama.html",
+    "sha256": "eb86bb945664e2104f6fd988c07ad93da03fa34974a8efc86d1889cd20df5fb7",
+    "bytes": 838598
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "D:\\Develop\\SourceCode\\agent-projects\\ResearchCompass\\docs\\archify\\workflow-panorama.finalize.json",
+    "summaryReceipt": "D:\\Develop\\SourceCode\\agent-projects\\ResearchCompass\\docs\\archify\\workflow-panorama.finalize-summary.json",
+    "browserCheckReceipt": "D:\\Develop\\SourceCode\\agent-projects\\ResearchCompass\\docs\\archify\\workflow-panorama.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.2.0",
+    "availableVersion": "3.2.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-10-22T07:39:47.325Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 4154,
+  "browserCheck": {
+    "requested": true,
+    "ran": true
+  }
+}

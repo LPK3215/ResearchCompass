@@ -93,7 +93,7 @@ make up-lite  # macOS or Linux
 | 服务 | 地址 |
 |------|------|
 | Web 界面 | http://localhost:5173 |
-| API 文档 | http://localhost:5050/docs |
+| API 文档 | http://localhost:5051/docs |
 
 首次访问时，系统会要求你设置超级管理员账号和密码，请妥善保存。
 

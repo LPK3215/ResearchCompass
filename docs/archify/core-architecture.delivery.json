@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "6f774380-75ba-4376-bd5c-7d3ae1afc6fc",
+  "ok": true,
+  "command": "deliver",
+  "type": "architecture",
+  "input": "D:\\Develop\\SourceCode\\agent-projects\\ResearchCompass\\.archify\\architecture-core-20261022-155444\\candidate.json",
+  "output": "D:\\Develop\\SourceCode\\agent-projects\\ResearchCompass\\docs\\archify\\core-architecture.html",
+  "specification": {
+    "sha256": "ed0b05833f7283bbe7c6b4e77a7d29ec2eea47c9abb533fbcdf80be272930b76",
+    "bytes": 10607
+  },
+  "artifact": {
+    "sha256": "dd6362d7f8703c4f1823b37422b9d8082191e0962d824eac968417a4ad9681ab",
+    "bytes": 841734
+  },
+  "validation": {
+    "checksPassed": 9,
+    "checkCount": 9,
+    "compositionProfile": "showcase",
+    "compositionStatus": "pass",
+    "errors": 0,
+    "warnings": 0
+  },
+  "evidence": {
+    "verified": true,
+    "repository": "https://github.com/LPK3215/ResearchCompass",
+    "revision": "42739c365d0eac8d3090f4907aa88b5e43b4a703",
+    "references": 24
+  },
+  "update": {
+    "status": "unavailable",
+    "installedVersion": null,
+    "availableVersion": null,
+    "releaseNotes": null,
+    "checkedAt": null,
+    "source": null,
+    "noticeRequired": false,
+    "noticeText": null,
+    "reason": "disabled"
+  }
+}

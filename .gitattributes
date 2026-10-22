@@ -1,3 +1,30 @@
+# Normalize text files and keep platform-specific scripts consistent.
+* text=auto
+.gitattributes text eol=lf
+.gitignore text eol=lf
+*.md text eol=lf
+*.py text eol=lf
+*.js text eol=lf
+*.vue text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.json text eol=lf
+*.mjs text eol=lf
+*.svg text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.toml text eol=lf
+LICENSE text eol=lf
+Makefile text eol=lf
+Dockerfile text eol=lf
+*.sh text eol=lf
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.pdf binary
+
 /AGENTS.md export-ignore
 /CLAUDE.md export-ignore
 /.codebuddy export-ignore

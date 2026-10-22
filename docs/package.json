@@ -1,6 +1,13 @@
 {
+  "name": "researchcompass-docs",
+  "version": "0.11.0",
+  "private": true,
+  "description": "ResearchCompass documentation site",
+  "author": "LPK3215 <17538703215@163.com>",
+  "license": "MIT",
   "scripts": {
     "dev": "vitepress dev",
+    "prebuild": "python ../backend/scripts/doc_stats.py",
     "build": "vitepress build",
     "preview": "vitepress preview"
   },

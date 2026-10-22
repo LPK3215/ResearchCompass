@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="ResearchCompass project overview: an evidence-traceable research workspace for literature review, evidence synthesis, research projects and reproducible evaluation.">
+  <meta name="theme-color" content="#06121a">
+  <title>ResearchCompass — Project Overview</title>
+  <link rel="icon" href="../public/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script>
+  <script src="./charts.js" defer></script>
+  <script src="./script.js" defer></script>
+</head>
+<body>
+  <div class="scroll-progress" id="scroll-progress" aria-hidden="true"></div>
+
+  <svg class="icon-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="icon-compass" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2.1 4.9-4.9 2.1 2.1-4.9 4.9-2.1Z"/></symbol>
+    <symbol id="icon-layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 16 9 5 9-5"/></symbol>
+    <symbol id="icon-database" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></symbol>
+    <symbol id="icon-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
+    <symbol id="icon-file" viewBox="0 0 24 24"><path d="M7 3h7l4 4v14H7V3Z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h6"/></symbol>
+    <symbol id="icon-folder" viewBox="0 0 24 24"><path d="M3 7h7l2 2h9v10H3V7Z"/><path d="M3 7V5h6l2 2"/></symbol>
+    <symbol id="icon-git" viewBox="0 0 24 24"><circle cx="7" cy="6" r="2"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="12" r="2"/><path d="M7 8v8M9 6h4a4 4 0 0 1 4 4v0"/></symbol>
+    <symbol id="icon-shield" viewBox="0 0 24 24"><path d="M12 3 20 6v6c0 5-3.4 8-8 9-4.6-1-8-4-8-9V6l8-3Z"/><path d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="icon-book" viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v18H6.5A2.5 2.5 0 0 0 4 23V5.5Z"/><path d="M4 5.5v15"/><path d="M8 7h8M8 11h8M8 15h5"/></symbol>
+    <symbol id="icon-terminal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></symbol>
+    <symbol id="icon-chart" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></symbol>
+    <symbol id="icon-github" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M12 2a10 10 0 0 0-3.2 19.5c.5.1.7-.2.7-.5v-1.8c-2.8.6-3.4-1.2-3.4-1.2-.5-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 0 1.5 1 1.5 1 .9 1.5 2.4 1.1 2.9.8.1-.7.4-1.1.6-1.4-2.2-.3-4.6-1.1-4.6-5A4 4 0 0 1 6.5 7c-.1-.3-.5-1.3.1-2.7 0 0 .8-.3 2.7 1a9.3 9.3 0 0 1 5 0c1.9-1.3 2.7-1 2.7-1 .6 1.4.2 2.4.1 2.7a4 4 0 0 1 1.1 2.8c0 3.9-2.4 4.7-4.6 5 .4.3.7 1 .7 2v3c0 .3.2.6.7.5A10 10 0 0 0 12 2Z"/></symbol>
+    <symbol id="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+    <symbol id="icon-moon" viewBox="0 0 24 24"><path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5 8.5 8.5 0 1 0 20.5 14.2Z"/></symbol>
+    <symbol id="icon-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4V4h11v1"/></symbol>
+    <symbol id="icon-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+    <symbol id="icon-x" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="icon-arrow-up" viewBox="0 0 24 24"><path d="m6 14 6-6 6 6"/></symbol>
+    <symbol id="icon-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="icon-external" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 13v6H5V6h6"/></symbol>
+  </svg>
+
+  <header class="site-header" id="site-header">
+    <div class="header-inner">
+      <a class="brand" href="#top" aria-label="ResearchCompass overview home">
+        <span class="brand-mark"><svg><use href="#icon-compass"></use></svg></span>
+        <span class="brand-name">ResearchCompass</span>
+        <span class="brand-pill">project overview</span>
+      </a>
+      <nav class="header-nav" aria-label="Primary">
+        <a href="#overview">Overview</a>
+        <a href="#architecture">Architecture</a>
+        <a href="#evaluation">Evaluation</a>
+        <a href="#api">API</a>
+        <a href="#docs">Docs</a>
+      </nav>
+      <div class="header-actions">
+        <button class="icon-button theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light and dark theme">
+          <svg class="theme-icon theme-icon-sun"><use href="#icon-sun"></use></svg>
+          <svg class="theme-icon theme-icon-moon"><use href="#icon-moon"></use></svg>
+        </button>
+        <a class="button button-ghost header-github" href="https://github.com/LPK3215/ResearchCompass" target="_blank" rel="noopener">
+          <svg><use href="#icon-github"></use></svg><span>GitHub</span>
+        </a>
+        <button class="icon-button menu-toggle" id="menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false">
+          <svg class="menu-open-icon"><use href="#icon-menu"></use></svg>
+          <svg class="menu-close-icon"><use href="#icon-x"></use></svg>
+        </button>
+      </div>
+    </div>
+    <nav class="mobile-menu" id="mobile-menu" aria-label="Mobile navigation">
+      <a href="#overview">Overview</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#method">Method</a>
+      <a href="#stack">Tech stack</a>
+      <a href="#structure">Project structure</a>
+      <a href="#quick-start">Quick start</a>
+      <a href="#evaluation">Evaluation</a>
+      <a href="#api">API</a>
+      <a href="#quality">Quality</a>
+      <a href="#docs">Docs</a>
+      <a href="#contributing">Contributing</a>
+      <a href="#license">License</a>
+    </nav>
+  </header>
+
+  <section class="hero" id="top">
+    <div class="hero-glow hero-glow-a" aria-hidden="true"></div>
+    <div class="hero-glow hero-glow-b" aria-hidden="true"></div>
+    <div class="hero-inner">
+      <div class="hero-banner-frame">
+        <img class="hero-banner" src="../assets/banner.svg" alt="ResearchCompass" width="1600" height="360" loading="eager">
+      </div>
+      <div class="hero-copy">
+        <div class="eyebrow"><span class="pulse-dot"></span>Project overview · evidence-traceable research</div>
+        <h1>Research you can defend.</h1>
+        <p class="hero-lead">Turn papers into a searchable, auditable private library — then connect evidence search, paper reading, evidence-bound synthesis, research projects and report export into one traceable pipeline.</p>
+        <div class="hero-chips">
+          <span class="chip chip-strong">v0.11.15</span>
+          <span class="chip">MIT</span>
+          <span class="chip">FastAPI + Vue 3</span>
+          <span class="chip">28-paper fixed corpus</span>
+          <span class="chip">993 chunks</span>
+        </div>
+        <div class="hero-actions">
+          <a class="button button-primary" href="#architecture"><svg><use href="#icon-compass"></use></svg>Explore the architecture</a>
+          <a class="button button-secondary" href="#quick-start"><svg><use href="#icon-terminal"></use></svg>Quick start</a>
+          <a class="button button-ghost" href="https://github.com/LPK3215/ResearchCompass" target="_blank" rel="noopener"><svg><use href="#icon-github"></use></svg>Repository</a>
+        </div>
+        <div class="metric-grid hero-metrics">
+          <article class="metric-card">
+            <span class="metric-label">Latest release</span>
+            <strong class="metric-value">v0.11.15</strong>
+            <span class="metric-detail">package manifests 0.11.0</span>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Capability gaps tracked</span>
+            <strong class="metric-value"><span class="counter" data-target="44" data-decimals="0">44</span></strong>
+            <span class="metric-detail">39 done · 0 to fix</span>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Hit@5 · fixed corpus</span>
+            <strong class="metric-value"><span class="counter" data-target="10" data-decimals="0">10</span><span class="metric-suffix">/10</span></strong>
+            <span class="metric-detail">MRR 0.845 · top-k 5</span>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Citation coverage</span>
+            <strong class="metric-value"><span class="counter" data-target="0.8037" data-decimals="4">0.8037</span></strong>
+            <span class="metric-detail">5/5 syntheses completed</span>
+          </article>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="page-shell">
+    <aside class="sidebar" aria-label="Section navigation">
+      <div class="sidebar-inner">
+        <span class="sidebar-label">On this page</span>
+        <nav class="sidebar-nav">
+          <a class="sidebar-link" href="#overview"><span>01</span>Overview</a>
+          <a class="sidebar-link" href="#architecture"><span>02</span>Architecture</a>
+          <a class="sidebar-link" href="#method"><span>03</span>Method</a>
+          <a class="sidebar-link" href="#stack"><span>04</span>Tech stack</a>
+          <a class="sidebar-link" href="#structure"><span>05</span>Project structure</a>
+          <a class="sidebar-link" href="#quick-start"><span>06</span>Quick start</a>
+          <a class="sidebar-link" href="#evaluation"><span>07</span>Evaluation</a>
+          <a class="sidebar-link" href="#api"><span>08</span>API</a>
+          <a class="sidebar-link" href="#quality"><span>09</span>Quality</a>
+          <a class="sidebar-link" href="#docs"><span>10</span>Docs index</a>
+          <a class="sidebar-link" href="#contributing"><span>11</span>Contributing</a>
+          <a class="sidebar-link" href="#license"><span>12</span>License</a>
+        </nav>
+        <div class="sidebar-note">
+          <svg><use href="#icon-shield"></use></svg>
+          <p>Every claim is designed to point back to a real paper passage.</p>
+        </div>
+      </div>
+    </aside>
+
+    <main class="content">
+      <section class="section" id="overview">
+        <div class="section-head">
+          <div><span class="section-index">01</span><span class="eyebrow">Project introduction</span></div>
+          <h2>A research workspace you can audit.</h2>
+          <p class="section-lead">ResearchCompass is built for literature review and evidence management, not for generating confident-sounding prose. Papers become a private, section-aware library; searches return evidence with page and chunk locations; syntheses are accepted only when their claims resolve to verified evidence; projects keep the whole trail structured.</p>
+        </div>
+        <div class="intro-grid">
+          <article class="card intro-card">
+            <div class="card-icon"><svg><use href="#icon-search"></use></svg></div>
+            <h3>Evidence first</h3>
+            <p>Search returns paper, section, original passage and four retrieval scores. A claim without a verified <code>chunk_id</code> is not presented as a supported conclusion.</p>
+            <div class="tag-row"><span class="tag">traceable</span><span class="tag">page-aware</span></div>
+          </article>
+          <article class="card intro-card">
+            <div class="card-icon"><svg><use href="#icon-layers"></use></svg></div>
+            <h3>One workspace</h3>
+            <p>Library, smart search, evidence synthesis, paper analysis, citation graph, research projects and report export share the same evidence base and permission model.</p>
+            <div class="tag-row"><span class="tag">unified</span><span class="tag">project-scoped</span></div>
+          </article>
+          <article class="card intro-card">
+            <div class="card-icon"><svg><use href="#icon-shield"></use></svg></div>
+            <h3>Built to be audited</h3>
+            <p>Failures are explicit: strict graph mode does not silently degrade, unsupported statements are listed separately, and deterministic progress replaces hand-waved status.</p>
+            <div class="tag-row"><span class="tag">explicit failure</span><span class="tag">reproducible</span></div>
+          </article>
+        </div>
+        <div class="callout callout-amber">
+          <svg><use href="#icon-compass"></use></svg>
+          <div><strong>What it is not.</strong><span>It is not a paper generator, not a black-box summarizer, and not a replacement for domain judgment. It is the evidence layer around your own reasoning.</span></div>
+        </div>
+      </section>
+
+      <section class="section" id="architecture">
+        <div class="section-head">
+          <div><span class="section-index">02</span><span class="eyebrow">Architecture panorama</span></div>
+          <h2>Six core modules, one evidence path.</h2>
+          <p class="section-lead">The workbench sends a research question to the API; retrieval reads chunks and vectors from the paper/knowledge domain; synthesis validates claims against the retrieval snapshot; projects collect deliverables; reports export them. The full interactive viewer is the same Archify source linked from the README.</p>
+        </div>
+        <div class="architecture-board">
+          <div class="arch-head">
+            <div>
+              <span class="status-pill status-green"><span class="live-dot"></span>10 nodes · 5 boundaries</span>
+              <h3>What happens to a research question.</h3>
+              <p>The English module map below is the navigation layer. The full Archify viewer is a standalone interactive HTML with the original zh-CN diagram labels; open it for the complete node and edge view.</p>
+            </div>
+            <a class="button button-primary" href="../archify/core-architecture.html" target="_blank" rel="noopener">Open interactive diagram<svg><use href="#icon-external"></use></svg></a>
+          </div>
+          <div class="flow-rail" role="img" aria-label="Evidence path: workbench, API, retrieval, synthesis, projects, reports">
+            <div class="flow-node"><span class="flow-number">01</span><svg><use href="#icon-compass"></use></svg><strong>Workbench</strong><span>Vue 3 · 9 tabs</span></div>
+            <div class="flow-node"><span class="flow-number">02</span><svg><use href="#icon-git"></use></svg><strong>API</strong><span>/api/research</span></div>
+            <div class="flow-node"><span class="flow-number">03</span><svg><use href="#icon-search"></use></svg><strong>Retrieval</strong><span>hybrid + rerank</span></div>
+            <div class="flow-node"><span class="flow-number">04</span><svg><use href="#icon-file"></use></svg><strong>Synthesis</strong><span>evidence-bound</span></div>
+            <div class="flow-node"><span class="flow-number">05</span><svg><use href="#icon-folder"></use></svg><strong>Projects</strong><span>assets + progress</span></div>
+            <div class="flow-node"><span class="flow-number">06</span><svg><use href="#icon-chart"></use></svg><strong>Reports</strong><span>export the trail</span></div>
+          </div>
+          <div class="arch-note"><svg><use href="#icon-database"></use></svg><span>Knowledge base, Milvus, Neo4j and object storage sit underneath retrieval and synthesis; they are shown in the full interactive diagram.</span></div>
+        </div>
+        <div class="module-grid">
+          <article class="module-card" data-tooltip="The entry point: 9 research tabs, AI assistant, knowledge-base selector and project context.">
+            <span class="module-number">01</span>
+            <div><h3>Workbench</h3><p>Vue 3 workspace · 9 research tabs · AI assistant</p></div>
+            <svg><use href="#icon-compass"></use></svg>
+          </article>
+          <article class="module-card" data-tooltip="Thin HTTP boundary: authentication, request parsing and response assembly for /api/research.">
+            <span class="module-number">02</span>
+            <div><h3>API router</h3><p>FastAPI · research_router · /api/research</p></div>
+            <svg><use href="#icon-git"></use></svg>
+          </article>
+          <article class="module-card" data-tooltip="Query rewrite, vector + BM25 recall, RRF, reranking and optional citation-graph PPR expansion.">
+            <span class="module-number">03</span>
+            <div><h3>Retrieval</h3><p>local_hybrid / strict_hybrid_citation_graph</p></div>
+            <svg><use href="#icon-search"></use></svg>
+          </article>
+          <article class="module-card" data-tooltip="Turns a retrieval snapshot into a structured, evidence-validated synthesis with explicit unsupported claims.">
+            <span class="module-number">04</span>
+            <div><h3>Synthesis</h3><p>evidence-synthesis-v1 · citation coverage</p></div>
+            <svg><use href="#icon-file"></use></svg>
+          </article>
+          <article class="module-card" data-tooltip="Academic Paper chunking, paper metadata, Milvus vectors and the academic citation graph.">
+            <span class="module-number">05</span>
+            <div><h3>Knowledge base</h3><p>Academic Paper · Milvus · Neo4j graph</p></div>
+            <svg><use href="#icon-database"></use></svg>
+          </article>
+          <article class="module-card" data-tooltip="Projects collect papers, search runs, syntheses, analyses and experiments; reports export the trail.">
+            <span class="module-number">06</span>
+            <div><h3>Projects &amp; reports</h3><p>milestones · assets · deterministic progress</p></div>
+            <svg><use href="#icon-folder"></use></svg>
+          </article>
+        </div>
+        <div class="diagram-links arch-links">
+          <a href="../archify/core-architecture.html" target="_blank" rel="noopener">Core architecture</a>
+          <a href="../archify/architecture-panorama.html" target="_blank" rel="noopener">Full panorama</a>
+          <a href="../archify/workflow-panorama.html" target="_blank" rel="noopener">Workflow</a>
+          <a href="../archify/sequence-panorama.html" target="_blank" rel="noopener">Sequence</a>
+          <a href="../archify/dataflow-panorama.html" target="_blank" rel="noopener">Data flow</a>
+        </div>
+      </section>
+
+      <section class="section" id="method">
+        <div class="section-head">
+          <div><span class="section-index">03</span><span class="eyebrow">Core method</span></div>
+          <h2>From paper pile to defensible evidence.</h2>
+          <p class="section-lead">The method is deliberately narrow: make the corpus structurally readable, retrieve passages rather than vibes, validate every claim against the snapshot, and keep the work trail in a project.</p>
+        </div>
+        <div class="method-steps">
+          <article class="method-step">
+            <span class="step-number">01</span>
+            <div><h3>Academic chunking</h3><p>Parse PDFs and split by Abstract, Introduction, Method, Experiments and Conclusion while preserving page numbers and character ranges.</p><div class="tag-row"><span class="tag">Academic Paper</span><span class="tag">page-aware</span></div></div>
+          </article>
+          <article class="method-step">
+            <span class="step-number">02</span>
+            <div><h3>Hybrid retrieval</h3><p>Rewrite the query, combine vector and BM25 recall with RRF, rerank candidates, then aggregate evidence into paper cards with four scores.</p><div class="tag-row"><span class="tag">local_hybrid</span><span class="tag">RRF</span><span class="tag">rerank</span></div></div>
+          </article>
+          <article class="method-step">
+            <span class="step-number">03</span>
+            <div><h3>Evidence-constrained synthesis</h3><p>Generate themes, claims, contradictions, limitations and gaps from the retrieval snapshot; reject citations that do not resolve to verified chunks.</p><div class="tag-row"><span class="tag">evidence_chunk_ids</span><span class="tag">unsupported_claims</span></div></div>
+          </article>
+          <article class="method-step">
+            <span class="step-number">04</span>
+            <div><h3>Project execution</h3><p>Collect results as project assets, link them to milestones and tasks, compute progress from tasks, and export a report without copying the underlying sources.</p><div class="tag-row"><span class="tag">milestones</span><span class="tag">assets</span><span class="tag">reports</span></div></div>
+          </article>
+        </div>
+        <div class="contract-card">
+          <div class="contract-head"><svg><use href="#icon-shield"></use></svg><span>Evidence contract</span><span class="status-pill">enforced in synthesis</span></div>
+          <div class="contract-grid">
+            <div><code>claim.evidence_chunk_ids</code><p>Every supported claim carries chunk identifiers from the retrieval snapshot.</p></div>
+            <div><code>verified_snapshot</code><p>Citations must resolve to a real <code>chunk_id</code>; missing evidence fails validation.</p></div>
+            <div><code>unsupported_claims</code><p>Statements the model cannot support are emitted separately, never disguised as conclusions.</p></div>
+            <div><code>strict_hybrid_citation_graph</code><p>If the graph is not ready, strict mode fails explicitly instead of silently falling back.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="stack">
+        <div class="section-head">
+          <div><span class="section-index">04</span><span class="eyebrow">Technical foundation</span></div>
+          <h2>A pragmatic stack for evidence work.</h2>
+          <p class="section-lead">Python for the research services and agent runtime, Vue for the workspace, Milvus and Neo4j for retrieval and citation structure, PostgreSQL for the durable trail, and Docker Compose for a reproducible local stack.</p>
+        </div>
+        <div class="stack-grid">
+          <article class="stack-card"><span class="stack-icon"><svg><use href="#icon-terminal"></use></svg></span><h3>Backend</h3><div class="tag-row"><span class="tag">Python 3.12–3.13</span><span class="tag">FastAPI ≥0.121</span><span class="tag">LangGraph</span><span class="tag">ARQ ≥0.26.3</span><span class="tag">uv</span></div></article>
+          <article class="stack-card"><span class="stack-icon"><svg><use href="#icon-layers"></use></svg></span><h3>Frontend</h3><div class="tag-row"><span class="tag">Vue 3.5</span><span class="tag">Vite 8</span><span class="tag">Pinia 3</span><span class="tag">ECharts 6</span><span class="tag">G6 5.1</span><span class="tag">PDF.js 6.1</span><span class="tag">pnpm 10.11</span></div></article>
+          <article class="stack-card"><span class="stack-icon"><svg><use href="#icon-search"></use></svg></span><h3>Retrieval &amp; graph</h3><div class="tag-row"><span class="tag">Milvus</span><span class="tag">BM25</span><span class="tag">RRF</span><span class="tag">Cross-Encoder rerank</span><span class="tag">Neo4j PPR</span></div></article>
+          <article class="stack-card"><span class="stack-icon"><svg><use href="#icon-database"></use></svg></span><h3>Storage</h3><div class="tag-row"><span class="tag">PostgreSQL</span><span class="tag">Redis</span><span class="tag">MinIO</span><span class="tag">Milvus</span><span class="tag">Neo4j</span></div></article>
+          <article class="stack-card"><span class="stack-icon"><svg><use href="#icon-file"></use></svg></span><h3>Document parsing</h3><div class="tag-row"><span class="tag">MinerU</span><span class="tag">PaddleX</span><span class="tag">RapidOCR</span><span class="tag">Academic Paper chunking</span></div></article>
+          <article class="stack-card"><span class="stack-icon"><svg><use href="#icon-book"></use></svg></span><h3>Docs &amp; delivery</h3><div class="tag-row"><span class="tag">VitePress</span><span class="tag">Docker Compose</span><span class="tag">Chart.js 4</span><span class="tag">Archify HTML</span></div></article>
+        </div>
+        <div class="runtime-note"><strong>Runtime facts:</strong> Python <code>3.12–3.13</code> from <code>backend/pyproject.toml</code>; <code>pnpm 10.11.0</code> from <code>web/package.json</code>; full stack via Docker Compose.</div>
+      </section>
+
+      <section class="section" id="structure">
+        <div class="section-head">
+          <div><span class="section-index">05</span><span class="eyebrow">Repository map</span></div>
+          <h2>Where everything lives.</h2>
+          <p class="section-lead">A monorepo with a Python research backend, a Vue workspace, a documentation site, deployment assets, evaluation scripts and this static overview. Expand the tree to inspect the main boundaries.</p>
+        </div>
+        <div class="tree-toolbar">
+          <span class="tree-hint">Click a folder to expand · descriptions are one line per boundary</span>
+          <div><button class="button button-small" id="expand-tree" type="button">Expand all</button><button class="button button-small" id="collapse-tree" type="button">Collapse all</button></div>
+        </div>
+        <div class="tree-wrap">
+          <details class="tree-root" open>
+            <summary><svg><use href="#icon-folder"></use></svg><strong>ResearchCompass/</strong><span>monorepo root</span></summary>
+            <ul class="tree">
+              <li><details open><summary><svg><use href="#icon-terminal"></use></svg>backend/<span>FastAPI app + reusable yuxi package</span></summary><ul>
+                <li><details><summary><svg><use href="#icon-folder"></use></svg>server/<span>HTTP entrypoints, routers, auth and lifespan</span></summary><ul><li><code>routers/research_router.py</code><span>the /api/research boundary</span></li><li><code>worker_main.py</code><span>ARQ worker entrypoint</span></li></ul></details></li>
+                <li><details><summary><svg><use href="#icon-folder"></use></svg>package/yuxi/<span>agent runtime, knowledge base, storage and research services</span></summary><ul><li><code>services/research_*.py</code><span>search, synthesis, projects, evidence</span></li><li><code>services/academic_*.py</code><span>analysis, graph sync, trends, imports</span></li><li><code>knowledge/graphs/</code><span>Milvus graph + Neo4j academic graph</span></li></ul></details></li>
+                <li><details><summary><svg><use href="#icon-folder"></use></svg>scripts/<span>smoke acceptance, corpus import and maintenance</span></summary></details></li>
+                <li><details><summary><svg><use href="#icon-folder"></use></svg>test/<span>unit / integration / e2e layers</span></summary></details></li>
+                <li><code>pyproject.toml</code><span>Python metadata, dependencies, pytest and Ruff config</span></li>
+                <li><code>uv.lock</code><span>locked Python environment</span></li>
+              </ul></details></li>
+              <li><details open><summary><svg><use href="#icon-layers"></use></svg>web/<span>Vue 3 + Vite research workspace</span></summary><ul>
+                <li><code>src/views/ResearchCompassView.vue</code><span>the 9-tab research workspace</span></li>
+                <li><code>src/components/research/</code><span>search, synthesis, project and copilot panels</span></li>
+                <li><code>src/apis/research_api.js</code><span>typed frontend API wrappers</span></li>
+                <li><code>package.json</code><span>Vue/Vite dependencies and pnpm scripts</span></li>
+              </ul></details></li>
+              <li><details open><summary><svg><use href="#icon-book"></use></svg>docs/<span>VitePress site, Pages assets and project records</span></summary><ul>
+                <li><code>intro/ advanced/ agents/ develop-guides/</code><span>user and developer documentation</span></li>
+                <li><code>archify/</code><span>interactive architecture, workflow, sequence and data-flow diagrams</span></li>
+                <li><code>assets/</code><span>shared brand assets such as banner.svg</span></li>
+                <li><code>project_overview/</code><span>this static overview dashboard</span></li>
+                <li><code>project/</code><span>capability ledger, decisions and acceptance records</span></li>
+              </ul></details></li>
+              <li><details><summary><svg><use href="#icon-folder"></use></svg>docker/<span>Dockerfiles, nginx and sandbox provisioner</span></summary></details></li>
+              <li><details><summary><svg><use href="#icon-folder"></use></svg>scripts/<span>init, release check, evaluation and visualization</span></summary><ul><li><code>eval/</code><span>fixed-corpus baseline, ablation and synthesis scripts</span></li><li><code>visualization/</code><span>README banner generator</span></li></ul></details></li>
+              <li><code>docker-compose.yml</code><span>development stack</span></li>
+              <li><code>docker-compose.prod.yml</code><span>production stack</span></li>
+              <li><code>README.md / README.zh-CN.md</code><span>English primary + Chinese companion entry points</span></li>
+              <li><code>ARCHITECTURE.md</code><span>code map and architecture invariants</span></li>
+              <li><code>CONTRIBUTING.md / FAQ.md / SECURITY.md</code><span>community and support entry points</span></li>
+            </ul>
+          </details>
+        </div>
+      </section>
+
+      <section class="section" id="quick-start">
+        <div class="section-head">
+          <div><span class="section-index">06</span><span class="eyebrow">Quick start</span></div>
+          <h2>Run the full stack in four steps.</h2>
+          <p class="section-lead">Docker Compose is the supported development path. The full stack starts PostgreSQL, Redis, MinIO, Milvus, Neo4j, the API, the worker and the web app.</p>
+        </div>
+        <div class="quick-grid">
+          <article class="quick-step"><span class="quick-number">01</span><h3>Clone</h3><div class="code-block"><button class="copy-button" type="button" data-copy><svg><use href="#icon-copy"></use></svg><span class="copy-label">Copy</span></button><pre class="code-body"><code><span class="code-line">git clone --branch v0.11.15 --depth 1 https://github.com/LPK3215/ResearchCompass.git</span><span class="code-line">cd ResearchCompass</span></code></pre></div></article>
+          <article class="quick-step"><span class="quick-number">02</span><h3>Initialize</h3><div class="code-block"><button class="copy-button" type="button" data-copy><svg><use href="#icon-copy"></use></svg><span class="copy-label">Copy</span></button><pre class="code-body"><code><span class="code-line"><span class="tok-comment"># Linux / macOS</span></span><span class="code-line">./scripts/init.sh</span><span class="code-line"><span class="tok-comment"># Windows PowerShell</span></span><span class="code-line">.\\scripts\\init.ps1</span></code></pre></div></article>
+          <article class="quick-step"><span class="quick-number">03</span><h3>Start</h3><div class="code-block"><button class="copy-button" type="button" data-copy><svg><use href="#icon-copy"></use></svg><span class="copy-label">Copy</span></button><pre class="code-body"><code><span class="code-line"><span class="tok-key">docker compose</span> up -d --build</span></code></pre></div><p class="quick-note">Web <code>localhost:5173</code> · API health <code>localhost:5051/api/system/health</code></p></article>
+          <article class="quick-step"><span class="quick-number">04</span><h3>Verify</h3><div class="code-block"><button class="copy-button" type="button" data-copy><svg><use href="#icon-copy"></use></svg><span class="copy-label">Copy</span></button><pre class="code-body"><code><span class="code-line"><span class="tok-key">make</span> lint</span><span class="code-line"><span class="tok-key">make</span> test</span><span class="code-line"><span class="tok-key">make</span> test-web</span></code></pre></div><p class="quick-note">Full cold-build gate: <code>.\\scripts\\release_check.ps1</code></p></article>
+        </div>
+        <div class="quick-extras">
+          <div><h3>Lite mode</h3><p>No knowledge base, graph or research dependencies: <code><span class="tok-key">make</span> up-lite</code> starts the core services and defaults to <code>/agent</code>.</p></div>
+          <div><h3>Production</h3><p><code>cp .env.prod.template .env.prod</code>, fill required values, then <code>docker compose -f docker-compose.prod.yml up -d --build</code>.</p></div>
+          <div><h3>Evaluation</h3><p><code><span class="tok-key">make</span> eval-baseline KB_ID=kb_xxx</code>, <code><span class="tok-key">make</span> eval-ablation KB_ID=kb_xxx</code>, <code><span class="tok-key">make</span> eval-synthesis KB_ID=kb_xxx</code>.</p></div>
+        </div>
+      </section>
+
+      <section class="section" id="evaluation">
+        <div class="section-head">
+          <div><span class="section-index">07</span><span class="eyebrow">Evaluation evidence</span></div>
+          <h2>Small, fixed, repeatable experiments.</h2>
+          <p class="section-lead">These are the repository’s real fixed-corpus runs, not illustrative numbers. The corpus is the 28-paper open-access set in <code>kb_ksf23a31w7</code> (30 papers, 993 chunks). Use the tabs to switch datasets and chart/table views.</p>
+        </div>
+        <div class="eval-tabs" role="tablist" aria-label="Evaluation datasets">
+          <button class="tab-button is-active" type="button" role="tab" aria-selected="true" data-tab-group="eval" data-tab-target="baseline">Retrieval baseline</button>
+          <button class="tab-button" type="button" role="tab" aria-selected="false" data-tab-group="eval" data-tab-target="ablation">Reranker ablation</button>
+          <button class="tab-button" type="button" role="tab" aria-selected="false" data-tab-group="eval" data-tab-target="synthesis">Synthesis coverage</button>
+        </div>
+        <div class="eval-panel is-active" data-tab-panel="eval" data-tab-id="baseline">
+          <div class="eval-head"><div><span class="status-pill status-green">10 questions · 10 scored</span><h3>Retrieval baseline</h3><p><code>local_hybrid</code> · top-k 5 · MRR 0.845 · 12.9–14.6 s per question</p></div><div class="view-switch" role="group" aria-label="Baseline view"><button class="view-button is-active" type="button" data-view-group="baseline" data-view-target="chart">Chart</button><button class="view-button" type="button" data-view-group="baseline" data-view-target="table">Table</button></div></div>
+          <div class="view-panel is-active" data-view-panel="baseline" data-view-id="chart"><div class="chart-card"><canvas id="baselineChart" aria-label="Fixed corpus baseline Hit@K and MRR chart"></canvas></div></div>
+          <div class="view-panel" data-view-panel="baseline" data-view-id="table"><div class="table-wrap"><table><thead><tr><th>Metric</th><th>Result</th><th>Questions</th></tr></thead><tbody><tr><td>Hit@1</td><td><strong>8 / 10</strong></td><td>0.800</td></tr><tr><td>Hit@3</td><td><strong>8 / 10</strong></td><td>0.800</td></tr><tr><td>Hit@5</td><td><strong>10 / 10</strong></td><td>1.000</td></tr><tr><td>MRR</td><td><strong>0.845</strong></td><td>—</td></tr></tbody></table></div></div>
+          <p class="source-note">Source: <a href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/project/2026-10-21-capability-gaps-and-dual-channel-plan.md" target="_blank" rel="noopener">2026-10-21 capability report</a> · baseline run 2026-10-22.</p>
+        </div>
+        <div class="eval-panel" data-tab-panel="eval" data-tab-id="ablation">
+          <div class="eval-head"><div><span class="status-pill status-amber">n = 10 · preliminary signal</span><h3>Reranker ablation</h3><p>Only <code>use_reranker</code> is toggled; retrieval mode, recall, top-k and threshold stay fixed.</p></div><div class="view-switch" role="group" aria-label="Ablation view"><button class="view-button is-active" type="button" data-view-group="ablation" data-view-target="chart">Chart</button><button class="view-button" type="button" data-view-group="ablation" data-view-target="table">Table</button></div></div>
+          <div class="view-panel is-active" data-view-panel="ablation" data-view-id="chart"><div class="chart-card"><canvas id="ablationChart" aria-label="Reranker ablation grouped bar chart"></canvas></div></div>
+          <div class="view-panel" data-view-panel="ablation" data-view-id="table"><div class="table-wrap"><table><thead><tr><th>Variant</th><th>Recall@10</th><th>Answer correctness</th><th>Answer coverage</th></tr></thead><tbody><tr><td>Reranker on</td><td>0.300</td><td>0.500</td><td>1.000</td></tr><tr><td>Reranker off</td><td>0.100</td><td>0.300</td><td>1.000</td></tr></tbody></table></div></div>
+          <p class="source-note">Source: <a href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/project/2026-10-21-capability-gaps-and-dual-channel-plan.md" target="_blank" rel="noopener">2026-10-21 capability report</a> · n=10 is a preliminary signal, not a stable effect estimate.</p>
+        </div>
+        <div class="eval-panel" data-tab-panel="eval" data-tab-id="synthesis">
+          <div class="eval-head"><div><span class="status-pill status-green">5 / 5 succeeded</span><h3>Synthesis citation coverage</h3><p>Top-k 6 · model <code>workbuddy:deepseek-v4.1-flash</code> · reranker <code>local-embedding:BAAI/bge-reranker-base</code> · average coverage <strong>0.8037</strong>.</p></div><div class="view-switch" role="group" aria-label="Synthesis view"><button class="view-button is-active" type="button" data-view-group="synthesis" data-view-target="chart">Chart</button><button class="view-button" type="button" data-view-group="synthesis" data-view-target="table">Table</button></div></div>
+          <div class="view-panel is-active" data-view-panel="synthesis" data-view-id="chart"><div class="chart-card"><canvas id="synthesisChart" aria-label="Synthesis citation coverage by question chart"></canvas></div></div>
+          <div class="view-panel" data-view-panel="synthesis" data-view-id="table"><div class="table-wrap"><table><thead><tr><th>Question</th><th>Claims (supported / total)</th><th>Conclusions (supported / total)</th><th>Coverage</th></tr></thead><tbody><tr><td>q02</td><td>6 / 10</td><td>15 / 19</td><td>0.7895</td></tr><tr><td>q03</td><td>20 / 25</td><td>35 / 40</td><td>0.8750</td></tr><tr><td>q07</td><td>10 / 16</td><td>21 / 27</td><td>0.7778</td></tr><tr><td>q09</td><td>10 / 14</td><td>19 / 23</td><td>0.8261</td></tr><tr><td>q10</td><td>8 / 13</td><td>15 / 20</td><td>0.7500</td></tr></tbody></table></div></div>
+          <p class="source-note">Source: <a href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/project/2026-10-21-capability-gaps-and-dual-channel-plan.md" target="_blank" rel="noopener">2026-10-21 capability report</a> · a top-k 8 run reached 0.8255 coverage but completed 4/5; top-k 6 is the full-completion baseline.</p>
+        </div>
+      </section>
+
+      <section class="section" id="api">
+        <div class="section-head">
+          <div><span class="section-index">08</span><span class="eyebrow">API surface</span></div>
+          <h2>Two calls cover the evidence path.</h2>
+          <p class="section-lead">The research API is exposed under <code>/api/research</code>. Search is synchronous; synthesis creates a run and returns immediately, then the client polls the run. Both require an authenticated user.</p>
+        </div>
+        <div class="api-tabs" role="tablist" aria-label="API examples">
+          <button class="tab-button is-active" type="button" role="tab" aria-selected="true" data-tab-group="api" data-tab-target="search-api">POST search</button>
+          <button class="tab-button" type="button" role="tab" aria-selected="false" data-tab-group="api" data-tab-target="synthesis-api">POST synthesis</button>
+        </div>
+        <div class="api-panel is-active" data-tab-panel="api" data-tab-id="search-api">
+          <div class="code-block code-tall"><button class="copy-button" type="button" data-copy><svg><use href="#icon-copy"></use></svg><span class="copy-label">Copy</span></button><pre class="code-body"><code><span class="code-line"><span class="tok-key">curl</span> -sS -X <span class="tok-key">POST</span> "$API/api/research/databases/$KB/search" \</span><span class="code-line">  -H "Authorization: Bearer $TOKEN" \</span><span class="code-line">  -H "Content-Type: application/json" \</span><span class="code-line">  -d '{</span><span class="code-line">    <span class="tok-key">"query"</span>: <span class="tok-string">"What are the common limits of evidence aggregation for RAG in academic literature?"</span>,</span><span class="code-line">    <span class="tok-key">"retrieval_mode"</span>: <span class="tok-string">"local_hybrid"</span>,</span><span class="code-line">    <span class="tok-key">"top_k"</span>: <span class="tok-number">8</span>,</span><span class="code-line">    <span class="tok-key">"recall_top_k"</span>: <span class="tok-number">50</span>,</span><span class="code-line">    <span class="tok-key">"year_from"</span>: <span class="tok-number">2020</span>,</span><span class="code-line">    <span class="tok-key">"year_to"</span>: <span class="tok-number">2026</span></span><span class="code-line">  }'</span></code></pre></div>
+          <div class="api-response"><h3>Response fields</h3><div class="code-block"><button class="copy-button" type="button" data-copy><svg><use href="#icon-copy"></use></svg><span class="copy-label">Copy</span></button><pre class="code-body"><code><span class="code-line">{</span><span class="code-line">  "run_id": "[run-id]",</span><span class="code-line">  "rewritten_query": "[rewritten query]",</span><span class="code-line">  "keywords": ["[keyword]"],</span><span class="code-line">  "items": [{</span><span class="code-line">    "paper_id": "[paper-id]",</span><span class="code-line">    "title": "[paper title]",</span><span class="code-line">    "evidence": [{</span><span class="code-line">      "chunk_id": "[chunk-id]",</span><span class="code-line">      "section_title": "[section]",</span><span class="code-line">      "scores": { "vector": "[score]", "bm25": "[score]", "hybrid": "[score]", "rerank": "[score]" }</span><span class="code-line">    }]</span><span class="code-line">  }],</span><span class="code-line">  "stage_timings": { "query_rewrite_ms": "[ms]", "retrieval_ms": "[ms]", "aggregation_ms": "[ms]" }</span><span class="code-line">}</span></code></pre></div></div>
+        </div>
+        <div class="api-panel" data-tab-panel="api" data-tab-id="synthesis-api">
+          <div class="code-block code-tall"><button class="copy-button" type="button" data-copy><svg><use href="#icon-copy"></use></svg><span class="copy-label">Copy</span></button><pre class="code-body"><code><span class="code-line"><span class="tok-key">curl</span> -sS -X <span class="tok-key">POST</span> "$API/api/research/databases/$KB/syntheses" \</span><span class="code-line">  -H "Authorization: Bearer $TOKEN" \</span><span class="code-line">  -H "Content-Type: application/json" \</span><span class="code-line">  -d '{</span><span class="code-line">    <span class="tok-key">"query"</span>: <span class="tok-string">"What are the common limits of evidence aggregation for RAG in academic literature?"</span>,</span><span class="code-line">    <span class="tok-key">"top_k"</span>: <span class="tok-number">8</span>,</span><span class="code-line">    <span class="tok-key">"recall_top_k"</span>: <span class="tok-number">50</span></span><span class="code-line">  }'</span></code></pre></div>
+          <div class="api-response"><h3>Run, then poll</h3><div class="code-block"><button class="copy-button" type="button" data-copy><svg><use href="#icon-copy"></use></svg><span class="copy-label">Copy</span></button><pre class="code-body"><code><span class="code-line"><span class="tok-comment"># immediate response</span></span><span class="code-line">{ "run_id": "[run-id]", "task_id": "[task-id]", "status": "pending" }</span><span class="code-line"></span><span class="code-line"><span class="tok-comment"># poll until terminal</span></span><span class="code-line"><span class="tok-key">curl</span> -sS "$API/api/research/synthesis-runs/$RUN_ID" \</span><span class="code-line">  -H "Authorization: Bearer $TOKEN"</span></code></pre></div></div>
+          <div class="callout callout-teal"><svg><use href="#icon-shield"></use></svg><div><strong>Synthesis is evidence-bound.</strong><span>The run fails with <code>synthesis_insufficient_evidence</code> if the snapshot has fewer than two papers with evidence, and validation requires every cited <code>chunk_id</code> to resolve.</span></div></div>
+        </div>
+      </section>
+
+      <section class="section" id="quality">
+        <div class="section-head">
+          <div><span class="section-index">09</span><span class="eyebrow">Quality &amp; verification</span></div>
+          <h2>The trail is tested, not asserted.</h2>
+          <p class="section-lead">ResearchCompass keeps unit, browser, smoke and fixed-corpus evidence separate. The repository has no GitHub Actions workflow; <code>release_check.ps1</code> is the local cold-build gate, and acceptance records are kept under <code>docs/project/</code>.</p>
+        </div>
+        <div class="quality-grid">
+          <article class="quality-card"><span class="quality-value"><span class="counter" data-target="1696" data-decimals="0">1696</span></span><span class="quality-label">Backend unit tests passed</span><span class="quality-detail">5 skipped · 62.34 s</span></article>
+          <article class="quality-card"><span class="quality-value"><span class="counter" data-target="91" data-decimals="0">91</span></span><span class="quality-label">Frontend unit tests passed</span><span class="quality-detail">0 failed · Node test runner</span></article>
+          <article class="quality-card"><span class="quality-value"><span class="counter" data-target="55" data-decimals="0">55</span></span><span class="quality-label">Smoke checks passed</span><span class="quality-detail">0 failed · 2026-10-22 14:10</span></article>
+          <article class="quality-card"><span class="quality-value"><span class="counter" data-target="90" data-decimals="0">90</span></span><span class="quality-label">Browser checks passed</span><span class="quality-detail">0 unresolved · 2026-10-20</span></article>
+        </div>
+        <div class="table-wrap quality-table"><table><thead><tr><th>Evidence</th><th>Result</th><th>Scope</th><th>Source</th></tr></thead><tbody>
+          <tr><td>Backend unit tests</td><td><strong>1696 passed / 5 skipped</strong></td><td>unit layer</td><td><a href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/project/2026-10-21-capability-gaps-and-dual-channel-plan.md" target="_blank" rel="noopener">capability report</a></td></tr>
+          <tr><td>Frontend unit tests</td><td><strong>91 passed / 0 failed</strong></td><td>web unit</td><td><a href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/project/2026-10-21-capability-gaps-and-dual-channel-plan.md" target="_blank" rel="noopener">capability report</a></td></tr>
+          <tr><td>Smoke acceptance</td><td><strong>55 passed / 0 failed</strong></td><td>19 capability families</td><td><a href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/project/2026-10-21-capability-gaps-and-dual-channel-plan.md" target="_blank" rel="noopener">capability report</a></td></tr>
+          <tr><td>Browser acceptance 2026-10-20</td><td><strong>90 checks / 0 unresolved</strong></td><td>nine groups A–I</td><td><a href="https://github.com/LPK3215/ResearchCompass/tree/main/docs/project" target="_blank" rel="noopener">project records</a></td></tr>
+          <tr><td>Browser acceptance 2026-10-22</td><td><strong>22 checks · 17 passed</strong></td><td>2 credential-blocked · 2 not executed · 1 data cleanup pending</td><td><a href="https://github.com/LPK3215/ResearchCompass/tree/main/docs/project" target="_blank" rel="noopener">project records</a></td></tr>
+          <tr><td>Capability ledger 2026-10-21</td><td><strong>44 items · 39 done · 0 to fix</strong></td><td>4 pending evaluation · 1 not planned</td><td><a href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/project/2026-10-21-capability-gaps-and-dual-channel-plan.md" target="_blank" rel="noopener">capability report</a></td></tr>
+        </tbody></table></div>
+        <div class="callout callout-slate"><svg><use href="#icon-git"></use></svg><div><strong>CI status: not configured.</strong><span>No GitHub Actions workflow is present. The repeatable local gate is <code>.\\scripts\\release_check.ps1</code>; it covers images, locks, Ruff, backend tests, frontend tests, build and documentation.</span></div></div>
+      </section>
+
+      <section class="section" id="docs">
+        <div class="section-head">
+          <div><span class="section-index">10</span><span class="eyebrow">Documentation index</span></div>
+          <h2>Start anywhere, stay oriented.</h2>
+          <p class="section-lead">The documentation source lives under <code>docs/</code>; the cards below link the Markdown source on GitHub. The English README is the primary entry point; the Chinese README mirrors its structure.</p>
+        </div>
+        <div class="doc-groups">
+          <div class="doc-group"><h3>Start here</h3><div class="doc-grid">
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/README.md" target="_blank" rel="noopener"><span class="doc-tag">English</span><strong>README.md</strong><p>English primary entry: capabilities, workflow, quick start and docs map.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/README.zh-CN.md" target="_blank" rel="noopener"><span class="doc-tag">Chinese</span><strong>README.zh-CN.md</strong><p>Chinese companion with the same section structure and language link.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/intro/capabilities.md" target="_blank" rel="noopener"><span class="doc-tag">Site</span><strong>Capabilities overview</strong><p>A compact tour of the eight research capabilities.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/intro/research-workflow.md" target="_blank" rel="noopener"><span class="doc-tag">Site</span><strong>From topic to draft</strong><p>The seven-step evidence pipeline with outputs and checks.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/intro/project-overview.md" target="_blank" rel="noopener"><span class="doc-tag">Site</span><strong>Project introduction</strong><p>The problem, audience, scope and boundaries of ResearchCompass.</p></a>
+          </div></div>
+          <div class="doc-group"><h3>Product and rules</h3><div class="doc-grid">
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/intro/research-compass.md" target="_blank" rel="noopener"><span class="doc-tag">Site</span><strong>ResearchCompass rules</strong><p>Projects, retrieval modes, synthesis rules, workspace and boundaries.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/intro/quick-start.md" target="_blank" rel="noopener"><span class="doc-tag">Site</span><strong>Quick start</strong><p>Clone, initialize, run and access the development stack.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/intro/cli.md" target="_blank" rel="noopener"><span class="doc-tag">Site</span><strong>CLI</strong><p>Command-line entry points and command reference.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/intro/knowledge-base.md" target="_blank" rel="noopener"><span class="doc-tag">Site</span><strong>Knowledge base &amp; graph</strong><p>Academic chunking, retrieval, graph construction and evaluation.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/intro/evaluation.md" target="_blank" rel="noopener"><span class="doc-tag">Site</span><strong>Knowledge base evaluation</strong><p>Datasets, runs, metrics and ablation experiment basics.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/intro/model-config.md" target="_blank" rel="noopener"><span class="doc-tag">Site</span><strong>Model configuration</strong><p>Providers, model specs, embeddings, rerankers and fallbacks.</p></a>
+          </div></div>
+          <div class="doc-group"><h3>Build and operate</h3><div class="doc-grid">
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/develop-guides/local-dev-environment.md" target="_blank" rel="noopener"><span class="doc-tag">Site</span><strong>Local development</strong><p>Containers, worker, local inference, health checks and troubleshooting.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/advanced/deployment.md" target="_blank" rel="noopener"><span class="doc-tag">Site</span><strong>Production deployment</strong><p>Required environment values, Compose stack and operational checks.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/advanced/api-key-integration.md" target="_blank" rel="noopener"><span class="doc-tag">Site</span><strong>API key integration</strong><p>External system access with API keys and user context.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/develop-guides/testing-guidelines.md" target="_blank" rel="noopener"><span class="doc-tag">Site</span><strong>Testing guidelines</strong><p>Unit, integration and e2e layers, fixtures and naming rules.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/develop-guides/contributing.md" target="_blank" rel="noopener"><span class="doc-tag">Site</span><strong>Contributing guide</strong><p>The single-source contribution flow, checks and PR expectations.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/develop-guides/changelog.md" target="_blank" rel="noopener"><span class="doc-tag">Site</span><strong>Detailed changelog</strong><p>Feature-level release history and capability close-out notes.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/advanced/document-processing.md" target="_blank" rel="noopener"><span class="doc-tag">Site</span><strong>Document processing</strong><p>MinerU, PaddleX and OCR routing into structured Markdown.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/advanced/langfuse-integration.md" target="_blank" rel="noopener"><span class="doc-tag">Site</span><strong>Langfuse integration</strong><p>Tracing and observability for agent and research runs.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/develop-guides/coding-rules.md" target="_blank" rel="noopener"><span class="doc-tag">Site</span><strong>Coding rules</strong><p>The project’s coding rules and review expectations.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/develop-guides/design.md" target="_blank" rel="noopener"><span class="doc-tag">Site</span><strong>Design system</strong><p>Color tokens, layout, components and frontend visual rules.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/develop-guides/roadmap.md" target="_blank" rel="noopener"><span class="doc-tag">Site</span><strong>Roadmap</strong><p>Planned capabilities and delivery sequencing.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/advanced/branding.md" target="_blank" rel="noopener"><span class="doc-tag">Site</span><strong>Branding</strong><p>Brand assets, page titles and theme customization.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/advanced/configuration.md" target="_blank" rel="noopener"><span class="doc-tag">Site</span><strong>Configuration</strong><p>Environment variables, runtime configuration and service settings.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/advanced/misc.md" target="_blank" rel="noopener"><span class="doc-tag">Site</span><strong>Miscellaneous</strong><p>Additional operational and integration notes.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/advanced/third-party-auth.md" target="_blank" rel="noopener"><span class="doc-tag">Site</span><strong>Third-party auth</strong><p>External identity providers and login integration.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/develop-guides/performance-baseline.md" target="_blank" rel="noopener"><span class="doc-tag">Site</span><strong>Performance baseline</strong><p>Timing baselines and performance notes for research runs.</p></a>
+          </div></div>
+          <div class="doc-group"><h3>Agents and evidence</h3><div class="doc-grid">
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/agents/agents-config.md" target="_blank" rel="noopener"><span class="doc-tag">Site</span><strong>Agent configuration</strong><p>Models, prompts, tools, Skills, MCP and SubAgents.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/agents/tools-system.md" target="_blank" rel="noopener"><span class="doc-tag">Site</span><strong>Tool system</strong><p>The research tool registry, categories and approval boundaries.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/agents/sandbox-architecture.md" target="_blank" rel="noopener"><span class="doc-tag">Site</span><strong>Sandbox architecture</strong><p>Execution isolation, file boundaries and artifact handling.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/agents/agent-evaluation.md" target="_blank" rel="noopener"><span class="doc-tag">Site</span><strong>Agent evaluation</strong><p>Agent and retrieval evaluation workflows.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/agents/middleware.md" target="_blank" rel="noopener"><span class="doc-tag">Site</span><strong>Middleware</strong><p>Knowledge injection, attachments, summaries and dynamic tools.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/agents/skills-management.md" target="_blank" rel="noopener"><span class="doc-tag">Site</span><strong>Skills management</strong><p>Skill discovery, upload and installation.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/agents/subagents-management.md" target="_blank" rel="noopener"><span class="doc-tag">Site</span><strong>SubAgents</strong><p>Isolated child threads, delegation and artifact return.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/agents/agent-request-queue.md" target="_blank" rel="noopener"><span class="doc-tag">Site</span><strong>Request queue</strong><p>Serialized agent runs, concurrency and cancellation.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/agents/mcp-integration.md" target="_blank" rel="noopener"><span class="doc-tag">Site</span><strong>MCP integration</strong><p>Model Context Protocol tool services and permissions.</p></a>
+          </div></div>
+          <div class="doc-group"><h3>Project records &amp; diagrams</h3><div class="doc-grid">
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/ARCHITECTURE.md" target="_blank" rel="noopener"><span class="doc-tag">GitHub</span><strong>ARCHITECTURE.md</strong><p>Stable code boundaries, runtime paths and architecture invariants.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener"><span class="doc-tag">GitHub</span><strong>CONTRIBUTING.md</strong><p>Quick contribution flow and required local checks.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/FAQ.md" target="_blank" rel="noopener"><span class="doc-tag">GitHub</span><strong>FAQ.md</strong><p>Evidence validation, graph readiness, 429s, workers and versioning.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/SECURITY.md" target="_blank" rel="noopener"><span class="doc-tag">GitHub</span><strong>SECURITY.md</strong><p>Private vulnerability reporting and secret-handling policy.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/blob/main/CHANGELOG.md" target="_blank" rel="noopener"><span class="doc-tag">GitHub</span><strong>CHANGELOG.md</strong><p>Repository-level changes and release summaries.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/tree/main/docs/project" target="_blank" rel="noopener"><span class="doc-tag">GitHub</span><strong>Project records</strong><p>Capability ledger, decisions, acceptance records and historical audits.</p></a>
+            <a class="doc-card" href="https://github.com/LPK3215/ResearchCompass/tree/main/docs/vibe" target="_blank" rel="noopener"><span class="doc-tag">GitHub</span><strong>Research notes</strong><p>Design explorations, audits and implementation notes from the build log.</p></a>
+            <a class="doc-card" href="../archify/core-architecture.html" target="_blank" rel="noopener"><span class="doc-tag">HTML</span><strong>Core architecture</strong><p>Interactive 10-node system map with guided views (zh-CN labels).</p></a>
+            <a class="doc-card" href="../archify/architecture-panorama.html" target="_blank" rel="noopener"><span class="doc-tag">HTML</span><strong>Full panorama</strong><p>Architecture, workflow, sequence and data-flow diagram set (zh-CN labels).</p></a>
+          </div></div>
+        </div>
+      </section>
+
+      <section class="section" id="contributing">
+        <div class="section-head">
+          <div><span class="section-index">11</span><span class="eyebrow">Contributing</span></div>
+          <h2>Keep the evidence path intact.</h2>
+          <p class="section-lead">One PR should solve one clear problem. Large changes start with an issue; UI changes include a screenshot or recording; user-visible changes update the docs and changelog.</p>
+        </div>
+        <div class="contrib-grid">
+          <div class="contrib-card"><span class="contrib-number">01</span><h3>Fork &amp; branch</h3><p>Use a semantic branch name such as <code>feature/evidence-filter</code> or <code>fix/graph-sync</code>.</p></div>
+          <div class="contrib-card"><span class="contrib-number">02</span><h3>Run the checks</h3><div class="code-block"><button class="copy-button" type="button" data-copy><svg><use href="#icon-copy"></use></svg><span class="copy-label">Copy</span></button><pre class="code-body"><code><span class="code-line"><span class="tok-key">make</span> format</span><span class="code-line"><span class="tok-key">make</span> lint</span><span class="code-line"><span class="tok-key">make</span> test</span></code></pre></div></div>
+          <div class="contrib-card"><span class="contrib-number">03</span><h3>Open a PR</h3><p>Describe what changed, why, the affected scope and how it was verified. Use the <a href="https://github.com/LPK3215/ResearchCompass/blob/main/.github/PULL_REQUEST_TEMPLATE.md" target="_blank" rel="noopener">PR template</a>.</p></div>
+        </div>
+        <div class="contrib-links"><a class="text-link" href="https://github.com/LPK3215/ResearchCompass/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">Read CONTRIBUTING.md<svg><use href="#icon-arrow-right"></use></svg></a><a class="text-link" href="https://github.com/LPK3215/ResearchCompass/blob/main/docs/develop-guides/contributing.md" target="_blank" rel="noopener">Read the full contributing guide<svg><use href="#icon-arrow-right"></use></svg></a></div>
+      </section>
+
+      <section class="section" id="license">
+        <div class="section-head">
+          <div><span class="section-index">12</span><span class="eyebrow">License &amp; citation</span></div>
+          <h2>Open source, with upstream credit.</h2>
+        </div>
+        <div class="license-grid">
+          <article class="license-card"><span class="license-mark">MIT</span><h3>MIT License</h3><p>ResearchCompass is released under the MIT License. The upstream Yuxi copyright notice is retained alongside the ResearchCompass copyright line.</p><a class="text-link" href="https://github.com/LPK3215/ResearchCompass/blob/main/LICENSE" target="_blank" rel="noopener">Read LICENSE<svg><use href="#icon-arrow-right"></use></svg></a></article>
+          <article class="license-card"><span class="license-mark">YUXI</span><h3>Built on Yuxi</h3><p>The general agent runtime, multi-tenant knowledge base, sandbox and middleware come from the open-source Yuxi framework; the research workflow, domain tools, evidence synthesis and evaluation extensions are implemented here.</p><a class="text-link" href="https://github.com/xerrors/Yuxi" target="_blank" rel="noopener">Visit Yuxi<svg><use href="#icon-external"></use></svg></a></article>
+          <article class="license-card"><span class="license-mark">CITE</span><h3>Citation</h3><p>No <code>CITATION.cff</code> is currently provided. For now, cite the repository URL and the release tag <code>v0.11.15</code>; see the changelog for the exact release history.</p><a class="text-link" href="https://github.com/LPK3215/ResearchCompass" target="_blank" rel="noopener">Repository<svg><use href="#icon-arrow-right"></use></svg></a></article>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div class="footer-brand"><span class="brand-mark"><svg><use href="#icon-compass"></use></svg></span><span>ResearchCompass</span></div>
+      <p>Evidence-traceable research workspace · MIT · built on Yuxi</p>
+      <div class="footer-links"><a href="https://github.com/LPK3215/ResearchCompass" target="_blank" rel="noopener">GitHub</a><a href="https://github.com/LPK3215/ResearchCompass/tree/main/docs" target="_blank" rel="noopener">Docs</a><a href="https://github.com/LPK3215/ResearchCompass/blob/main/README.zh-CN.md" target="_blank" rel="noopener">Chinese README</a><a href="#top">Back to top</a></div>
+    </div>
+  </footer>
+
+  <button class="back-to-top" id="back-to-top" type="button" aria-label="Back to top"><svg><use href="#icon-arrow-up"></use></svg></button>
+
+  <!-- Generated: 2026-10-22; tool: ResearchCompass project-overview generator. -->
+</body>
+</html>

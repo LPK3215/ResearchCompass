@@ -8,6 +8,13 @@
 
 > 当前验收标签：v0.11.15（2026-10-21）。以下 v0.11.0 段落汇总本轮能力收口内容。
 
+## Unreleased
+
+- 文档与开源规范收口（2026-10-22）：`README.md` 改为英文主版，新增 `README.zh-CN.md` 中文配套版；新增 `FAQ.md`、`SECURITY.md`、`AUTHORS`、`.pre-commit-config.yaml`、`backend/README.md`；补充 `Makefile` 的测试 / 冒烟 / 固定语料评测 / 文档构建目标；更新 `LICENSE` 版权行、`.gitignore` / `.gitattributes`、`backend/pyproject.toml`、`web/package.json`、`docs/package.json` 元数据。
+- README 开场与可视化（2026-10-22）：新增 `docs/assets/banner.svg`（生成脚本 `scripts/visualization/generate_banner.mjs`），两版 README 增加居中横幅、shields.io 徽章、章节导航、可视化与 FAQ 章节，并链接 `docs/archify/` 下的交互式架构 / 工作流 / 时序 / 数据流图；两版章节结构与语言互链保持对齐。
+- 项目全景观览页（2026-10-22）：新增 `docs/index.html` 入口、`docs/.nojekyll` 与 `docs/project_overview/`（`index.html` / `style.css` / `script.js` / `charts.js`），覆盖架构、方法、技术栈、目录树、快速开始、评测图表、API、质量、文档索引、贡献与许可；按 GitHub Pages 经典模式使用相对路径。
+- 文档一致性审计（2026-10-22）：文档站首页版本、供应商数量与统计改由 `backend/scripts/doc_stats.py` 生成；统一 Compose 宿主 API 端口 5051 与直跑 5050 的表述；同步后端单测 1696/5、冒烟 55/55、项目 Markdown 79 篇，并让项目档案索引与自动统计对齐。
+
 ## v0.11.0
 
 - 上线前第八轮审计与修复（2026-10-22）：① 登录限流跟踪表加上界（`RATE_LIMIT_TRACKED_SOURCES_LIMIT`），未认证请求靠刷源地址把进程内存撑爆的路径关闭（复现 20000 源→保留 20000 键，修复后→ 10000 键）；② 缺「默认部门」时不再静默建出「能登录但全站 400」的账号，改为 409 显式失败；③ 集成测试知识库清理取错主键（读不存在的 `slug`，实际字段是 `kb_id`），`pytest_*` 残留库从未被清理，本次修复根因；④ 生产 nginx 上传上限 20M 与后端 `MAX_UPLOAD_SIZE_BYTES`（100 MB）矛盾，20–100 MB 上传永远到不了应用，已对齐（同一 25 MB 请求：旧配置 413、新配置 422 到达应用）；⑤ 404 页面文案拼音混英文且无返回入口，改为中文文案 + 返回链接；⑥ 科研罗盘默认知识库取 API 返回的 `[0]`，而后端未约定顺序，改为按创建时间倒序确定；⑦ 文档统一：根 `CHANGELOG.md`、`CLAUDE.md`、`CONTRIBUTING.md` 改为指向唯一真源，安装文档版本对齐最新标签 `v0.11.15`，补齐 3 个缺失导航项；新增 `backend/scripts/doc_stats.py` 从真源生成版本与代码面统计，不再手写。
