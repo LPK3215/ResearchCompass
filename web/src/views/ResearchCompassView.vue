@@ -2030,7 +2030,10 @@ const loadDatabases = async () => {
   databasesError.value = ''
   try {
     const result = await databaseApi.getAccessibleDatabases()
-    databases.value = (result.databases || []).filter((database) => database.supports_documents)
+    // 后端列表未约定顺序，直接取 [0] 会让默认知识库随重启变化；按创建时间倒序固定下来。
+    databases.value = (result.databases || [])
+      .filter((database) => database.supports_documents)
+      .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime())
     if (!selectedKbId.value || !databases.value.some((item) => item.kb_id === selectedKbId.value)) {
       selectedKbId.value = databases.value[0]?.kb_id || ''
     }

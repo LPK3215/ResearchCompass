@@ -52,3 +52,8 @@ format:
 	cd backend && UV_PYTHON=$(BACKEND_PYTHON) uv run ruff check --select I package --fix
 	cd web && pnpm run format
 	cd web && pnpm run lint
+
+lint:
+	cd backend && UV_PYTHON=$(BACKEND_PYTHON) uv run ruff check package server scripts
+	cd backend && UV_PYTHON=$(BACKEND_PYTHON) uv run ruff check --select I package server scripts
+	cd web && pnpm run lint:check

@@ -20,7 +20,7 @@
 
 ```bash
 # 克隆最新版本
-git clone --branch v0.11.0 --depth 1 https://github.com/LPK3215/ResearchCompass.git
+git clone --branch v0.11.15 --depth 1 https://github.com/LPK3215/ResearchCompass.git
 cd ResearchCompass
 ```
 
@@ -28,7 +28,7 @@ cd ResearchCompass
 
 | 版本 | 适用场景 |
 |------|----------|
-| v0.11.0 | 当前稳定版本，推荐生产使用 |
+| v0.11.15 | 当前稳定版本，推荐生产使用 |
 | main | 开发版本，包含最新特性（可能不稳定） |
 
 ### 步骤二：配置环境变量

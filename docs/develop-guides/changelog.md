@@ -8,7 +8,7 @@
 
 > 当前验收标签：v0.11.15（2026-10-21）。以下 v0.11.0 段落汇总本轮能力收口内容。
 
-## v0.11.0 (current)
+## v0.11.0
 
 - 固定语料基线收口：`scripts/eval/fixed_corpus.json` 的 28 篇开放获取论文**全部真实入库**备选库 `kb_ksf23a31w7`（该库 30 篇论文，28 篇带全文共 993 个 chunk）。新增三个可重复的基线脚本，公共辅助抽到 `scripts/eval/corpus_common.py`：`fixed_corpus_baseline.py`（文档级 hit@1/3/5 + MRR，走研究检索链路 `local_hybrid`）、`fixed_corpus_ablation.py`（评测模块受控消融，只切换 `use_reranker`）、`fixed_corpus_synthesis.py`（证据约束综述的引用覆盖率，按产品流程先核验证据再综述）。真实数值：文档级 hit@1=8/10、hit@3=8/10、hit@5=10/10、MRR=0.845（12.9–14.6 秒/题）；受控消融下重排序开启相比关闭，recall@10 由 0.1 升到 0.3、LLM 裁判答案正确率由 0.3 升到 0.5（样本 n=10 < 30，属初步信号，不作为稳定效应估计）；综述引用覆盖率 5/5 成功、平均 0.8037。
 - 修复 Semantic Scholar 限流只对单个客户端实例生效：论文导入、引用图谱同步、外部检索各自新建客户端，并发请求会同时打到免费额度上直接触发 429。限流闸门改为**进程内共享**（`SemanticScholarThrottle`），同进程内所有 Semantic Scholar 请求串行发出；新增跨实例并发回归测试。

@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from fastapi import Request
-
 import pytest
+from fastapi import Request
 
 from server.utils.client_ip import extract_client_ip, validate_trusted_proxy_cidrs
 

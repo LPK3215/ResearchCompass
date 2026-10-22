@@ -311,6 +311,23 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     }
 
 
+async def _resolve_default_department_id() -> int:
+    """解析建账户时使用的默认部门。
+
+    ``get_required_user`` 要求每个可用账号都绑定部门，所以这里不能退回落空：
+    否则会静默建出一个能登录、但所有需要部门的接口都报 400 的账号，
+    等于开户即不可用。缺部门时直接失败，让部署方一次补齐。
+    """
+    departments = await DepartmentRepository().list_departments()
+    default_dept = next((department for department in departments if department.name == "默认部门"), None)
+    if default_dept is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="系统缺少「默认部门」，无法创建用户；请先由管理员创建该部门",
+        )
+    return default_dept.id
+
+
 # 路由：用户自助注册（公开接口）
 @auth.post("/register", response_model=RegisterResponse)
 async def self_register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
@@ -341,10 +358,7 @@ async def self_register(data: RegisterRequest, db: AsyncSession = Depends(get_db
     uid = generate_unique_uid(data.username, existing_uids)
 
     hashed_password = AuthUtils.hash_password(data.password)
-    dept_repo = DepartmentRepository()
-    departments = await dept_repo.list_departments()
-    default_dept = next((d for d in departments if d.name == "默认部门"), None)
-    department_id = default_dept.id if default_dept else None
+    department_id = await _resolve_default_department_id()
 
     new_user = await user_repo.create(
         {
@@ -668,10 +682,7 @@ async def create_user(
         department_id = user_data.department_id
         if department_id is None:
             # 获取默认部门
-            dept_repo = DepartmentRepository()
-            departments = await dept_repo.list_departments()
-            default_dept = next((d for d in departments if d.name == "默认部门"), None)
-            department_id = default_dept.id if default_dept else None
+            department_id = await _resolve_default_department_id()
     else:
         # 普通管理员创建用户时，自动继承该管理员的部门
         department_id = current_user.department_id

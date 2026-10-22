@@ -148,15 +148,17 @@ def cleanup_test_knowledge_databases():
             prefixes = ("pytest_", "py_test")
             for entry in databases:
                 name = entry.get("name") or ""
-                slug = entry.get("slug")
-                if not slug or not isinstance(name, str) or not name.startswith(prefixes):
+                # 列表接口返回的业务主键是 kb_id；此前读的是不存在的 slug 字段，
+                # 凡带 slug 为空的条目都会被跳过，pytest_* 残留库因此从未被清理。
+                kb_id = entry.get("kb_id")
+                if not kb_id or not isinstance(name, str) or not name.startswith(prefixes):
                     continue
                 try:
-                    delete_response = await client.delete(f"/api/knowledge/databases/{slug}", headers=headers)
+                    delete_response = await client.delete(f"/api/knowledge/databases/{kb_id}", headers=headers)
                     if delete_response.status_code not in (200, 404):
-                        print(f"Warning: Failed to cleanup knowledge database {slug}: {delete_response.text}")
+                        print(f"Warning: Failed to cleanup knowledge database {kb_id}: {delete_response.text}")
                 except Exception as exc:
-                    print(f"Warning: Exception during cleanup of {slug}: {exc}")
+                    print(f"Warning: Exception during cleanup of {kb_id}: {exc}")
 
     try:
         anyio.run(run_cleanup)

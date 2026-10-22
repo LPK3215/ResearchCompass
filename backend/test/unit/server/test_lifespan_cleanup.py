@@ -1,7 +1,7 @@
 import pytest
+from yuxi.services import langfuse_service
 
 from server.utils import lifespan as lifespan_module
-from yuxi.services import langfuse_service
 
 
 @pytest.mark.asyncio

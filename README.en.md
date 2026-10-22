@@ -82,7 +82,7 @@ Navigation: [What it does](https://lpk3215.github.io/ResearchCompass/intro/capab
 **1. Clone and initialize**
 
 ```bash
-git clone --branch v0.11.0 --depth 1 https://github.com/LPK3215/ResearchCompass.git
+git clone --branch v0.11.15 --depth 1 https://github.com/LPK3215/ResearchCompass.git
 cd ResearchCompass
 
 # Linux/macOS

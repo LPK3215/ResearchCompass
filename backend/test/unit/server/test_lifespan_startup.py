@@ -3,9 +3,9 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 import pytest
+from yuxi.repositories import agent_repository
 
 from server.utils import lifespan as lifespan_module
-from yuxi.repositories import agent_repository
 
 
 @pytest.mark.asyncio

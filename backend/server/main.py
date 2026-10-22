@@ -33,6 +33,9 @@ setup_logging()
 RATE_LIMIT_MAX_ATTEMPTS = 10
 RATE_LIMIT_WINDOW_SECONDS = 60
 RATE_LIMIT_ENDPOINTS = {("/api/auth/token", "POST"), ("/api/auth/register", "POST")}
+# 进程内限流表的硬上界：未认证请求会为每个来源地址留下一条记录，
+# 没有上界时攻击者可以靠不断更换源地址把进程内存撑爆。
+RATE_LIMIT_TRACKED_SOURCES_LIMIT = 10_000
 DEFAULT_DEVELOPMENT_CORS_ORIGINS = ("http://localhost:5173", "http://127.0.0.1:5173")
 EXPLICIT_CORS_METHODS = ("DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT")
 EXPLICIT_CORS_HEADERS = ("Accept", "Authorization", "Content-Type", "Last-Event-ID", "X-Requested-With")
@@ -40,6 +43,37 @@ EXPLICIT_CORS_HEADERS = ("Accept", "Authorization", "Content-Type", "Last-Event-
 # In-memory login attempt tracker to reduce brute-force exposure per worker
 _login_attempts: defaultdict[str, deque[float]] = defaultdict(deque)
 _attempt_lock = asyncio.Lock()
+
+
+def _prune_login_attempts(now: float) -> None:
+    """为即将记录的来源腾出位置；调用方必须已持有 ``_attempt_lock``。
+
+    先清理窗口内没有任何尝试的来源，仍不足时按最久未活动淘汰。
+    调用发生在写入新来源之前，所以目标是留下 ``limit - 1`` 条既有记录，
+    写入后总数不超过 ``RATE_LIMIT_TRACKED_SOURCES_LIMIT``。
+    进程内限流只用于削弱单源爆破，分散来源的爆破需要网关层兜底，
+    这里的首要职责是不让未认证请求撑爆进程内存。
+    """
+    target = RATE_LIMIT_TRACKED_SOURCES_LIMIT - 1
+    if len(_login_attempts) <= target:
+        return
+
+    for source in [
+        source
+        for source, history in _login_attempts.items()
+        if not history or now - history[-1] > RATE_LIMIT_WINDOW_SECONDS
+    ]:
+        del _login_attempts[source]
+
+    overflow = len(_login_attempts) - target
+    if overflow <= 0:
+        return
+    stalest = sorted(
+        _login_attempts,
+        key=lambda source: _login_attempts[source][-1] if _login_attempts[source] else 0.0,
+    )
+    for source in stalest[:overflow]:
+        del _login_attempts[source]
 
 
 def _parse_cors_origins() -> list[str]:
@@ -159,6 +193,7 @@ class LoginRateLimitMiddleware(BaseHTTPMiddleware):
             now = time.monotonic()
 
             async with _attempt_lock:
+                _prune_login_attempts(now)
                 attempt_history = _login_attempts[client_ip]
 
                 while attempt_history and now - attempt_history[0] > RATE_LIMIT_WINDOW_SECONDS:

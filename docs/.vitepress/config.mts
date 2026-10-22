@@ -71,7 +71,8 @@ export default defineConfig({
           { text: '品牌自定义', link: '/advanced/branding' },
           { text: '其他配置', link: '/advanced/misc' },
           { text: '生产部署', link: '/advanced/deployment' },
-          { text: 'API Key 外部集成', link: '/advanced/api-key-integration' }
+          { text: 'API Key 外部集成', link: '/advanced/api-key-integration' },
+          { text: '第三方登录', link: '/advanced/third-party-auth' }
         ]
       },
       {
@@ -83,6 +84,8 @@ export default defineConfig({
           { text: '版本变更记录', link: '/develop-guides/changelog' },
           { text: '界面设计规范', link: '/develop-guides/design' },
           { text: '测试规范', link: '/develop-guides/testing-guidelines' },
+          { text: '本地开发环境', link: '/develop-guides/local-dev-environment' },
+          { text: '性能基线', link: '/develop-guides/performance-baseline' },
         ]
       }
     ],
