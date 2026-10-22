@@ -20,76 +20,76 @@
 
 /* Chart Area Gradient - 图表区域渐变 */
 .chart-area-gradient-primary {
-  background: linear-gradient(180deg, rgba(57, 150, 174, 0.3) 0%, rgba(57, 150, 174, 0.05) 100%);
+  background: linear-gradient(180deg, var(--primary-a30) 0%, var(--primary-a06) 100%);
 }
 
 .chart-area-gradient-success {
-  background: linear-gradient(180deg, rgba(82, 196, 26, 0.3) 0%, rgba(82, 196, 26, 0.05) 100%);
+  background: linear-gradient(180deg, var(--success-a30) 0%, var(--success-a15) 100%);
 }
 
 .chart-area-gradient-warning {
-  background: linear-gradient(180deg, rgba(250, 173, 20, 0.3) 0%, rgba(250, 173, 20, 0.05) 100%);
+  background: linear-gradient(180deg, var(--warning-a30) 0%, var(--warning-a15) 100%);
 }
 
 .chart-area-gradient-error {
-  background: linear-gradient(180deg, rgba(245, 34, 45, 0.3) 0%, rgba(245, 34, 45, 0.05) 100%);
+  background: linear-gradient(180deg, var(--error-a30) 0%, var(--error-a15) 100%);
 }
 
 /* Chart Shadow Effects - 图表阴影效果 */
 .chart-shadow-primary {
-  box-shadow: 0 4px 12px rgba(57, 150, 174, 0.15);
+  box-shadow: 0 4px 12px var(--primary-a12);
 }
 
 .chart-shadow-success {
-  box-shadow: 0 4px 12px rgba(82, 196, 26, 0.15);
+  box-shadow: 0 4px 12px var(--success-a15);
 }
 
 .chart-shadow-warning {
-  box-shadow: 0 4px 12px rgba(250, 173, 20, 0.15);
+  box-shadow: 0 4px 12px var(--warning-a15);
 }
 
 .chart-shadow-error {
-  box-shadow: 0 4px 12px rgba(245, 34, 45, 0.15);
+  box-shadow: 0 4px 12px var(--error-a15);
 }
 
 /* 共享的卡片样式 */
 .dashboard-card {
-  background-color: var(--gray-0);
-  border: 1px solid var(--gray-100);
-  border-radius: 8px;
-  transition: all 0.2s ease;
+  background-color: var(--color-bg-container);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  transition:
+    border-color var(--transition-duration-base) var(--transition-ease),
+    box-shadow var(--transition-duration-base) var(--transition-ease);
   height: 100%;
   display: flex;
   flex-direction: column;
 
   &:hover {
-    border-color: var(--gray-200);
-    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+    border-color: var(--color-border);
+    box-shadow: var(--shadow-raised);
   }
 }
 
 /* 使用更具体的选择器来覆盖 Ant Design 的默认样式 */
 .dashboard-card .ant-card-head {
-  /* border-bottom: 1px solid var(--gray-200) !important; */
   min-height: 56px !important;
-  padding: 0 20px !important;
+  padding: 0 var(--space-5) !important;
   flex-shrink: 0;
-  background-color: var(--gray-0) !important;
-  /* border: 1px solo; */
+  background-color: var(--color-bg-container) !important;
 }
 
 .dashboard-card .ant-card-head-title {
-  font-size: 18px !important;
-  font-weight: 600 !important;
-  color: var(--gray-1000) !important;
+  font-size: var(--font-size-2xl) !important;
+  font-weight: var(--font-weight-semibold) !important;
+  color: var(--color-text) !important;
 }
 
 .dashboard-card .ant-card-body {
-  padding: 20px !important;
+  padding: var(--space-5) !important;
   padding-top: 0px !important;
   flex: 1;
   overflow: auto;
-  background-color: var(--gray-0) !important;
+  background-color: var(--color-bg-container) !important;
 }
 
 .dashboard-card .ant-card-extra {
@@ -98,22 +98,23 @@
 
 /* 统计概览样式 */
 .stats-overview {
-  margin-bottom: 16px;
+  margin-bottom: var(--space-4);
 
   .ant-statistic {
     .ant-statistic-title {
-      font-size: 13px;
-      font-weight: 500;
-      color: var(--gray-600);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: 8px;
+      font-size: var(--font-size-sm);
+      font-weight: var(--font-weight-medium);
+      color: var(--color-text-secondary);
+      letter-spacing: 0.02em;
+      margin-bottom: var(--space-2);
     }
 
     .ant-statistic-content {
-      font-size: 24px;
-      font-weight: 700;
-      color: var(--gray-1000);
+      font-size: var(--font-size-4xl);
+      font-weight: var(--font-weight-bold);
+      line-height: var(--line-height-tight);
+      color: var(--color-text);
+      font-variant-numeric: tabular-nums;
     }
   }
 }
@@ -122,36 +123,36 @@
 .chart-container {
   h4,
   h5 {
-    margin-bottom: 16px;
-    font-weight: 600;
-    color: var(--gray-1000);
+    margin-bottom: var(--space-4);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
   }
 
   h4 {
-    font-size: 16px;
+    font-size: var(--font-size-xl);
   }
 
   h5 {
-    font-size: 14px;
-    color: var(--gray-600);
+    font-size: var(--font-size-md);
+    color: var(--color-text-secondary);
   }
 
   .chart {
     height: 250px;
     width: 100%;
-    background-color: var(--gray-0);
-    border-radius: 8px;
-    padding: 10px;
-    border: 1px solid var(--gray-100);
+    background-color: var(--color-bg-container);
+    border-radius: var(--radius-lg);
+    padding: var(--space-3);
+    border: 1px solid var(--color-border-subtle);
   }
 
   .chart-medium {
     height: 180px;
     width: 100%;
-    background-color: var(--gray-0);
-    border-radius: 8px;
-    padding: 8px;
-    border: 1px solid var(--gray-100);
+    background-color: var(--color-bg-container);
+    border-radius: var(--radius-lg);
+    padding: var(--space-2);
+    border: 1px solid var(--color-border-subtle);
   }
 
   .chart-small {
@@ -162,60 +163,59 @@
 
 /* Ant Design 组件样式覆盖 */
 .dashboard-card .ant-statistic-title {
-  color: var(--gray-600) !important;
-  font-weight: 500 !important;
+  color: var(--color-text-secondary) !important;
+  font-weight: var(--font-weight-medium) !important;
 }
 
 .dashboard-card .ant-statistic-content {
-  color: var(--gray-1000);
+  color: var(--color-text);
 }
 
 /* 强制设置所有统计卡片数字为粗体 */
 .dashboard-card .ant-statistic-content-value {
-  font-weight: 700 !important;
+  font-weight: var(--font-weight-bold) !important;
 }
 
 .dashboard-card .ant-table {
-  background-color: var(--gray-0);
-  border-radius: 8px;
+  background-color: var(--color-bg-container);
+  border-radius: var(--radius-lg);
   overflow: hidden;
 
   .ant-table-thead > tr > th {
-    background-color: var(--gray-25);
-    border-bottom: 1px solid var(--gray-200);
-    font-weight: 600;
-    padding: 12px 16px;
-    font-size: 12px;
-    color: var(--gray-700);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    background-color: var(--color-bg-subtle);
+    border-bottom: 1px solid var(--color-border);
+    font-weight: var(--font-weight-semibold);
+    padding: var(--space-3) var(--space-4);
+    font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
+    letter-spacing: 0.02em;
   }
 
   .ant-table-tbody > tr {
-    transition: background-color 0.2s ease;
+    transition: background-color var(--transition-duration-base) var(--transition-ease);
 
     > td {
-      border-bottom: 1px solid var(--gray-100);
-      color: var(--gray-1000);
-      padding: 12px 16px;
-      font-weight: 400;
+      border-bottom: 1px solid var(--color-border-subtle);
+      color: var(--color-text);
+      padding: var(--space-3) var(--space-4);
+      font-weight: var(--font-weight-regular);
     }
 
     &:hover > td {
-      background-color: var(--gray-25);
+      background-color: var(--color-bg-subtle);
     }
   }
 }
 
 .dashboard-card .ant-progress {
   .ant-progress-bg {
-    background-color: var(--main-500) !important;
-    border-radius: 4px;
+    background-color: var(--primary-fill) !important;
+    border-radius: var(--radius-sm);
   }
 
   .ant-progress-text {
-    color: var(--gray-1000) !important;
-    font-weight: 500;
-    font-size: 12px;
+    color: var(--color-text) !important;
+    font-weight: var(--font-weight-medium);
+    font-size: var(--font-size-xs);
   }
 }

@@ -5,60 +5,193 @@
 @import './dashboard.css';
 @import './code-highlight.less';
 
-:root {
-  --header-height: 45px;
-  --min-width: 450px;
-}
-
 *,
 *::before,
 *::after {
   box-sizing: border-box;
   margin: 0;
   position: relative;
-  font-weight: normal;
+}
+
+html {
+  scroll-behavior: smooth;
+  scrollbar-gutter: stable;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
   display: flow-root;
   min-height: 100vh;
-  color: var(--gray-900);
-  background: var(--gray-0);
-  line-height: 1.6;
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'Noto Sans SC', 'Roboto', 'HarmonyOS Sans SC', 'Segoe UI',
-    'Helvetica Neue', Arial, sans-serif;
-  font-size: 15px;
+  color: var(--color-text);
+  background: var(--color-bg-page);
+  line-height: var(--line-height-base);
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-regular);
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* 长路径、无空格标识符不撑破容器 */
+  overflow-wrap: break-word;
 }
 
-/* layout */
+/* ==========================================================================
+   排版层级
+   组件内可用 scoped 样式覆盖字号与颜色，字重由此处统一兜底。
+   ========================================================================== */
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-snug);
+  text-wrap: balance;
+}
+
+h1 {
+  font-size: var(--font-size-4xl);
+}
+
+h2 {
+  font-size: var(--font-size-3xl);
+}
+
+h3 {
+  font-size: var(--font-size-2xl);
+}
+
+h4 {
+  font-size: var(--font-size-xl);
+}
+
+h5 {
+  font-size: var(--font-size-lg);
+}
+
+h6 {
+  font-size: var(--font-size-md);
+}
+
+p {
+  line-height: var(--line-height-base);
+  text-wrap: pretty;
+}
+
+strong,
+b {
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+small {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+code,
+kbd,
+samp,
+pre {
+  font-family: var(--font-family-mono);
+  font-size: 0.92em;
+}
+
+hr {
+  height: 1px;
+  margin: var(--space-4) 0;
+  border: 0;
+  background: var(--color-border-subtle);
+}
+
+blockquote {
+  margin: var(--space-3) 0;
+  padding: var(--space-2) var(--space-4);
+  border-left: 3px solid var(--primary-border);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--color-bg-subtle);
+  color: var(--color-text-secondary);
+}
+
+ul,
+ol {
+  padding-left: var(--space-5);
+}
+
+li + li {
+  margin-top: var(--space-1);
+}
+
+/* 数字列对齐：统计值、表格数字使用等宽数字 */
+.ant-statistic-content-value,
+.ant-statistic-content,
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 数字与长标识符 */
+.long-text {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* ==========================================================================
+   交互反馈
+   ========================================================================== */
+
+/* 键盘可达控件必须有可见焦点 */
+:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 2px;
+}
+
+/* 文本选中 */
+::selection {
+  background: var(--state-selected-bg);
+  color: var(--state-selected-text);
+}
+
+/* 锚点滚动时避开固定头部 */
+:target {
+  scroll-margin-top: calc(var(--header-height) + var(--space-4));
+}
+
+/* ==========================================================================
+   布局
+   ========================================================================== */
 
 .layout-container {
   width: 100%;
 
   h2 {
-    margin: 20px 0 10px 0;
+    margin: var(--space-5) 0 var(--space-3);
   }
 }
 
+/* 统一图标按钮的居中与尺寸 */
 .lucide-icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--space-1);
 }
 
 .lucide-icon-btn svg {
   flex-shrink: 0;
 }
 
+.lucide-icon-btn:disabled {
+  color: var(--state-disabled-text);
+  cursor: not-allowed;
+}
+
 .lucide-menu-item {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   width: 100%;
   min-height: 22px;
   line-height: 1;
@@ -86,17 +219,18 @@ body {
   justify-content: center;
 }
 
+/* 状态标签：浅底 + 深字，圆角与字号统一 */
 .card-tag {
   display: inline-flex;
   align-items: center;
   min-height: 22px;
-  padding: 0 8px;
-  font-size: 11px;
-  font-weight: 600;
+  padding: 0 var(--space-2);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
   line-height: 1;
-  background: var(--gray-100);
-  color: var(--gray-600);
-  border-radius: 4px;
+  background: var(--color-bg-muted);
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-sm);
 }
 
 .card-tag.tag-purple,
@@ -124,4 +258,35 @@ body {
 .card-tag.tag-gold {
   background: var(--color-warning-50);
   color: var(--color-warning-900);
+}
+
+/* ==========================================================================
+   响应式与无障碍
+   ========================================================================== */
+
+/* 小屏下放宽最小宽度限制，避免出现不必要的横向滚动 */
+@media (max-width: 767px) {
+  body {
+    font-size: var(--font-size-md);
+  }
+}
+
+/* 移动端增大可点击区域 */
+@media (pointer: coarse) {
+  .lucide-icon-btn {
+    min-width: 40px;
+    min-height: 40px;
+  }
+}
+
+/* 尊重系统的"减少动态效果"偏好 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -1196,7 +1196,7 @@ onUnmounted(() => {
   }
 
   &:hover::after {
-    background: var(--color-primary-400);
+    background: var(--color-primary-500);
   }
 }
 </style>

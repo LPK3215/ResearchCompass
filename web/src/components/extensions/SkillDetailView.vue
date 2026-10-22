@@ -1073,7 +1073,7 @@ onMounted(() => {
 .dependency-select-btn {
   border-color: var(--gray-100);
   background: var(--gray-50);
-  box-shadow: 0 1px 3px rgb(0 0 0 / 3%);
+  box-shadow: var(--shadow-raised);
 
   &:hover,
   &:focus {
@@ -1181,7 +1181,7 @@ onMounted(() => {
     border: 1px solid var(--gray-200);
     border-radius: 14px;
     background: var(--gray-0);
-    box-shadow: 0 8px 22px rgb(0 0 0 / 8%);
+    box-shadow: var(--shadow-popover);
   }
 
   .selection-dropdown-header {

@@ -568,7 +568,7 @@ onUnmounted(() => {
   top: 10px;
   right: 10px;
   z-index: 5;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  box-shadow: var(--shadow-popover);
 }
 
 .file-path-title {
@@ -616,7 +616,7 @@ onUnmounted(() => {
 .preview-mode-btn.active {
   background: var(--gray-0);
   color: var(--gray-900);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+  box-shadow: var(--shadow-raised);
 }
 
 .text-mode-btn {
@@ -691,7 +691,7 @@ onUnmounted(() => {
   font-size: 11px;
   line-height: 1;
   color: var(--color-warning-700);
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+  box-shadow: var(--shadow-overlay);
   pointer-events: auto;
   white-space: nowrap;
 }
@@ -708,7 +708,7 @@ onUnmounted(() => {
   background: var(--gray-0);
   color: var(--gray-700);
   cursor: pointer;
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.14);
+  box-shadow: var(--shadow-popover);
   pointer-events: auto;
   transition:
     background-color 0.15s ease,
@@ -716,7 +716,7 @@ onUnmounted(() => {
     color 0.15s ease;
 
   &:hover:not(:disabled) {
-    border-color: var(--gray-250);
+    border-color: var(--gray-300);
     background: var(--gray-50);
     color: var(--gray-900);
   }
@@ -734,26 +734,27 @@ onUnmounted(() => {
 }
 
 .edit-floating-btn-primary {
-  background: var(--color-primary-500);
-  border-color: var(--color-primary-500);
-  color: #fff;
+  background: var(--primary-fill);
+  border-color: var(--primary-fill);
+  color: var(--on-primary-text);
 
   &:hover:not(:disabled) {
-    background: var(--color-primary-700);
-    border-color: var(--color-primary-700);
-    color: #fff;
+    background: var(--primary-fill-hover);
+    border-color: var(--primary-fill-hover);
+    color: var(--on-primary-text);
   }
 
   &:disabled {
-    background: var(--color-primary-500);
-    border-color: var(--color-primary-500);
-    color: rgba(255, 255, 255, 0.5);
+    background: var(--primary-fill);
+    border-color: var(--primary-fill);
+    color: var(--on-primary-text);
     cursor: not-allowed;
+    opacity: 0.55;
 
     &:hover {
-      background: var(--color-primary-500);
-      border-color: var(--color-primary-500);
-      color: rgba(255, 255, 255, 0.5);
+      background: var(--primary-fill);
+      border-color: var(--primary-fill);
+      color: var(--on-primary-text);
     }
   }
 }
@@ -886,7 +887,7 @@ onUnmounted(() => {
   border: 1px solid var(--gray-200);
   border-radius: 999px;
   background: var(--color-trans-light);
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.14);
+  box-shadow: var(--shadow-popover);
   backdrop-filter: blur(10px);
 
   .preview-mode-btn {
@@ -902,7 +903,7 @@ onUnmounted(() => {
   border-radius: 999px;
   background: var(--color-trans-light);
   border: 1px solid var(--gray-200);
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.14);
+  box-shadow: var(--shadow-popover);
   backdrop-filter: blur(10px);
 }
 

@@ -587,7 +587,7 @@ defineExpose({
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--color-warning-600);
+  background: var(--color-warning-700);
 }
 
 .agent-modal-main {

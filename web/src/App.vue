@@ -10,6 +10,8 @@ const userStore = useUserStore()
 const themeStore = useThemeStore()
 
 onMounted(async () => {
+  // 样式表就绪后重新读取一次 CSS 变量，确保 Ant Design 主题与设计令牌一致
+  themeStore.refreshTheme()
   if (userStore.isLoggedIn) {
     await agentStore.initialize()
   }

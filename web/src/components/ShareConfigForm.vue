@@ -609,9 +609,7 @@ defineExpose({
     border: 1px solid var(--gray-200);
     border-radius: 14px;
     background: var(--gray-0);
-    box-shadow:
-      0 14px 36px rgb(0 0 0 / 12%),
-      0 2px 8px rgb(0 0 0 / 6%);
+    box-shadow: var(--shadow-popover);
   }
 
   .selection-dropdown-header {

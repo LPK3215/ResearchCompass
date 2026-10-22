@@ -144,7 +144,7 @@ onMounted(async () => {
 .study-card { width: min(880px, 100%); margin: 0 auto; padding: 36px; background: var(--gray-0); border: 1px solid var(--gray-200); border-radius: 12px;
   header { margin-bottom: 24px; } h1 { margin: 6px 0; color: var(--gray-900); } p { color: var(--gray-600); line-height: 1.7; }
 }
-.eyebrow { color: var(--primary-600); font-weight: 600; font-size: 13px; }.consent { margin-bottom: 14px; }
+.eyebrow { color: var(--primary-text); font-weight: 600; font-size: 13px; }.consent { margin-bottom: 14px; }
 .form-section { margin-top: 34px; padding-top: 24px; border-top: 1px solid var(--gray-200); h2 { margin: 0 0 8px; color: var(--gray-900); font-size: 18px; } }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }.score-group { display: flex; flex-wrap: wrap; gap: 12px; }
 @media (max-width: 640px) { .study-page { padding: 16px; }.study-card { padding: 22px; }.form-grid { grid-template-columns: 1fr; } }

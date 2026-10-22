@@ -429,7 +429,7 @@ defineExpose({
   &:hover {
     background-color: var(--main-bright);
     border-color: var(--main-bright);
-    box-shadow: 0 4px 8px rgba(1, 136, 166, 0.25);
+    box-shadow: 0 4px 8px var(--primary-a30);
     transform: translateY(-1px);
   }
 
@@ -539,7 +539,7 @@ defineExpose({
 
       &:hover {
         border-color: var(--main-300);
-        box-shadow: 0 2px 8px rgba(1, 97, 121, 0.08);
+        box-shadow: 0 2px 8px var(--primary-a12);
       }
 
       &:last-child {

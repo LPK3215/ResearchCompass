@@ -1371,11 +1371,11 @@ onUnmounted(() => {
   }
 
   &::-webkit-scrollbar-thumb {
-    background-color: rgba(0, 0, 0, 0.2);
+    background-color: var(--gray-300);
     border-radius: 3px;
 
     &:hover {
-      background-color: rgba(0, 0, 0, 0.3);
+      background-color: var(--gray-400);
     }
   }
 }
@@ -1541,7 +1541,7 @@ onUnmounted(() => {
   line-height: 1.45;
   font-weight: 500;
   white-space: nowrap;
-  color: var(--gray-650);
+  color: var(--gray-600);
 
   &.metric-recall {
     .metric-value {
@@ -1567,7 +1567,7 @@ onUnmounted(() => {
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0;
-  color: var(--gray-550);
+  color: var(--gray-500);
 }
 
 .metric-value {
@@ -1822,7 +1822,7 @@ onUnmounted(() => {
   }
 
   &:hover::after {
-    background: var(--color-primary-400);
+    background: var(--color-primary-500);
   }
 }
 
@@ -2100,7 +2100,7 @@ onUnmounted(() => {
       font-size: 13px;
 
       &:hover {
-        color: var(--color-primary-600);
+        color: var(--primary-text-hover);
         background-color: var(--color-primary-50);
       }
 
@@ -2167,8 +2167,8 @@ onUnmounted(() => {
   color: white !important;
 
   &:hover {
-    background-color: var(--color-error-600) !important;
-    border-color: var(--color-error-600) !important;
+    background-color: var(--color-error-700) !important;
+    border-color: var(--color-error-700) !important;
   }
 
   &:focus {

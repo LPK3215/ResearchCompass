@@ -768,8 +768,8 @@ defineExpose({
       }
 
       .deprecated-badge {
-        background: var(--color-error-100);
-        color: var(--color-error-600);
+        background: var(--color-error-50);
+        color: var(--color-error-700);
         font-size: 10px;
         font-weight: 600;
         padding: 2px 6px;
@@ -781,7 +781,7 @@ defineExpose({
         transition: all 0.2s ease;
 
         &:hover {
-          background: var(--color-error-200);
+          background: var(--color-error-100);
           color: var(--color-error-700);
         }
       }

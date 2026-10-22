@@ -619,15 +619,15 @@ const showCopiedFeedback = (btn) => {
       padding: 8px 12px;
       border-radius: 6px;
       transform: translateX(-50%);
-      background-color: #222;
-      color: #fff;
+      background-color: var(--surface-inverse);
+      color: var(--surface-inverse-text);
       font-size: 13px;
       line-height: 1.5;
       text-align: center;
       white-space: normal;
       word-break: break-word;
       pointer-events: none;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+      box-shadow: var(--shadow-overlay);
     }
 
     &:hover::before {
@@ -712,7 +712,7 @@ const showCopiedFeedback = (btn) => {
     border-radius: 5px;
     background: var(--gray-0);
     color: var(--gray-600);
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+    box-shadow: var(--shadow-raised);
     font-size: 12px;
     line-height: 1;
     cursor: pointer;
@@ -740,14 +740,14 @@ const showCopiedFeedback = (btn) => {
   }
 
   &.is-dark .markdown-code-copy-btn {
-    border-color: rgba(255, 255, 255, 0.12);
-    background: rgba(12, 13, 13, 0.92);
+    border-color: var(--dark-12);
+    background: var(--light-90);
     color: var(--gray-500);
 
     &:hover,
     &:focus-visible,
     &.is-copied {
-      border-color: rgba(255, 255, 255, 0.2);
+      border-color: var(--dark-20);
       color: var(--gray-900);
     }
   }
@@ -878,7 +878,7 @@ const showCopiedFeedback = (btn) => {
     width: 100%;
     height: var(--html-preview-min-height, 1px);
     max-height: var(--html-preview-max-height, 700px);
-    background: #fff;
+    background: var(--color-bg-container);
   }
 
   .html-preview-loading-slot {
@@ -886,7 +886,7 @@ const showCopiedFeedback = (btn) => {
     width: 100%;
     height: clamp(var(--html-preview-height, 360px), 58vh, var(--html-preview-max-height, 1200px));
     padding: 24px;
-    background: linear-gradient(180deg, #fff 0%, var(--gray-50) 100%);
+    background: linear-gradient(180deg, var(--color-bg-container) 0%, var(--gray-50) 100%);
   }
 
   .html-preview-loading-canvas {
@@ -920,7 +920,7 @@ const showCopiedFeedback = (btn) => {
     background: linear-gradient(
       90deg,
       transparent 0%,
-      rgba(255, 255, 255, 0.62) 48%,
+      var(--dark-60) 48%,
       transparent 100%
     );
     animation: html-preview-skeleton-shimmer 1.45s ease-in-out infinite;
@@ -969,16 +969,16 @@ const showCopiedFeedback = (btn) => {
     width: 100%;
     height: 100%;
     border: 0;
-    background: #fff;
+    background: var(--color-bg-container);
   }
 
   &.is-dark .html-preview-render {
-    border-color: rgba(255, 255, 255, 0.12);
-    background: rgba(255, 255, 255, 0.03);
+    border-color: var(--dark-12);
+    background: var(--dark-3);
   }
 
   &.is-dark .html-preview-loading-slot {
-    background: rgba(255, 255, 255, 0.04);
+    background: var(--dark-4);
   }
 
   &.is-dark .html-preview-loading-canvas {
@@ -986,14 +986,14 @@ const showCopiedFeedback = (btn) => {
   }
 
   &.is-dark .html-preview-skeleton {
-    background: rgba(255, 255, 255, 0.09);
+    background: var(--dark-9);
   }
 
   &.is-dark .html-preview-skeleton::after {
     background: linear-gradient(
       90deg,
       transparent 0%,
-      rgba(255, 255, 255, 0.14) 48%,
+      var(--dark-14) 48%,
       transparent 100%
     );
   }
@@ -1070,17 +1070,17 @@ const showCopiedFeedback = (btn) => {
   }
 
   &.is-dark .svg-inline-render {
-    background: rgba(255, 255, 255, 0.03);
+    background: var(--dark-3);
     border-radius: 4px;
   }
 
   &.is-dark .svg-actions .svg-action-btn {
-    background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(255, 255, 255, 0.12);
+    background: var(--dark-8);
+    border-color: var(--dark-12);
     color: var(--gray-300);
 
     &:hover {
-      background: rgba(255, 255, 255, 0.15);
+      background: var(--dark-15);
       color: var(--gray-100);
     }
   }

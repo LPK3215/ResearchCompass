@@ -872,18 +872,18 @@ onUnmounted(() => {
   font-size: 13px;
 
   .aux-link {
-    color: #046a82;
+    color: var(--primary-text);
     cursor: pointer;
 
     &:hover {
       text-decoration: underline;
-      color: #035065;
+      color: var(--primary-text-hover);
     }
   }
 
   .aux-divider {
     margin: 0 8px;
-    color: #d1d5db;
+    color: var(--color-border-strong);
   }
 }
 

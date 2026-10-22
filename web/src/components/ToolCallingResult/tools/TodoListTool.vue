@@ -186,16 +186,16 @@ const todoListData = (content) => {
         font-size: 16px;
 
         &.completed {
-          color: #52c41a;
+          color: var(--color-success-500);
         }
         &.in-progress {
-          color: #1890ff;
+          color: var(--color-info-500);
         }
         &.pending {
-          color: #faad14;
+          color: var(--color-warning-500);
         }
         &.cancelled {
-          color: #ff4d4f;
+          color: var(--color-error-500);
         }
         &.unknown {
           color: var(--gray-400);

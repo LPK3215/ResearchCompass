@@ -287,7 +287,7 @@ watch(
 
   &:hover {
     border-color: var(--main-color);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-overlay);
   }
 }
 

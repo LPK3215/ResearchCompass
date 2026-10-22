@@ -390,7 +390,7 @@ h1 { margin: 0; color: var(--color-text); font-size: 25px; line-height: 1.35; }
 .structure-body { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .report-body label { display: block; margin-bottom: 5px; color: var(--color-text-tertiary); font-size: 12px; }
 .report-body p { margin: 0; color: var(--color-text-secondary); line-height: 1.65; white-space: pre-wrap; }
-.innovation-item, .gap-item { position: relative; padding: 12px 14px; border-radius: 8px; background: var(--gray-30); }
+.innovation-item, .gap-item { position: relative; padding: 12px 14px; border-radius: 8px; background: var(--gray-25); }
 .innovation-item strong, .gap-item strong { display: block; padding-right: 56px; color: var(--color-text); line-height: 1.5; }
 .innovation-item p, .gap-item p { margin-top: 5px; font-size: 13px; }
 .innovation-item .ant-tag, .gap-item .ant-tag { position: absolute; top: 12px; right: 12px; margin: 0; }
@@ -398,7 +398,7 @@ h1 { margin: 0; color: var(--color-text); font-size: 25px; line-height: 1.35; }
 .future-direction-block { padding-top: 4px; }
 .paper-chat-card .chat-body { display: flex; flex-direction: column; gap: 12px; padding-top: 16px; }
 .chat-empty { color: var(--color-text-tertiary); font-size: 13px; }
-.chat-message { padding: 10px 12px; border-radius: 8px; background: var(--gray-30); }
+.chat-message { padding: 10px 12px; border-radius: 8px; background: var(--gray-25); }
 .chat-message.user { background: var(--main-30); }
 .chat-message strong { display: block; margin-bottom: 6px; color: var(--color-text-secondary); font-size: 12px; }
 .chat-question { margin: 0; white-space: pre-wrap; }

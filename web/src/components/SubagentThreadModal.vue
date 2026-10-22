@@ -497,7 +497,7 @@ onUnmounted(() => {
   font-size: 13px;
 
   &.is-error {
-    color: var(--color-error-600);
+    color: var(--color-error-700);
   }
 }
 </style>

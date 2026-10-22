@@ -113,33 +113,43 @@ const defaultLayout = {
 }
 
 const CHUNK_NODE_LABEL = 'Chunk'
-const CHUNK_NODE_COLOR = '#8c8c8c'
+const CHUNK_NODE_COLOR_VAR = '--chart-palette-10'
 const CHUNK_MENTION_EDGE_LABEL = 'MENTIONS'
-const NODE_LABEL_COLORS = [
-  '#3996ae',
-  '#5ad8a6',
-  '#f6bd16',
-  '#f27c7c',
-  '#9581cc',
-  '#6dc8ec',
-  '#ff9d4d',
-  '#92d050',
-  '#e885ba'
+// 节点与边的配色统一引用图表调色板令牌，主题切换后自动取到新色值
+const NODE_LABEL_COLOR_VARS = [
+  '--chart-palette-1',
+  '--chart-palette-2',
+  '--chart-palette-3',
+  '--chart-palette-4',
+  '--chart-palette-5',
+  '--chart-palette-6',
+  '--chart-palette-7',
+  '--chart-palette-8',
+  '--chart-palette-9'
 ]
-const EDGE_LABEL_COLORS = [
-  '#99add1',
-  '#3996ae',
-  '#13c2c2',
-  '#faad14',
-  '#f27c7c',
-  '#9581cc',
-  '#52c41a',
-  '#ff9d4d'
+const EDGE_LABEL_COLOR_VARS = [
+  '--chart-palette-6',
+  '--chart-palette-1',
+  '--color-accent-500',
+  '--color-warning-500',
+  '--chart-palette-4',
+  '--chart-palette-5',
+  '--color-success-500',
+  '--chart-palette-7'
 ]
 
 // CSS 变量解析工具函数
 function getCSSVariable(variableName, element = document.documentElement) {
   return getComputedStyle(element).getPropertyValue(variableName).trim()
+}
+
+/**
+ * 解析设计令牌取色。
+ * currentTheme 在主题切换时会被整体替换，读取它可让依赖取色结果的计算属性
+ * 在切换后失效并重新取色，避免图例等派生数据停留在旧主题的颜色上。
+ */
+function resolveTokenColor(variableName, fallback) {
+  return themeStore.currentTheme ? getCSSVariable(variableName) || fallback : fallback
 }
 
 function hashString(value) {
@@ -151,8 +161,9 @@ function hashString(value) {
   return Math.abs(hash)
 }
 
-function getPaletteColor(label, colors) {
-  return colors[hashString(label) % colors.length]
+function getPaletteColor(label, colorVars, fallback) {
+  const variableName = colorVars[hashString(label) % colorVars.length]
+  return resolveTokenColor(variableName, fallback)
 }
 
 function getNodeVisualLabel(node) {
@@ -161,8 +172,8 @@ function getNodeVisualLabel(node) {
 
 function getNodeColor(node) {
   const label = getNodeVisualLabel(node)
-  if (label === CHUNK_NODE_LABEL) return CHUNK_NODE_COLOR
-  return getPaletteColor(label, NODE_LABEL_COLORS)
+  if (label === CHUNK_NODE_LABEL) return resolveTokenColor(CHUNK_NODE_COLOR_VAR, '#8c8c8c')
+  return getPaletteColor(label, NODE_LABEL_COLOR_VARS, '#3996ae')
 }
 
 function getEdgeVisualLabel(edge) {
@@ -170,7 +181,7 @@ function getEdgeVisualLabel(edge) {
 }
 
 function getEdgeColor(edge) {
-  return getPaletteColor(getEdgeVisualLabel(edge), EDGE_LABEL_COLORS)
+  return getPaletteColor(getEdgeVisualLabel(edge), EDGE_LABEL_COLOR_VARS, '#3996ae')
 }
 
 function isEntityNode(node) {
@@ -704,7 +715,7 @@ defineExpose({
       }
 
       .stat-total {
-        color: var(--color-text-quaternary);
+        color: var(--color-text-tertiary);
         font-size: 11px;
       }
     }
@@ -806,7 +817,7 @@ defineExpose({
     filter: brightness(1);
   }
   50% {
-    filter: brightness(1.3) drop-shadow(0 0 8px rgba(255, 0, 0, 0.8));
+    filter: brightness(1.3) drop-shadow(0 0 8px var(--error-a80));
   }
   100% {
     filter: brightness(1);

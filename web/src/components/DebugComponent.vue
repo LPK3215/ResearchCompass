@@ -679,8 +679,8 @@ const switchToUser = async (user) => {
 .log-container {
   height: calc(80vh - 200px);
   overflow-y: auto;
-  background: #1e1f1f;
-  color: #ffffff;
+  background: var(--surface-inverse);
+  color: var(--surface-inverse-text);
   border-radius: 5px;
   font-family: 'Consolas', 'Monaco', monospace;
   font-size: 12px;
@@ -698,7 +698,7 @@ const switchToUser = async (user) => {
 }
 
 .log-line:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--surface-inverse-fill-subtle);
 }
 
 .timestamp {

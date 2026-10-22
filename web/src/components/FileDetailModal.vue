@@ -693,7 +693,7 @@ onBeforeUnmount(resetLocalState)
 
 .chunk-card:hover {
   border-color: var(--main-color);
-  box-shadow: 0 2px 8px rgba(1, 97, 121, 0.1);
+  box-shadow: 0 2px 8px var(--primary-a12);
 }
 
 .chunk-card-header {

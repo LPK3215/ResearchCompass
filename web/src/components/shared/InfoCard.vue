@@ -404,9 +404,9 @@ const normalizedTags = computed(() => {
 
     &:hover,
     &:focus {
-      border-color: var(--color-error-200);
+      border-color: var(--color-error-100);
       background: var(--color-error-50);
-      color: var(--color-error-800);
+      color: var(--color-error-900);
     }
   }
 }

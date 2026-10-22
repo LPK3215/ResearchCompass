@@ -539,7 +539,7 @@ const parsedData = computed(() => {
   border: 1px solid var(--gray-200);
   border-radius: 0.625rem;
   background: var(--gray-0);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  box-shadow: var(--shadow-raised);
 }
 
 .message-attachment-icon {
@@ -641,7 +641,7 @@ const parsedData = computed(() => {
   overflow: hidden;
   margin-left: auto;
   /* max-height: 200px; */
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid var(--dark-20);
 
   img {
     max-width: 100%;
@@ -663,7 +663,7 @@ const parsedData = computed(() => {
   align-items: center;
   justify-content: center;
   padding: 2rem;
-  background: rgba(0, 0, 0, 0.75);
+  background: var(--surface-inverse-overlay);
   cursor: zoom-out;
 }
 
@@ -686,13 +686,13 @@ const parsedData = computed(() => {
   justify-content: center;
   border: none;
   border-radius: 50%;
-  color: var(--gray-0);
-  background: rgba(255, 255, 255, 0.15);
+  color: var(--surface-inverse-text);
+  background: var(--surface-inverse-fill);
   cursor: pointer;
   transition: background-color 0.15s ease;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.28);
+    background: var(--surface-inverse-fill-hover);
   }
 }
 </style>

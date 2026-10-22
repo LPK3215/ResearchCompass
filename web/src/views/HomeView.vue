@@ -524,7 +524,7 @@ onUnmounted(() => {
 .button-base.primary {
   background: linear-gradient(135deg, var(--main-600), var(--main-500));
   color: var(--gray-0);
-  box-shadow: 0 12px 28px -12px rgba(3, 80, 101, 0.55);
+  box-shadow: 0 12px 28px -12px var(--primary-a60);
 
   :deep(svg) {
     transition: transform 0.25s ease;
@@ -532,7 +532,7 @@ onUnmounted(() => {
 
   &:hover {
     background: linear-gradient(135deg, var(--main-700), var(--main-600));
-    box-shadow: 0 16px 34px -12px rgba(3, 80, 101, 0.6);
+    box-shadow: 0 16px 34px -12px var(--primary-a60);
 
     :deep(svg) {
       transform: translateX(3px);
@@ -571,7 +571,7 @@ onUnmounted(() => {
   border-radius: 24px;
   background: linear-gradient(165deg, var(--main-0), var(--main-20));
   border: 1px solid var(--main-40);
-  box-shadow: 0 30px 60px -34px rgba(3, 80, 101, 0.35);
+  box-shadow: 0 30px 60px -34px var(--primary-a30);
   overflow: hidden;
 }
 
@@ -657,7 +657,7 @@ onUnmounted(() => {
   border-radius: 18px;
   background: linear-gradient(140deg, var(--main-500), var(--main-600));
   border: none;
-  box-shadow: 0 10px 22px -10px rgba(3, 80, 101, 0.55);
+  box-shadow: 0 10px 22px -10px var(--primary-a60);
 
   :deep(svg) {
     color: var(--gray-0);

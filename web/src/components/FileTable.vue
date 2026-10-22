@@ -1305,7 +1305,7 @@ import FileTypeIcon from '@/components/common/FileTypeIcon.vue'
   .ant-popover-inner {
     border-radius: 8px;
     border: 1px solid var(--gray-150);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-overlay);
     overflow: hidden;
   }
 
@@ -1363,7 +1363,7 @@ import FileTypeIcon from '@/components/common/FileTypeIcon.vue'
     border-radius: 8px;
     border: 1px solid var(--gray-150);
     background: var(--gray-0);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    box-shadow: var(--shadow-popover);
     overflow: hidden;
   }
 

@@ -184,7 +184,7 @@
               <a-progress
                 v-if="isBuildActive"
                 :percent="graphBuildStatus?.build_task_progress ?? 0"
-                :stroke-color="{ '0%': '#108ee9', '100%': '#87d068' }"
+                :stroke-color="graphProgressStroke"
                 size="small"
                 style="margin-bottom: 10px"
               />
@@ -368,6 +368,7 @@ import { graphBuildApi } from '@/apis/knowledge_api'
 import { Modal, message } from 'ant-design-vue'
 import ModelSelectorComponent from '@/components/ModelSelectorComponent.vue'
 import { useGraph } from '@/composables/useGraph'
+import { useThemeStore } from '@/stores/theme'
 
 const GRAPH_BUILD_TASK_TYPE = 'knowledge_graph_index'
 const MILVUS_KB_TYPE = 'milvus'
@@ -383,6 +384,13 @@ const props = defineProps({
 const store = useDatabaseStore()
 const taskerStore = useTaskerStore()
 const configStore = useConfigStore()
+const themeStore = useThemeStore()
+
+// 构建进度条渐变跟随 Ant Design 主题令牌，切换主题时自动同步
+const graphProgressStroke = computed(() => ({
+  '0%': themeStore.currentTheme.token.colorInfo,
+  '100%': themeStore.currentTheme.token.colorSuccess
+}))
 
 const kbId = computed(() => store.kbId)
 const kbType = computed(() => store.database.kb_type)
@@ -858,7 +866,7 @@ onUnmounted(() => {
     &:focus,
     &-focused {
       background: var(--main-0);
-      border-color: var(--primary-color);
+      border-color: var(--primary-text);
     }
 
     input {
@@ -882,7 +890,7 @@ onUnmounted(() => {
 
     &:hover {
       background: var(--shadow-1);
-      color: var(--primary-color);
+      color: var(--primary-text);
     }
   }
 

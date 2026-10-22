@@ -3294,7 +3294,7 @@ watch(currentChatId, (threadId, oldThreadId) => {
       font-size: 14px;
       line-height: 20px;
       font-weight: 400;
-      color: var(--text-primary);
+      color: var(--color-text);
       max-width: 200px;
       overflow: hidden;
       text-overflow: ellipsis;

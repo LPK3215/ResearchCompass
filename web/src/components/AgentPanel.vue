@@ -995,6 +995,6 @@ watch(
 }
 
 .tree-delete-btn:hover:not(:disabled) {
-  color: var(--error-600, #dc2626);
+  color: var(--color-error-700);
 }
 </style>

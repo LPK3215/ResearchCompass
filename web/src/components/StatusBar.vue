@@ -189,13 +189,13 @@ onUnmounted(() => {
   .system-name {
     font-size: 20px;
     font-weight: 600;
-    color: var(--gray-900, #111827);
+    color: var(--gray-900);
     line-height: 1.4;
   }
 
   .system-subtitle {
     font-size: 13px;
-    color: var(--gray-600, #6b7280);
+    color: var(--gray-600);
     line-height: 1.2;
   }
 }
@@ -224,7 +224,7 @@ onUnmounted(() => {
   border: 1px solid transparent;
   border-radius: 8px;
   background-color: transparent;
-  color: var(--gray-600, #4b5563);
+  color: var(--gray-600);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
@@ -236,9 +236,9 @@ onUnmounted(() => {
 
   &:hover,
   &.active {
-    border-color: var(--gray-150, #e5e7eb);
-    background: var(--gray-0, #fff);
-    color: var(--gray-900, #111827);
+    border-color: var(--gray-150);
+    background: var(--gray-0);
+    color: var(--gray-900);
   }
 
   .icon {
@@ -257,8 +257,8 @@ onUnmounted(() => {
 }
 
 .task-center-badge :deep(.ant-badge-count) {
-  background-color: var(--main-color, #1d4ed8);
-  box-shadow: 0 0 0 1px var(--gray-25, #f9fafb);
+  background-color: var(--main-color);
+  box-shadow: 0 0 0 1px var(--gray-25);
 }
 
 .time-info,
@@ -268,19 +268,19 @@ onUnmounted(() => {
   gap: 6px;
   font-size: 13px;
   line-height: 1.3;
-  color: var(--gray-600, #4b5563);
+  color: var(--gray-600);
 
   .icon {
     width: 15px;
     height: 15px;
-    color: var(--gray-600, #6b7280);
+    color: var(--gray-600);
   }
 }
 
 .current-time,
 .user-greeting {
   font-weight: 500;
-  color: var(--gray-900, #111827);
+  color: var(--gray-900);
 }
 
 // 响应式设计

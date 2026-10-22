@@ -810,7 +810,7 @@ defineExpose({ validateAndFilterConfig })
 
       &.is-readonly {
         .config-item {
-          background: var(--gray-20);
+          background: var(--gray-25);
 
           .model-selector.is-readonly {
             opacity: 0.78;
@@ -1146,7 +1146,7 @@ defineExpose({ validateAndFilterConfig })
 
         &:focus-within {
           border-color: var(--main-color);
-          box-shadow: 0 0 0 2px rgba(1, 97, 121, 0.1);
+          box-shadow: var(--focus-ring-shadow);
 
           .search-icon {
             color: var(--main-color);
@@ -1183,7 +1183,7 @@ defineExpose({ validateAndFilterConfig })
 
         &:hover {
           border-color: var(--gray-300);
-          background: var(--gray-20);
+          background: var(--gray-25);
         }
         .selection-item-content {
           .selection-item-header {

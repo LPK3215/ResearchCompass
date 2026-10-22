@@ -746,7 +746,7 @@ onMounted(() => {
   border: 1px solid var(--gray-150);
   border-radius: 12px;
   padding: 20px;
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.025);
+  box-shadow: var(--shadow-overlay);
 
   .edit-panel-header {
     display: flex;

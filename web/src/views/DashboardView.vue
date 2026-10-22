@@ -187,7 +187,7 @@ onUnmounted(() => {
       .conversations-section,
       .call-stats-section {
         border-color: var(--gray-200);
-        box-shadow: 0 1px 3px 0 var(--shadow-100);
+        box-shadow: 0 1px 3px 0 var(--shadow-1);
       }
     }
 
@@ -235,7 +235,7 @@ onUnmounted(() => {
   &:hover {
     background-color: var(--gray-25);
     border-color: var(--gray-200);
-    box-shadow: 0 1px 3px 0 var(--shadow-100);
+    box-shadow: 0 1px 3px 0 var(--shadow-1);
   }
 
   :deep(.ant-card-head) {

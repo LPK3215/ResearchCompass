@@ -1240,7 +1240,7 @@ defineExpose({
   width: 40px;
   height: 40px;
   overflow: hidden;
-  border: 1px solid rgb(0 0 0 / 6%);
+  border: 1px solid var(--color-border-subtle);
   border-radius: 8px;
 
   img {

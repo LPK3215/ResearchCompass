@@ -112,10 +112,22 @@
   --light-80: rgba(255, 255, 255, 0.8);
   --light-75: rgba(255, 255, 255, 0.75);
   --light-70: rgba(255, 255, 255, 0.7);
+  --light-60: rgba(255, 255, 255, 0.6);
   --light-50: rgba(255, 255, 255, 0.5);
+  --light-40: rgba(255, 255, 255, 0.4);
+  --light-30: rgba(255, 255, 255, 0.3);
   --light-25: rgba(255, 255, 255, 0.25);
+  --light-20: rgba(255, 255, 255, 0.2);
+  --light-15: rgba(255, 255, 255, 0.15);
+  --light-14: rgba(255, 255, 255, 0.14);
+  --light-12: rgba(255, 255, 255, 0.12);
   --light-10: rgba(255, 255, 255, 0.1);
+  --light-9: rgba(255, 255, 255, 0.09);
+  --light-8: rgba(255, 255, 255, 0.08);
+  --light-6: rgba(255, 255, 255, 0.06);
   --light-5: rgba(255, 255, 255, 0.05);
+  --light-4: rgba(255, 255, 255, 0.04);
+  --light-3: rgba(255, 255, 255, 0.03);
   --light-0: rgba(255, 255, 255, 0);
 
   --dark-98: rgba(0, 0, 0, 0.98);
@@ -125,10 +137,22 @@
   --dark-80: rgba(0, 0, 0, 0.8);
   --dark-75: rgba(0, 0, 0, 0.75);
   --dark-70: rgba(0, 0, 0, 0.7);
+  --dark-60: rgba(0, 0, 0, 0.6);
   --dark-50: rgba(0, 0, 0, 0.5);
+  --dark-40: rgba(0, 0, 0, 0.4);
+  --dark-30: rgba(0, 0, 0, 0.3);
   --dark-25: rgba(0, 0, 0, 0.25);
+  --dark-20: rgba(0, 0, 0, 0.2);
+  --dark-15: rgba(0, 0, 0, 0.15);
+  --dark-14: rgba(0, 0, 0, 0.14);
+  --dark-12: rgba(0, 0, 0, 0.12);
   --dark-10: rgba(0, 0, 0, 0.1);
+  --dark-9: rgba(0, 0, 0, 0.09);
+  --dark-8: rgba(0, 0, 0, 0.08);
+  --dark-6: rgba(0, 0, 0, 0.06);
   --dark-5: rgba(0, 0, 0, 0.05);
+  --dark-4: rgba(0, 0, 0, 0.04);
+  --dark-3: rgba(0, 0, 0, 0.03);
   --dark-0: rgba(0, 0, 0, 0);
 
   /* Shadow System - 阴影系统 */
@@ -138,18 +162,189 @@
   --shadow-3: rgba(0, 0, 0, 0.12);
   --shadow-4: rgba(0, 0, 0, 0.16);
   --shadow-5: rgba(0, 0, 0, 0.2);
+}
 
-  --min-width: 400px;
+/* ==========================================================================
+   品牌主色交互语义
+   与 --main-color 区分：--main-color 用于文字/描边等轻量场景，
+   --primary-fill 用于"填充面 + 反色文字"（按钮、选中项底色等），
+   保证浅色与暗色模式下前景文字都满足可读对比度。
+   ========================================================================== */
+:root {
+  --primary-fill: var(--main-700); /* 填充面底色 */
+  --primary-fill-hover: var(--main-600); /* hover */
+  --primary-fill-active: var(--main-800); /* active / pressed */
+  --primary-fill-subtle: var(--main-50); /* 选中行/轻提示底色 */
+  --primary-fill-subtle-hover: var(--main-100);
+  --primary-text: var(--main-700); /* 主色文字、链接 */
+  --primary-text-hover: var(--main-600);
+  --primary-text-active: var(--main-800);
+  --primary-border: var(--main-200); /* 主色描边 */
+  --on-primary-text: #ffffff; /* 填充面上的前景文字 */
 
-  /* Page Padding - 响应式页面内边距 */
-  --page-padding: 22px;
+  /* 交互状态色 */
+  --state-hover-bg: var(--gray-25);
+  --state-hover-bg-strong: var(--gray-50);
+  --state-hover-border: var(--gray-200);
+  --state-hover-text: var(--gray-900);
+  --state-selected-bg: var(--main-50);
+  --state-selected-border: var(--main-600);
+  --state-selected-text: var(--main-700);
+  --state-active-bg: var(--gray-50);
+  --state-disabled-bg: var(--gray-50);
+  --state-disabled-text: var(--gray-400);
+  --state-disabled-border: var(--gray-150);
+  --state-error-bg: var(--color-error-50);
+  --state-error-border: var(--color-error-500);
+  --state-error-text: var(--color-error-700);
+
+  /* 背景 / 边框 / 填充语义别名 */
+  --color-bg-page: var(--gray-0); /* 页面背景 */
+  --color-bg-container: var(--gray-0); /* 卡片 / 容器背景 */
+  --color-bg-elevated: var(--gray-10); /* 浮层背景 */
+  --color-bg-subtle: var(--gray-25); /* 次级分区背景 */
+  --color-bg-muted: var(--gray-50); /* 弱提示背景 */
+  --color-border: var(--gray-200); /* 默认边框 */
+  --color-border-subtle: var(--gray-150); /* 分割线 */
+  --color-border-strong: var(--gray-300); /* 强调边框 */
+  --color-fill-hover: var(--gray-25); /* hover 填充 */
+  --color-fill-active: var(--gray-50); /* active 填充 */
+  --color-fill-disabled: var(--gray-100); /* disabled 填充 */
+  --color-text: var(--gray-1000); /* 主要文本 */
+  --color-text-secondary: var(--gray-600); /* 次要文本 */
+  --color-text-tertiary: var(--gray-500); /* 占位/弱化文本 */
+  --color-text-placeholder: var(--gray-400); /* 输入框占位符 */
+  --color-text-inverse: #ffffff; /* 深色底上的文字 */
+
+  /* 遮罩与浮层 */
+  --overlay-backdrop: rgba(15, 23, 42, 0.45); /* 弹窗遮罩 */
+  --overlay-backdrop-strong: rgba(15, 23, 42, 0.65); /* 深色遮罩 */
+  /* 品牌色面板：固定深色，不随主题反转，保证前景文字始终可读 */
+  --on-brand-text: #ffffff; /* 品牌色背景上的文字 */
+  --on-brand-text-muted: rgba(255, 255, 255, 0.7);
+  --on-brand-text-subtle: rgba(255, 255, 255, 0.5);
+  --on-brand-text-faint: rgba(255, 255, 255, 0.3);
+  --on-brand-accent: #a3d8e8; /* 品牌面板内的浅色强调 */
+  --on-brand-surface: #023944; /* 品牌面板底色 */
+  --on-brand-surface-2: #01151f; /* 品牌渐变末端色 */
+  --on-brand-border: rgba(255, 255, 255, 0.2);
+  --on-brand-fill: rgba(255, 255, 255, 0.12);
+  --on-brand-overlay: rgba(0, 0, 0, 0.2); /* 品牌面板上的压暗层 */
+
+  /* 透明变体 - 用于渐变、弱化背景与遮罩，随主题自动跟随 */
+  --primary-a30: color-mix(in srgb, var(--primary-fill) 30%, transparent);
+  --primary-a12: color-mix(in srgb, var(--primary-fill) 12%, transparent);
+  --primary-a06: color-mix(in srgb, var(--primary-fill) 6%, transparent);
+  --success-a30: color-mix(in srgb, var(--color-success-500) 30%, transparent);
+  --success-a15: color-mix(in srgb, var(--color-success-500) 15%, transparent);
+  --warning-a30: color-mix(in srgb, var(--color-warning-500) 30%, transparent);
+  --warning-a15: color-mix(in srgb, var(--color-warning-500) 15%, transparent);
+  --error-a30: color-mix(in srgb, var(--color-error-500) 30%, transparent);
+  --error-a15: color-mix(in srgb, var(--color-error-500) 15%, transparent);
+  --error-a80: color-mix(in srgb, var(--color-error-500) 80%, transparent);
+  --primary-a60: color-mix(in srgb, var(--primary-fill) 60%, transparent);
+
+  /* 反色表面 - 始终保持深色，用于代码块、控制台与图片预览遮罩上的控件 */
+  --surface-inverse: #1e1f1f;
+  --surface-inverse-text: #ffffff;
+  --surface-inverse-text-muted: rgba(255, 255, 255, 0.5);
+  --surface-inverse-border: rgba(255, 255, 255, 0.2);
+  --surface-inverse-fill: rgba(255, 255, 255, 0.15);
+  --surface-inverse-fill-hover: rgba(255, 255, 255, 0.28);
+  --surface-inverse-fill-subtle: rgba(255, 255, 255, 0.05);
+  --surface-inverse-overlay: rgba(0, 0, 0, 0.75);
+
+  /* 间距刻度 - 4px 基准节奏 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* 圆角刻度 */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-pill: 999px;
+
+  /* 字号刻度 */
+  --font-size-xs: 12px;
+  --font-size-sm: 13px;
+  --font-size-md: 14px;
+  --font-size-lg: 15px; /* 正文默认 */
+  --font-size-xl: 16px;
+  --font-size-2xl: 18px;
+  --font-size-3xl: 20px;
+  --font-size-4xl: 24px;
+
+  /* 行高刻度 */
+  --line-height-tight: 1.25;
+  --line-height-snug: 1.4;
+  --line-height-base: 1.6;
+  --line-height-relaxed: 1.75;
+
+  /* 字重刻度 */
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* 字体族 */
+  --font-family-sans:
+    -apple-system, BlinkMacSystemFont, 'Noto Sans SC', 'Roboto', 'HarmonyOS Sans SC', 'Segoe UI',
+    'Helvetica Neue', Arial, sans-serif;
+  --font-family-mono:
+    ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'Courier New',
+    monospace;
+
+  /* 焦点环 */
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+  --focus-ring-color: var(--primary-fill);
+  --focus-ring-shadow: 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
+  --focus-ring-shadow-offset: 0 0 0 var(--focus-ring-width) var(--focus-ring-offset),
+    0 0 0 calc(var(--focus-ring-width) + var(--focus-ring-offset)) var(--focus-ring-color);
+
+  /* 过渡 */
+  --transition-duration-fast: 120ms;
+  --transition-duration-base: 180ms;
+  --transition-duration-slow: 260ms;
+  --transition-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-color: background-color var(--transition-duration-base) var(--transition-ease),
+    border-color var(--transition-duration-base) var(--transition-ease),
+    color var(--transition-duration-base) var(--transition-ease),
+    box-shadow var(--transition-duration-base) var(--transition-ease);
+  --transition-transform: transform var(--transition-duration-base) var(--transition-ease);
+
+  /* 层级 */
+  --z-base: 0;
+  --z-sticky: 100;
+  --z-dropdown: 1000;
+  --z-drawer: 1100;
+  --z-modal: 1200;
+  --z-popover: 1300;
+  --z-tooltip: 1400;
+  --z-toast: 1500;
+
+  /* 浮层阴影（带位移，避免各处重复书写 box-shadow） */
+  --shadow-raised: 0 1px 3px var(--shadow-2);
+  --shadow-overlay: 0 4px 12px var(--shadow-2);
+  --shadow-popover: 0 8px 24px var(--shadow-3);
+  --shadow-modal: 0 16px 48px var(--shadow-4);
+
+  /* 布局 */
+  --header-height: 45px;
+  --min-width: 450px;
+  --content-max-width: 1440px; /* 正文最大行长容器 */
+  --page-padding: 22px; /* 响应式页面内边距 */
 
   /* Ant Design 兼容变量 */
-  --color-bg-container: var(--main-0);
-  --color-bg-elevated: var(--gray-10);
-  --color-text: var(--gray-1000);
-  --color-text-secondary: var(--dark-70);
-  --color-text-tertiary: var(--dark-50);
   --color-trans-light: var(--light-85);
   --color-trans-dark: var(--dark-85);
 }

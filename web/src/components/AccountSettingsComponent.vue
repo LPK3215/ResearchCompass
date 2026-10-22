@@ -413,7 +413,7 @@ watch(() => [userStore.username, userStore.phoneNumber], syncProfileDraft, { imm
     gap: 4px;
     color: var(--gray-0);
     font-size: 12px;
-    background: rgba(0, 0, 0, 0.48);
+    background: var(--overlay-backdrop);
     opacity: 0;
     transition: opacity 0.2s ease;
   }

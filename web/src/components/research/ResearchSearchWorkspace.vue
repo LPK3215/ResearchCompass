@@ -869,7 +869,7 @@ onBeforeUnmount(() => { requestGeneration += 1 })
   }
 
   &.active {
-    background: var(--main-25);
+    background: var(--main-30);
     box-shadow: inset 3px 0 0 var(--main-color);
   }
 

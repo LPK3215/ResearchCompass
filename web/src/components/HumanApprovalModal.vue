@@ -528,7 +528,7 @@ const formattedToolArgs = computed(() => formatToolApprovalArgs(activeToolReques
 .approval-modal {
   background: var(--gray-0);
   border-radius: 12px 12px;
-  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow-popover);
   margin: 0 auto 8px;
   max-width: 800px;
   min-width: 360px;
@@ -598,9 +598,9 @@ const formattedToolArgs = computed(() => formatToolApprovalArgs(activeToolReques
 }
 
 .tab-item.completed .tab-index {
-  color: var(--green-700);
-  border-color: var(--green-200);
-  background: var(--green-50);
+  color: var(--color-success-700);
+  border-color: var(--color-success-100);
+  background: var(--color-success-50);
 }
 
 .tab-index {

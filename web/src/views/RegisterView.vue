@@ -243,13 +243,13 @@ const handleRegister = async () => {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  background: linear-gradient(135deg, #023944 0%, #01151f 100%);
-  color: #fff;
+  background: linear-gradient(135deg, var(--on-brand-surface) 0%, var(--on-brand-surface-2) 100%);
+  color: var(--on-brand-text);
 }
 
 .register-navbar {
   padding: 16px 32px;
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--on-brand-overlay);
   backdrop-filter: blur(10px);
 
   .navbar-content {
@@ -276,7 +276,7 @@ const handleRegister = async () => {
     margin: 0;
     font-size: 20px;
     font-weight: 600;
-    color: #fff;
+    color: var(--on-brand-text);
     display: flex;
     align-items: center;
     gap: 8px;
@@ -284,11 +284,11 @@ const handleRegister = async () => {
     .brand-separator {
       width: 1px;
       height: 16px;
-      background: rgba(255, 255, 255, 0.3);
+      background: var(--on-brand-text-faint);
     }
 
     .brand-main {
-      color: #a3d8e8;
+      color: var(--on-brand-accent);
     }
   }
 
@@ -298,7 +298,7 @@ const handleRegister = async () => {
     gap: 8px;
 
     .nav-hint {
-      color: rgba(255, 255, 255, 0.7);
+      color: var(--on-brand-text-muted);
       font-size: 14px;
     }
   }
@@ -316,17 +316,17 @@ const handleRegister = async () => {
   display: flex;
   width: min(960px, 100%);
   height: min(620px, 80vh);
-  background: #fff;
+  background: var(--color-bg-container);
   border-radius: 16px;
   overflow: hidden;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-modal);
 }
 
 .card-side {
   flex: 1;
 
   &.is-image {
-    background: #023944;
+    background: var(--on-brand-surface);
 
     .register-bg-image {
       width: 100%;
@@ -354,13 +354,13 @@ const handleRegister = async () => {
   .welcome-text {
     font-size: 24px;
     font-weight: 600;
-    color: #1f2937;
+    color: var(--color-text);
     margin: 0 0 8px;
   }
 
   .welcome-subtext {
     font-size: 14px;
-    color: #6b7280;
+    color: var(--color-text-secondary);
     margin: 0;
   }
 }
@@ -370,11 +370,11 @@ const handleRegister = async () => {
 
   .agreement-row {
     font-size: 13px;
-    color: #4b5563;
+    color: var(--gray-700);
   }
 
   .agreement-link {
-    color: #046a82;
+    color: var(--primary-text);
     margin: 0 2px;
 
     &:hover {
@@ -391,10 +391,10 @@ const handleRegister = async () => {
   margin-top: 16px;
   text-align: center;
   font-size: 13px;
-  color: #6b7280;
+  color: var(--color-text-secondary);
 
   a {
-    color: #046a82;
+    color: var(--primary-text);
     margin-left: 4px;
 
     &:hover {
@@ -406,23 +406,23 @@ const handleRegister = async () => {
 .register-footer {
   padding: 16px 32px;
   text-align: center;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--on-brand-text-subtle);
   font-size: 13px;
 
   .footer-links {
     margin-bottom: 8px;
 
     a {
-      color: rgba(255, 255, 255, 0.8);
+      color: var(--on-brand-text-muted);
       margin: 0 8px;
 
       &:hover {
-        color: #fff;
+        color: var(--on-brand-text);
       }
     }
 
     .divider {
-      color: rgba(255, 255, 255, 0.3);
+      color: var(--on-brand-text-faint);
     }
   }
 }

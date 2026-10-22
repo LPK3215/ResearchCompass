@@ -592,9 +592,7 @@ useOutsidePointerdown(agentDropdownOpen, [agentDropdownTriggerRef, agentDropdown
   background: var(--gray-0);
   border: 1px solid var(--gray-100);
   border-radius: 8px;
-  box-shadow:
-    0 8px 24px rgba(0, 0, 0, 0.08),
-    0 2px 8px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--shadow-popover);
 }
 
 .config-dropdown-overlay .config-dropdown-item {

@@ -315,7 +315,7 @@ const openFileDetail = (fileGroup) => {
       }
 
       &.high-relevance {
-        background: var(--gray-5);
+        background: var(--gray-10);
       }
 
       &:hover {

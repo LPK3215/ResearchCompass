@@ -948,7 +948,7 @@ watch(useInlinePreview, (isInline, wasInline) => {
   color: var(--gray-600);
   cursor: pointer;
   transform: translateY(-50%);
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+  box-shadow: var(--shadow-overlay);
 
   &:hover {
     background: var(--main-20);
@@ -1067,7 +1067,7 @@ watch(useInlinePreview, (isInline, wasInline) => {
       overflow: hidden;
       border: 1px solid var(--gray-200);
       border-radius: 8px;
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+      box-shadow: var(--shadow-modal);
     }
 
     .ant-modal-body {

@@ -4302,7 +4302,7 @@ onBeforeUnmount(() => {
   padding: 10px;
   border: 1px solid var(--main-100);
   border-radius: 7px;
-  background: var(--main-25);
+  background: var(--main-30);
 }
 
 .evidence-pdf-actions span {

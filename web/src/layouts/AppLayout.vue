@@ -737,13 +737,13 @@ div.header,
       border-color: var(--gray-150);
       background-color: var(--gray-0);
       color: var(--main-color);
-      box-shadow: 0 3px 4px rgba(0, 10, 20, 0.02);
+      box-shadow: var(--shadow-raised);
 
       &:hover {
         border-color: var(--gray-200);
         background-color: var(--gray-0);
         color: var(--main-color);
-        box-shadow: 0 3px 4px rgba(0, 10, 20, 0.07);
+        box-shadow: var(--shadow-raised);
       }
     }
 
@@ -751,8 +751,8 @@ div.header,
       color: var(--main-color);
 
       &:hover {
-        background-color: var(--main-color);
-        color: #fff;
+        background-color: var(--primary-fill);
+        color: var(--on-primary-text);
       }
     }
 

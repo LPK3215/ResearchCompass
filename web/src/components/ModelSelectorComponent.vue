@@ -471,7 +471,7 @@ const handleClear = () => {
   overflow: hidden;
   background: var(--gray-0);
   border-radius: 8px;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-popover);
 }
 
 .model-search {

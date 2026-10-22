@@ -647,7 +647,7 @@ onUnmounted(() => {
   padding: 0 14px;
   border: 1px solid transparent;
   border-radius: 6px;
-  background: var(--main-600);
+  background: var(--primary-fill);
   color: var(--main-0);
   font: inherit;
   font-size: 13px;
@@ -784,8 +784,8 @@ onUnmounted(() => {
   padding: 0 5px;
   margin-left: 4px;
   border-radius: 9px;
-  background: var(--main-600);
-  color: #fff;
+  background: var(--primary-fill);
+  color: var(--on-primary-text);
   font-size: 11px;
   font-weight: 600;
   line-height: 1;

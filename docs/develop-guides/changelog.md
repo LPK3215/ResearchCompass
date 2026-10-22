@@ -172,6 +172,14 @@
 - 新增综述转选题与页面入口：`GET /api/research/synthesis-runs/{run_id}/topics` 与 `POST /api/research/synthesis-runs/{run_id}/topics/tasks` 把已验证综述的研究空白、后续方向与未支持结论整理为选题清单，并可批量建为当前项目任务（1–20 条）；证据综述页新增“转选题”下拉，工具栏新增“导出数据”下拉（趋势/机会 JSON·CSV）。
 - 新增研究工具一致性守卫脚本：`backend/scripts/check_research_tool_parity.py` 比较 `RESEARCH_TOOLS` 定义与 research-copilot 启用清单，不一致时返回退出码 1 并列出差异工具；当前实跑 `defined=72 enabled=72`，用于防止新增工具只改一处导致 AI 拿不到。
 - 统一对外定位口径并限定研究助手能力边界：README 首屏改用“证据可追溯的科研工作台”，并明确写作、协作与投稿不在当前范围；能力全景补充研究助手不执行系统命令、不直接写任意文件的限制，文件类产出统一走导出工具；research-copilot 系统提示同步要求不得声称已保存不存在的文件。
+- 前端设计系统与视觉交互统一改造（系统性优化，非单点调色）：
+  - **令牌层**：`base.css` / `base.dark.css` 补齐交互语义、状态色、背景/边框/填充语义别名、透明变体、遮罩与反色表面、间距/圆角/字号/行高/字重刻度、焦点环、过渡、层级与浮层阴影；主色拆为“填充面”(`--primary-fill*`) 与“文字态”(`--primary-text*`)，浅色与暗色模式各自取到满足前景对比度的色值；`--light-*` / `--dark-*` 半透明族补齐缺失档位。
+  - **Ant Design 打通**：`stores/theme.js` 原先硬编码主色 `#24839b`（与 `--main-600` 差一档）、`colorLink` 直接写 `var(...)` 导致 AntD 无法派生 hover/active、字体栈与正文不一致；现改为运行时读取 CSS 变量构建主题，切换主题时先切 `.dark` 再重建，`App.vue` 挂载后补一次 `refreshTheme()`。按钮、输入框、表格、弹窗、标签、空态、加载态的基础外观自动跟随令牌，不再逐个组件覆写。
+  - **全局样式**：`main.css` 移除全局 `* { font-weight: normal }`（该重置会连同 UA 的 `b { font-weight: bolder }` 一起覆盖，导致 `<strong>` 与标题不加粗），改为显式的 `h1`–`h6` / `p` / `strong` / `small` / `code` / `blockquote` / 列表排版层级，补齐 `:focus-visible` 焦点环、`::selection`、`:target` 滚动避让、`tabular-nums` 数字对齐、长文本断行、锚点滚动避让与 `prefers-reduced-motion` 适配。
+  - **组件层**：约 30 个组件/视图的硬编码色值、阴影与遮罩替换为令牌；`dashboard.css` 重建图表渐变、统计值与表格层级（统计标题去掉 `text-transform: uppercase` 中文不适用）；知识图谱节点/边配色由硬编码 hex 改为运行时读取 `--chart-palette-*` 与语义色令牌，主题切换后不再残留浅色模式色值；图谱构建进度条渐变改为读取 Ant Design 主题令牌。
+  - **缺陷修复**：全仓扫描发现约 20 处引用了未定义的 CSS 变量（如 `--color-error-200/600/800`、`--color-primary-400/600`、`--color-success-200/600`、`--color-warning-200/600`、`--gray-20/30/5/550/650`、`--green-*`、`--main-25`、`--primary-600`、`--primary-color`、`--shadow-100`、`--text-primary`），这类声明会在计算值阶段被整条丢弃，错误/警告文字回退到继承值；已全部映射到现有等价令牌。修复 `AgentFilePreview` 禁用态主色按钮丢失弱化反馈、`--gray-250` 未定义导致 hover 边框失效，以及品牌渐变面板在暗色模式下的前景色。
+  - **规范同步**：`docs/develop-guides/design.md` 补写新的令牌族、Ant Design 同步机制、断点约定与“不得引用未定义变量”的约束；Quick Reference 改为语义令牌优先。
+  - 验证：ESLint 0 问题、前端单测 91/91 通过、生产构建通过；浏览器实测浅色/暗色在桌面、平板、手机三档宽度下无溢出与错位。
 
 ## v0.10.0
 
