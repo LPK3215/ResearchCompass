@@ -10,6 +10,8 @@
 
 ## Unreleased
 
+- 跨库重复合并（2026-10-24）：G-25 的剩余边界收口。新增 `POST /papers/{paper_id}/cross-library-merge`：用对方知识库同一论文的空字段（doi / abstract / authors / publication_year / venue / keywords / citation_count）补齐当前库记录，并把对方库的重复记录写归档时间（原文不删、可恢复）；不搬原文、向量、笔记与项目资产，目标库非空字段与 `file_id` 一律不动。显式拒绝：同一库（422 `cross_library_same`）、任一方已归档、DOI 与标题都不匹配、**对方库有全文而当前库没有**（避免把唯一全文归档，应先在当前库补全文）。带全文的目标记录会标记 `pending_reindex` 并提交索引同步任务。AI 工具对应 `research_merge_cross_library_duplicate`（默认审批模式下会拦截），工具总数 98→99。
+
 - 知识库列表顺序确定化（2026-10-24）：`KnowledgeBaseRepository.get_all()` 原本没有排序，列表顺序随数据库堆顺序漂移，而科研罗盘默认取列表首个知识库——所以“最近一次被集成测试创建、又没清理干净”的 `pytest_*` 库会成为新用户一进来就看到的工作区。现在统一按创建时间倒序（`id` 兜底）返回，默认库稳定落在最新创建的真实库；冒烟脚本选样时同时跳过 `pytest_` / `py_test` 开头的夹具库，不再把验收导入写进临时库。
 
 - 论文对照翻译改为后台任务（2026-10-24）：原来一次对照翻译同步占用请求约 97 秒，页面必须保持打开；现在改为 `research_paper_translation` 后台任务，新增 `POST /papers/{paper_id}/translate/tasks`（提交，同一论文进行中任务复用）、`GET .../translate/tasks/{task_id}` 与 `GET .../translate/tasks/latest`（只允许发起人查看），任务按批上报进度（5→95，完成 100）并把结果写进任务记录，抽屉改为进度条 + 2 秒轮询，重新打开抽屉可恢复进行中任务或上次结果；模型连不上时单独给出 `translation_model_unreachable`（“翻译模型连接失败，请确认模型服务是否可用”），不再统一报“模型调用失败”。同步入口保留给 AI 工具（`research_translate_paper`），两条入口共用同一批处理与结果组装；译文仍不落库、不进证据库；工具清单不变（parity 98/98）。

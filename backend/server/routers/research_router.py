@@ -71,6 +71,7 @@ from yuxi.services.research_deliverable_service import (
     generate_structure_diagram,
     list_archived_papers,
     merge_duplicate_group,
+    merge_cross_library_duplicate,
     render_brief_markdown,
     restore_archived_papers,
     validate_kb_manifest,
@@ -2592,6 +2593,10 @@ _DELIVERABLE_STATUS_MAP = {
     "manifest_empty": 422,
     "manifest_too_large": 422,
     "cross_library_insufficient": 409,
+    "cross_library_same": 422,
+    "cross_library_not_same_paper": 409,
+    "cross_library_would_lose_fulltext": 409,
+    "paper_archived": 409,
     "forbidden": 403,
 }
 
@@ -2885,6 +2890,11 @@ class DuplicateMergeRequest(BaseModel):
     key: str = Field(..., min_length=1, max_length=600)
 
 
+class CrossLibraryMergeRequest(BaseModel):
+    source_kb_id: str = Field(..., min_length=1, max_length=80)
+    source_paper_id: str = Field(..., min_length=1, max_length=64)
+
+
 class ValidateManifestRequest(BaseModel):
     manifest: dict[str, Any]
 
@@ -2920,6 +2930,25 @@ async def merge_duplicate_group_route(
 ):
     try:
         return await merge_duplicate_group(kb_id=kb_id, key=payload.key, current_user=current_user)
+    except ResearchDeliverableError as exc:
+        raise _to_http_error(exc, _DELIVERABLE_STATUS_MAP) from exc
+
+
+@research.post("/databases/{kb_id}/papers/{paper_id}/cross-library-merge")
+async def merge_cross_library_duplicate_route(
+    kb_id: str,
+    paper_id: str,
+    payload: CrossLibraryMergeRequest,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await merge_cross_library_duplicate(
+            kb_id=kb_id,
+            paper_id=paper_id,
+            source_kb_id=payload.source_kb_id,
+            source_paper_id=payload.source_paper_id,
+            current_user=current_user,
+        )
     except ResearchDeliverableError as exc:
         raise _to_http_error(exc, _DELIVERABLE_STATUS_MAP) from exc
 

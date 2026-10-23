@@ -22,6 +22,7 @@ SENSITIVE_BACKEND_TOOLS = frozenset(
         "research_verify_evidence",
         "research_set_paper_screening",
         "research_merge_duplicate_group",
+        "research_merge_cross_library_duplicate",
         "research_restore_archived_papers",
         "research_delete_paper_note",
         "research_transition_project_risk",

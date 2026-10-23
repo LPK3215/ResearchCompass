@@ -156,6 +156,7 @@ kb_tools = get_common_kb_tools()
 | `research_validate_kb_manifest` | 把迁移清单与当前库论文比对，报告缺失与新增条目（只读，仅比对元数据） |
 | `research_generate_eval_dataset` | 基于知识库自动生成 RAG 评估基准（仅管理员） |
 | `research_merge_duplicate_group` | 按分组归档重复论文（不删文件，可恢复，需审批） |
+| `research_merge_cross_library_duplicate` | 跨库重复合并：用对方库同一论文的空字段补齐当前库记录，并把对方库重复记录归档（不搬原文与资产，可恢复） |
 | `research_restore_archived_papers` | 恢复已归档论文（需审批） |
 | `research_list_archived_papers` | 列出已归档（合并去重后隐藏）的论文，供核对与恢复 |
 | `research_enrich_paper_metadata` | 按 DOI 或标题从 Crossref / Semantic Scholar 补全缺失元数据（仅管理员，不覆盖已有值） |

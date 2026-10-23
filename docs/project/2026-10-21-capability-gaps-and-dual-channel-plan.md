@@ -5,7 +5,7 @@
 - 文档性质：当前状态报告 + 缺口总账
 - 代码基线：`feature/researchcompass-v0.11.0`（三路并行会话合并后的工作区，尚未提交）
 - 对外定位：证据可追溯的科研工作台
-- 当前规模：100+ 研究域接口；98 个 `research_*` 工具通过一致性守卫（`defined=98 enabled=98 parity ok`）
+- 当前规模：100+ 研究域接口；99 个 `research_*` 工具通过一致性守卫（`defined=99 enabled=99 parity ok`）
 - 关联文档：[能力全景](../intro/capabilities.md)、[从选题到成稿](../intro/research-workflow.md)、[科研罗盘功能说明](../intro/research-compass.md)、[测试规范](../develop-guides/testing-guidelines.md)、[变更记录](../develop-guides/changelog.md)
 - 关联证据：`test-results/smoke-acceptance-*.md`、`docs/project/验证记录-2026-10-20.md`
 
@@ -84,7 +84,7 @@
 
 | ID | 已完成 | 边界 / 后续 |
 | --- | --- | --- |
-| G-25 | 库内按 DOI/标题检测、归档式合并、恢复 | 跨库只做只读检测报告；跨库合并需先定保留与资产迁移策略 |
+| G-25 | 库内按 DOI/标题检测、归档式合并、恢复；跨库只读检测 + 元数据补全式合并 | 跨库合并不搬全文/向量/笔记/项目资产（原文需用「批量补全文」重新获取）；对方库有全文而当前库没有时显式拒绝；库内合并仍保留“原文/向量打包恢复由 `backups/` 负责”的边界 |
 | G-34 | 迁移清单与导入校验已通 | 原文与向量的打包/恢复仍由 `backups/` 备份链路负责 |
 | G-35 | BibTeX/RIS 元数据导入、幂等去重；详情页逐篇补全文；论文库批量补全文 | 参考文献批量导入仍只导元数据；批量补全文只处理有 DOI 的仅元数据论文（单次上限 50 篇，无 DOI 不猜），下载与解析仍由后台任务串行承担 |
 
@@ -105,7 +105,7 @@
 
 ## 3. 双通道与产出物现状
 
-- 研究域接口 100+，`research_*` 工具 98 个，工具一致性守卫 `defined=98 enabled=98 parity ok`。
+- 研究域接口 100+，`research_*` 工具 99 个，工具一致性守卫 `defined=99 enabled=99 parity ok`。
 - 工具、路由共用同一 service 与权限校验；新增工具必须同步注册表、智能体清单与本报告。
 - 研究助手边界：不执行系统命令、不写任意文件；报告类文件一律走导出工具 + `present_artifacts`。
 
@@ -157,7 +157,7 @@
 - 前端 API 层：幂等 GET/HEAD 瞬时网络失败自动重试 1 次（300ms），POST 不重试；新增 2 项单测
 - 后端全量：`pytest test/unit` **1675 项通过、5 项跳过**（4 个 Windows 符号链接测试 + 1 个 MinerU 不可用），0 失败
 - 后端相关套件：笔记 8、参考文献导入 13、图谱 8、tasker 18、改密 7、筛选 6、论文对话 5、翻译 8、交付物输出 3、导入工具 35、导入服务 9、汇报包渲染 2、上下文提示词 3、路由顺序 1，全部通过
-- 工具守卫：`python scripts/check_research_tool_parity.py` → `defined=98 enabled=98 parity ok`
+- 工具守卫：`python scripts/check_research_tool_parity.py` → `defined=99 enabled=99 parity ok`
 - 静态检查：`ruff check package server scripts test/unit/scripts` 0；`--select I` 0（import 排序已修复）；默认规则与 import 排序均通过
 
 ### 4.3 真实数据验证
@@ -338,6 +338,7 @@
 | 2026-10-22 | 固定语料基线收口：28/28 篇全部入库 `kb_ksf23a31w7`（30 篇论文 / 993 chunk）；新增 `scripts/eval/` 三个基线脚本（文档级检索基线、受控消融、综述证据覆盖）；受控消融给出重排开/关的差值（recall@10 0.3 vs 0.1、答案正确率 0.5 vs 0.3，n=10 属初步信号）；综述引用覆盖率平均 0.8037（5/5 成功）；修复 Semantic Scholar 限流只对客户端实例生效的问题（改为进程内共享闸门） |
 | 2026-10-22 | 演示数据包收口：两个包重新导出（`kb_jxhcpxnqlu` 11 篇/336 chunk、`kb_ksf23a31w7` 30 篇/993 chunk）；导出只覆盖可恢复论文并如实记录缺失原文；chunk 级分析结果随包往返；导入改为幂等（`ON CONFLICT DO NOTHING`）并逐表自检行数；新增只读校验脚本 `verify_demo_data.py`，两个新库各 16/16 项通过（含 chunk 级分析结果核对），检索命中分数与源环境逐位一致 |
 | 2026-10-24 | 知识库列表与默认库收口：开发库中 8 个 2026-10-22 集成测试遗留的 `pytest_*` 知识库（新库创建时间最新，因而成为科研罗盘默认库）经产品删除接口全部清理（200×8，剩余 6 个真实库）；`KnowledgeBaseRepository.get_all()` 补上创建时间倒序（含 id 兜底），列表顺序不再随数据库堆顺序漂移，默认库恢复为真实演示库；冒烟脚本选样时跳过 `pytest_`/`py_test` 库，不再把验收数据写进夹具库。另新增 `kb_registry` fixture：用例内直接建库成功后登记，用例结束（含断言失败）时删除，`test_knowledge_router` 5 处建库用例已改用；并补回归用例 `test_knowledge_databases_listed_newest_first`（建两库后断言列表最新在前）。真实验证：该文件 37 个用例 **36 通过 / 1 失败**（`test_generate_and_get_mindmap` 依赖模型网关返回 500，与本轮改动无关），跑完库数仍为 6、`pytest_*` 遗留 0。验证：`pytest test/unit` **1704 通过 / 5 跳过**；冒烟复跑 50 通过 / 2 失败（项数减少是因为被探测的库从 14 降到 6） |
+| 2026-10-24 | G-25 跨库合并落地（按“保留当前库记录 + 元数据补齐 + 源库归档 + 不搬资产”策略）：新增 `POST /papers/{paper_id}/cross-library-merge` 与工具 `research_merge_cross_library_duplicate`（默认审批拦截），工具总数 98→99；显式拒绝同库/已归档/非同一文献/会丢失全文四类情况，带全文的目标记录标记 `pending_reindex` 并入队索引同步。验证：单测 6 项；一致性 99/99，工具文档同步/路由顺序/copilot 清单 28 项通过；真实端到端（两个临时库 + 同 DOI BibTeX）：合并 200、`filled_fields=[abstract,venue]`、来源库归档 1 条并可恢复、两个临时库均删除 200。界面合并按钮待下一轮 |
 | 2026-10-24 | G-35 批量补全文落地：`POST /api/research/databases/{kb_id}/papers/backfill-fulltext` + 工具 `research_backfill_paper_fulltext` + 论文库筛选栏批量入口；逐篇返回 `queued` / `skipped` / `failed`，arXiv DOI 自动转 `arXiv:` 标识符；工具总数 97→98（parity 98/98）；service 单测新增 3 项（入队与三类跳过、单篇入队失败、空选择与上限）。接口级真实验收：401 / 空选择 422 / 51 篇 422（`paper_ids_too_many`）/ 跳过分支 200 / 仅元数据论文真实入队后取消删除；浏览器验收：未选中禁用 → 弹窗「已提交 0 / 跳过 1 / 已有全文」且控制台零报错；演示库无残留（仍 30 篇 / 2 篇仅元数据）；冒烟脚本新增检查项并通过 |
 | 2026-10-24 | G-42 对照翻译改后台任务：新增 `POST .../translate/tasks`（进行中复用）、`GET .../translate/tasks/{task_id}`、`GET .../translate/tasks/latest`（仅发起人）；`research_paper_translation` 任务逐批上报 5→95 进度并把结果写进任务记录；抽屉改进度条 + 2 秒轮询，重开可恢复；模型连接失败单独报 `translation_model_unreachable`。验证：单测 13 项（含进度、复用、越权、不可达分类）；相关套件 1068 通过 / 4 跳过；真实验收：提交、重复提交复用、latest、进度 5→100、跨论文/不存在 404、模型不可达报错；浏览器：5% 进度条 + 失败原因 + 重开清洁态；验证任务已删除，无残留 |
 
@@ -348,7 +349,7 @@
 - [x] 后端全量单测 1696 通过 / 5 跳过 / 0 失败
 - [x] 前端单测 91 通过；ESLint、生产构建通过
 - [x] 冒烟验收 55/55；报告 `test-results/smoke-acceptance-20261022-141344.md`（含 19 个能力族与 `paused` 队列自动恢复证据）
-- [x] 工具一致性 98/98；路由顺序、工具签名、工具文档同步守卫通过
+- [x] 工具一致性 99/99；路由顺序、工具签名、工具文档同步守卫通过
 - [x] G-35 批量补全文：接口级 401 / 422（空选择、超过 50 篇）/ 跳过分支 200 / 仅元数据真实入队；浏览器：未选中禁用 → 勾选后弹窗「已提交 0 / 跳过 1 / 已有全文」，控制台零报错（`test-results/batch-fulltext-03-result-modal.png`）
 - [x] 双通道缺口：G-25 合并按钮、G-34 清单导出按钮已补
 - [x] 固定语料 28/28 已真实入库（备选库 30 篇论文 / 28 篇带全文共 993 chunk）

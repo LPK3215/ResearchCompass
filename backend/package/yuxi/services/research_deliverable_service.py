@@ -15,7 +15,7 @@ from typing import Any
 from yuxi.config import config
 from yuxi.models import select_model
 from yuxi.repositories.academic_paper_repository import AcademicPaperRepository
-from yuxi.services.research_paper_service import _ensure_access
+from yuxi.services.research_paper_service import _ensure_access, _enqueue_paper_reindex
 from yuxi.storage.postgres.models_business import User
 from yuxi.utils.datetime_utils import utc_now_naive
 
@@ -1548,6 +1548,121 @@ async def merge_duplicate_group(*, kb_id: str, key: str, current_user: User) -> 
         "message": (
             "重复条目已归档（独立归档时间，不占用 metadata_status），列表、检索、导出与统计不再包含这些论文；"
             "原文文件与向量未删除，可调用恢复接口撤销"
+        ),
+    }
+
+
+CROSS_LIBRARY_FILLABLE_FIELDS = (
+    "doi",
+    "abstract",
+    "authors",
+    "publication_year",
+    "venue",
+    "keywords",
+    "citation_count",
+)
+
+
+def _is_blank(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    if isinstance(value, (list, dict)):
+        return not value
+    return False
+
+
+def _is_same_paper(left: Any, right: Any) -> bool:
+    return bool(set(_duplicate_keys(left)) & set(_duplicate_keys(right)))
+
+
+def _fillable_metadata(target: Any, source: Any) -> dict[str, Any]:
+    """只取目标缺失、对方提供的字段；已有值（含人工校正）不覆盖。"""
+    filled: dict[str, Any] = {}
+    for field in CROSS_LIBRARY_FILLABLE_FIELDS:
+        if not _is_blank(getattr(target, field, None)):
+            continue
+        candidate = getattr(source, field, None)
+        if not _is_blank(candidate):
+            filled[field] = candidate
+    return filled
+
+
+async def merge_cross_library_duplicate(
+    *,
+    kb_id: str,
+    paper_id: str,
+    source_kb_id: str,
+    source_paper_id: str,
+    current_user: User,
+) -> dict[str, Any]:
+    """把另一知识库同一论文的元数据补进当前库记录，并归档对方库的重复记录。
+
+    按约定不搬原文与资产：当前库记录的 file_id / chunk / 笔记 / 证据 / 项目资产一律不动，
+    对方库记录只写归档时间（原文不删，可恢复）。
+    """
+    await _ensure_access(current_user, kb_id, write=True)
+    await _ensure_access(current_user, source_kb_id, write=True)
+    selected_ids = {str(kb_id).strip(), str(source_kb_id).strip()}
+    if len(selected_ids) < 2:
+        raise ResearchDeliverableError("cross_library_same", "同一知识库内的重复请使用库内合并")
+
+    repo = AcademicPaperRepository()
+    target = await repo.get_by_paper_id(kb_id=kb_id, paper_id=paper_id)
+    source = await repo.get_by_paper_id(kb_id=source_kb_id, paper_id=source_paper_id)
+    if target is None or source is None:
+        raise ResearchDeliverableError("paper_not_found", "待合并的论文不存在")
+    if target.archived_at is not None or source.archived_at is not None:
+        raise ResearchDeliverableError("paper_archived", "已归档的论文不能参与合并，请先恢复")
+    if not _is_same_paper(target, source):
+        raise ResearchDeliverableError("cross_library_not_same_paper", "两篇论文的 DOI 与标题都不匹配，不能合并")
+    if source.file_id and not target.file_id:
+        raise ResearchDeliverableError(
+            "cross_library_would_lose_fulltext",
+            "对方库有全文而当前库没有；请先对当前库记录补全文，再合并，避免把唯一全文归档",
+        )
+
+    filled = _fillable_metadata(target, source)
+    reindex_task = None
+    if filled:
+        updated = await repo.update_metadata(
+            kb_id=kb_id,
+            paper_id=paper_id,
+            data={
+                **filled,
+                "metadata_status": "pending_reindex" if target.file_id else "extracted",
+                "metadata_error": None,
+            },
+        )
+        if updated is None:
+            raise ResearchDeliverableError("paper_not_found", "待合并的论文不存在")
+        target = updated
+        if target.file_id:
+            task, _ = await _enqueue_paper_reindex(
+                kb_id=kb_id,
+                paper_id=paper_id,
+                file_id=str(target.file_id),
+                paper_title=str(target.title),
+                operator_id=str(current_user.uid),
+                revision=int(target.metadata_revision or 1),
+            )
+            reindex_task = {"task_id": task.id, "status": task.status}
+
+    archived = await repo.archive_papers(kb_id=source_kb_id, paper_ids=[source_paper_id])
+    if not archived:
+        raise ResearchDeliverableError("paper_not_found", "对方库论文归档失败")
+    return {
+        "kb_id": kb_id,
+        "paper_id": paper_id,
+        "source_kb_id": source_kb_id,
+        "source_paper_id": source_paper_id,
+        "filled_fields": sorted(filled),
+        "archived_source_paper": True,
+        "reindex_task": reindex_task,
+        "message": (
+            "已用对方库记录补齐当前库的空字段，并把对方库的重复记录归档（原文未删除，可恢复）；"
+            "当前库的原文、向量、笔记与项目资产未改动"
         ),
     }
 

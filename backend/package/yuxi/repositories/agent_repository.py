@@ -200,6 +200,7 @@ RESEARCH_COPILOT_TOOL_SLUGS = [
     "research_validate_kb_manifest",
     "research_generate_eval_dataset",
     "research_merge_duplicate_group",
+    "research_merge_cross_library_duplicate",
     "research_restore_archived_papers",
     "research_list_archived_papers",
     "research_enrich_paper_metadata",

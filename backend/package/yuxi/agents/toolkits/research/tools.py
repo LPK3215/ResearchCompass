@@ -537,6 +537,12 @@ class EnrichPaperMetadataInput(BaseModel):
     paper_id: str = Field(min_length=1, max_length=64, description="要补全元数据的论文 ID")
 
 
+class CrossLibraryMergeInput(BaseModel):
+    paper_id: str = Field(min_length=1, max_length=64, description="当前知识库中要保留的论文 ID")
+    source_kb_id: str = Field(min_length=1, max_length=80, description="对方知识库 ID（重复记录所在库）")
+    source_paper_id: str = Field(min_length=1, max_length=64, description="对方知识库中的重复论文 ID")
+
+
 class GetPaperScreeningInput(BaseModel):
     decision: Literal["included", "excluded", "pending"] | None = Field(
         default=None, description="只看某一类筛选结论；不传则返回全部"
@@ -2900,6 +2906,31 @@ async def research_merge_duplicate_group(key: str, runtime: ToolRuntime) -> dict
 
 @tool(
     category="research",
+    tags=["科研", "去重", "跨库"],
+    display_name="跨库重复合并",
+    args_schema=CrossLibraryMergeInput,
+)
+async def research_merge_cross_library_duplicate(
+    paper_id: str, source_kb_id: str, source_paper_id: str, runtime: ToolRuntime
+) -> dict[str, Any]:
+    """用对方库同一论文的空字段补齐当前库记录，并把对方库的重复记录归档（不搬原文与资产，可恢复）。"""
+    from yuxi.services.research_deliverable_service import merge_cross_library_duplicate
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    return await _call(
+        merge_cross_library_duplicate(
+            kb_id=context["kb_id"],
+            paper_id=paper_id,
+            source_kb_id=source_kb_id,
+            source_paper_id=source_paper_id,
+            current_user=user,
+        )
+    )
+
+
+@tool(
+    category="research",
     tags=["科研", "去重", "恢复"],
     display_name="恢复归档论文",
     args_schema=DuplicateRestoreInput,
@@ -3047,6 +3078,7 @@ RESEARCH_TOOLS = [
     research_validate_kb_manifest,
     research_generate_eval_dataset,
     research_merge_duplicate_group,
+    research_merge_cross_library_duplicate,
     research_restore_archived_papers,
     research_list_archived_papers,
     research_enrich_paper_metadata,
