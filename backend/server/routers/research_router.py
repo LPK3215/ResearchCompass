@@ -37,6 +37,7 @@ from yuxi.services.academic_paper_analysis_service import (
 )
 from yuxi.services.academic_paper_import_service import (
     AcademicPaperImportError,
+    backfill_paper_full_text,
     import_external_paper,
     search_external_papers,
 )
@@ -120,6 +121,9 @@ from yuxi.services.research_paper_service import (
 )
 from yuxi.services.research_paper_translation_service import (
     ResearchPaperTranslationError,
+    enqueue_paper_translation,
+    get_latest_translation_task,
+    get_translation_task,
     translate_paper,
 )
 from yuxi.services.research_project_plan_service import (
@@ -886,12 +890,15 @@ _PAPER_CHAT_STATUS_MAP = {
 }
 
 _PAPER_TRANSLATION_STATUS_MAP = {
+    "forbidden": 403,
     "paper_not_found": 404,
     "paper_chunk_missing": 409,
     "translation_model_unavailable": 409,
     "translation_model_failed": 502,
+    "translation_model_unreachable": 503,
     "translation_invalid_json": 502,
     "translation_invalid_schema": 502,
+    "translation_task_not_found": 404,
 }
 
 _SNOWBALL_STATUS_MAP = {
@@ -917,6 +924,8 @@ _PAPER_IMPORT_STATUS_MAP = {
     "paper_import_enqueue_failed": 503,
     "paper_import_record_failed": 502,
     "invalid_search_query": 422,
+    "paper_ids_empty": 422,
+    "paper_ids_too_many": 422,
 }
 
 _REFERENCE_IMPORT_STATUS_MAP = {
@@ -1708,6 +1717,27 @@ async def import_reference_file_route(
         raise _to_http_error(exc, _REFERENCE_IMPORT_STATUS_MAP) from exc
 
 
+class FullTextBackfillRequest(BaseModel):
+    # 数量上限由 service 统一校验，以便返回可读的「一次最多补全 50 篇」提示。
+    paper_ids: list[str] = Field(..., min_length=1)
+
+
+@research.post("/databases/{kb_id}/papers/backfill-fulltext")
+async def backfill_full_text_route(
+    kb_id: str,
+    payload: FullTextBackfillRequest,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await backfill_paper_full_text(
+            kb_id=kb_id,
+            paper_ids=payload.paper_ids,
+            current_user=current_user,
+        )
+    except AcademicPaperImportError as exc:
+        raise _to_http_error(exc, _PAPER_IMPORT_STATUS_MAP) from exc
+
+
 @research.post("/databases/{kb_id}/search")
 async def research_search(
     kb_id: str,
@@ -2197,6 +2227,60 @@ async def translate_paper_paragraphs(
             section_type=payload.section_type,
             limit=payload.limit,
             model_spec=payload.model_spec,
+        )
+    except ResearchPaperTranslationError as exc:
+        raise _to_http_error(exc, _PAPER_TRANSLATION_STATUS_MAP) from exc
+
+
+@research.post("/databases/{kb_id}/papers/{paper_id}/translate/tasks")
+async def enqueue_paper_translation_route(
+    kb_id: str,
+    paper_id: str,
+    payload: PaperTranslationRequest,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await enqueue_paper_translation(
+            kb_id=kb_id,
+            paper_id=paper_id,
+            current_user=current_user,
+            section_type=payload.section_type,
+            limit=payload.limit,
+            model_spec=payload.model_spec,
+        )
+    except ResearchPaperTranslationError as exc:
+        raise _to_http_error(exc, _PAPER_TRANSLATION_STATUS_MAP) from exc
+
+
+@research.get("/databases/{kb_id}/papers/{paper_id}/translate/tasks/latest")
+async def get_latest_paper_translation_route(
+    kb_id: str,
+    paper_id: str,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await get_latest_translation_task(
+            kb_id=kb_id,
+            paper_id=paper_id,
+            current_user=current_user,
+        )
+    except ResearchPaperTranslationError as exc:
+        raise _to_http_error(exc, _PAPER_TRANSLATION_STATUS_MAP) from exc
+
+
+@research.get("/databases/{kb_id}/papers/{paper_id}/translate/tasks/{task_id}")
+async def get_paper_translation_task_route(
+    kb_id: str,
+    paper_id: str,
+    task_id: str,
+    current_user: User = Depends(get_required_user),
+):
+    try:
+        return await get_translation_task(
+            kb_id=kb_id,
+            paper_id=paper_id,
+            task_id=task_id,
+            current_user=current_user,
         )
     except ResearchPaperTranslationError as exc:
         raise _to_http_error(exc, _PAPER_TRANSLATION_STATUS_MAP) from exc

@@ -258,14 +258,12 @@
           </div>
         </div>
         <a-alert v-if="translationError" type="error" show-icon :message="translationError" />
-        <p
-          v-if="translationLoading"
-          class="translation-loading-hint"
-          role="status"
-          aria-live="polite"
-        >
-          正在逐段翻译，约需 1–2 分钟，请保持页面打开。
-        </p>
+        <div v-if="translationLoading" class="translation-progress" role="status" aria-live="polite">
+          <a-progress :percent="translationPercent" size="small" />
+          <p class="translation-loading-hint">
+            {{ translationTask?.message || '正在提交对照翻译任务' }}；任务在后台执行，离开本页后再回来可继续查看结果
+          </p>
+        </div>
         <div v-if="translationResult?.paragraphs?.length" class="translation-list">
           <article v-for="item in translationResult.paragraphs" :key="item.chunk_id" class="translation-item">
             <header>
@@ -656,6 +654,8 @@ const translationSection = ref(undefined)
 const translationLoading = ref(false)
 const translationError = ref('')
 const translationResult = ref(null)
+const translationTask = ref(null)
+let translationTimer = null
 const notes = ref([])
 const notesLoading = ref(false)
 const notesError = ref('')
@@ -724,6 +724,7 @@ const translationSectionOptions = computed(() =>
 )
 const elementLabel = (element) => ({ formula: '公式', table: '表格', code: '代码' })[element] || element
 const formatAnalysisList = (value) => Array.isArray(value) ? value.join('；') : String(value || '未明确')
+const translationPercent = computed(() => Math.round(translationTask.value?.progress || 0))
 
 const importFullText = async () => {
   const doi = detail.value?.paper?.doi
@@ -904,6 +905,7 @@ const loadDetail = async () => {
     await loadLatestAnalysis()
     await loadPaperTags()
     await loadNotes()
+    await loadLatestTranslation()
   } catch (error) {
     detailError.value = error.message || '无法加载论文详情'
   } finally {
@@ -1139,21 +1141,74 @@ const toggleAllRelated = () => {
     : relatedItems.value.filter((item) => !item.already_in_library).map((item) => item.s2_paper_id)
 }
 
+const stopTranslationPolling = () => {
+  if (translationTimer) clearTimeout(translationTimer)
+  translationTimer = null
+}
+
+const pollTranslation = async (taskId) => {
+  try {
+    const task = await researchApi.getPaperTranslationTask(props.kbId, props.paperId, taskId)
+    translationTask.value = task
+    if (['pending', 'running'].includes(task.status)) {
+      translationTimer = setTimeout(() => pollTranslation(taskId), 2000)
+      return
+    }
+    translationLoading.value = false
+    if (task.status === 'success' && task.result?.paragraphs?.length) {
+      translationResult.value = task.result
+    } else if (task.status !== 'cancelled') {
+      translationError.value = task.error || '对照翻译失败'
+    }
+  } catch (error) {
+    stopTranslationPolling()
+    translationLoading.value = false
+    translationError.value = error.message || '对照翻译状态查询失败'
+  }
+}
+
 const translatePaper = async () => {
   if (!props.paperId || translationLoading.value) return
+  stopTranslationPolling()
   translationLoading.value = true
   translationError.value = ''
   translationResult.value = null
+  translationTask.value = null
   try {
-    translationResult.value = await researchApi.translatePaper(props.kbId, props.paperId, {
+    const started = await researchApi.startPaperTranslation(props.kbId, props.paperId, {
       section_type: translationSection.value || null,
       limit: 6
     })
+    translationTask.value = { status: started.status, progress: started.progress, message: '' }
+    await pollTranslation(started.task_id)
   } catch (error) {
-    translationResult.value = null
-    translationError.value = error.message || '对照翻译失败'
-  } finally {
     translationLoading.value = false
+    translationError.value = error.message || '对照翻译提交失败'
+  }
+}
+
+const loadLatestTranslation = async () => {
+  stopTranslationPolling()
+  translationLoading.value = false
+  translationError.value = ''
+  translationResult.value = null
+  translationTask.value = null
+  try {
+    const task = await researchApi.getLatestPaperTranslation(props.kbId, props.paperId)
+    if (!task) return
+    translationTask.value = task
+    if (['pending', 'running'].includes(task.status)) {
+      translationLoading.value = true
+      await pollTranslation(task.task_id)
+      return
+    }
+    if (task.status === 'success' && task.result?.paragraphs?.length) {
+      translationResult.value = task.result
+    } else if (task.status === 'failed' && task.error) {
+      translationError.value = `上次翻译失败：${task.error}`
+    }
+  } catch (error) {
+    translationError.value = error.message || '对照翻译历史加载失败'
   }
 }
 
@@ -1185,6 +1240,7 @@ watch(
     if (!isOpen) {
       if (analysisTimer) clearTimeout(analysisTimer)
       analysisTimer = null
+      stopTranslationPolling()
       detail.value = null
       chunks.value = []
       analysisRun.value = null
@@ -1195,6 +1251,8 @@ watch(
       relatedSelectedIds.value = []
       translationResult.value = null
       translationError.value = ''
+      translationTask.value = null
+      translationLoading.value = false
       notes.value = []
       notesError.value = ''
       noteDraft.value = ''
@@ -1213,6 +1271,7 @@ watch(
 
 onBeforeUnmount(() => {
   if (analysisTimer) clearTimeout(analysisTimer)
+  stopTranslationPolling()
 })
 </script>
 
@@ -1288,6 +1347,10 @@ onBeforeUnmount(() => {
   margin-top: 14px;
   color: var(--color-text-secondary);
   font-size: 13px;
+}
+
+.translation-progress {
+  margin-bottom: 12px;
 }
 
 .translation-loading-hint {

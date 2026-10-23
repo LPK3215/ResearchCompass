@@ -392,6 +392,12 @@ export const researchApi = {
       { method: 'POST', body: JSON.stringify(payload) }
     ),
 
+  backfillPaperFullText: (kbId, paperIds) =>
+    apiRequest(
+      `/api/research/databases/${encodeURIComponent(kbId)}/papers/backfill-fulltext`,
+      { method: 'POST', body: JSON.stringify({ paper_ids: paperIds }) }
+    ),
+
   getAcademicTrends: (kbId, params = {}) => {
     const query = buildQuery(params)
     return apiGet(
@@ -483,6 +489,22 @@ export const researchApi = {
     apiRequest(
       `/api/research/databases/${encodeURIComponent(kbId)}/papers/${encodeURIComponent(paperId)}/translate`,
       { method: 'POST', body: JSON.stringify(payload) }
+    ),
+
+  startPaperTranslation: (kbId, paperId, payload = {}) =>
+    apiRequest(
+      `/api/research/databases/${encodeURIComponent(kbId)}/papers/${encodeURIComponent(paperId)}/translate/tasks`,
+      { method: 'POST', body: JSON.stringify(payload) }
+    ),
+
+  getPaperTranslationTask: (kbId, paperId, taskId) =>
+    apiGet(
+      `/api/research/databases/${encodeURIComponent(kbId)}/papers/${encodeURIComponent(paperId)}/translate/tasks/${encodeURIComponent(taskId)}`
+    ),
+
+  getLatestPaperTranslation: (kbId, paperId) =>
+    apiGet(
+      `/api/research/databases/${encodeURIComponent(kbId)}/papers/${encodeURIComponent(paperId)}/translate/tasks/latest`
     ),
 
   listPaperNotes: (kbId, paperId) =>

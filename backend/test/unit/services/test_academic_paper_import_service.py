@@ -278,3 +278,104 @@ async def test_stage_reuses_file_created_before_payload_checkpoint(monkeypatch):
 
     assert result["file_id"] == "file-existing"
     assert [item[0] for item in calls] == ["get_paper", "find_file"]
+
+
+def _paper(paper_id: str, *, file_id: str | None = None, doi: str | None = None):
+    return SimpleNamespace(paper_id=paper_id, title=f"论文 {paper_id}", file_id=file_id, doi=doi)
+
+
+async def _patch_backfill(monkeypatch, papers, enqueue):
+    class FakePaperRepository:
+        async def list_by_paper_ids(self, *, kb_id, paper_ids):
+            assert kb_id == "kb-1"
+            return [paper for paper in papers if paper.paper_id in paper_ids]
+
+    async def allow_access(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(academic_paper_import_service, "AcademicPaperRepository", FakePaperRepository)
+    monkeypatch.setattr(academic_paper_import_service, "_ensure_access", allow_access)
+    monkeypatch.setattr(academic_paper_import_service, "import_external_paper", enqueue)
+
+
+@pytest.mark.asyncio
+async def test_backfill_queues_only_metadata_only_papers_with_doi(monkeypatch):
+    papers = [
+        _paper("paper-full", file_id="file-1", doi="10.1/full"),
+        _paper("paper-no-doi"),
+        _paper("paper-doi", doi="10.1/example"),
+        _paper("paper-arxiv", doi="10.48550/arXiv.1706.03762v5"),
+    ]
+    identifiers = []
+
+    async def enqueue(*, identifier, kb_id, current_user):
+        identifiers.append(identifier)
+        return {"task_id": f"task-{len(identifiers)}"}
+
+    await _patch_backfill(monkeypatch, papers, enqueue)
+
+    result = await academic_paper_import_service.backfill_paper_full_text(
+        kb_id="kb-1",
+        paper_ids=["paper-full", "paper-no-doi", "paper-doi", "paper-arxiv", "paper-missing", "paper-doi"],
+        current_user=SimpleNamespace(uid="admin-1"),
+    )
+
+    assert identifiers == ["10.1/example", "arXiv:1706.03762"]
+    assert result["requested"] == 5
+    assert [item["paper_id"] for item in result["queued"]] == ["paper-doi", "paper-arxiv"]
+    assert result["queued"][0]["task_id"] == "task-1"
+    assert [(item["paper_id"], item["reason"]) for item in result["skipped"]] == [
+        ("paper-full", "has_fulltext"),
+        ("paper-no-doi", "no_doi"),
+        ("paper-missing", "paper_not_found"),
+    ]
+    assert result["failed"] == []
+
+
+@pytest.mark.asyncio
+async def test_backfill_reports_single_enqueue_failure_without_stopping_batch(monkeypatch):
+    papers = [_paper("paper-1", doi="10.1/one"), _paper("paper-2", doi="10.1/two")]
+
+    async def enqueue(*, identifier, kb_id, current_user):
+        if identifier == "10.1/one":
+            raise academic_paper_import_service.AcademicPaperImportError(
+                "paper_import_enqueue_failed", "外部论文导入任务提交失败"
+            )
+        return {"task_id": "task-2"}
+
+    await _patch_backfill(monkeypatch, papers, enqueue)
+
+    result = await academic_paper_import_service.backfill_paper_full_text(
+        kb_id="kb-1", paper_ids=["paper-1", "paper-2"], current_user=SimpleNamespace(uid="admin-1")
+    )
+
+    assert [item["paper_id"] for item in result["queued"]] == ["paper-2"]
+    assert result["failed"] == [
+        {
+            "paper_id": "paper-1",
+            "title": "论文 paper-1",
+            "error_type": "paper_import_enqueue_failed",
+            "message": "外部论文导入任务提交失败",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_backfill_rejects_empty_and_oversized_selection(monkeypatch):
+    async def enqueue(**kwargs):
+        raise AssertionError("参数非法时不应入队")
+
+    await _patch_backfill(monkeypatch, [], enqueue)
+
+    with pytest.raises(academic_paper_import_service.AcademicPaperImportError) as empty_exc:
+        await academic_paper_import_service.backfill_paper_full_text(
+            kb_id="kb-1", paper_ids=["  "], current_user=SimpleNamespace(uid="admin-1")
+        )
+    assert empty_exc.value.error_type == "paper_ids_empty"
+
+    oversized = [f"paper-{index}" for index in range(academic_paper_import_service.MAX_FULLTEXT_BACKFILL_PAPERS + 1)]
+    with pytest.raises(academic_paper_import_service.AcademicPaperImportError) as large_exc:
+        await academic_paper_import_service.backfill_paper_full_text(
+            kb_id="kb-1", paper_ids=oversized, current_user=SimpleNamespace(uid="admin-1")
+        )
+    assert large_exc.value.error_type == "paper_ids_too_many"

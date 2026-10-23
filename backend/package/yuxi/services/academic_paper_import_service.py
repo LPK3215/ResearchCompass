@@ -36,6 +36,8 @@ from yuxi.storage.postgres.models_business import User
 from yuxi.utils import hashstr, logger
 
 EXTERNAL_PAPER_IMPORT_TIMEOUT_SECONDS = 15 * 60
+MAX_FULLTEXT_BACKFILL_PAPERS = 50
+ARXIV_DOI_PREFIX = "10.48550/arxiv."
 
 
 class AcademicPaperImportError(PublicTaskError):
@@ -375,6 +377,64 @@ async def import_external_paper(*, identifier: str, kb_id: str, current_user: Us
         logger.error("提交外部论文导入任务失败: exception_type=%s", type(exc).__name__)
         raise AcademicPaperImportError("paper_import_enqueue_failed", "外部论文导入任务提交失败") from exc
     return {"status": "queued", "task_id": task.id, "kb_id": kb_id, "identifier": identifier}
+
+
+def _doi_identifier(doi: str) -> str:
+    """arXiv 的 DataCite DOI 在 Semantic Scholar 不能直接解析，转成 arXiv 标识符。"""
+    if not doi.casefold().startswith(ARXIV_DOI_PREFIX):
+        return doi
+    arxiv_id = re.sub(r"v\d+$", "", doi[len(ARXIV_DOI_PREFIX) :].strip(), flags=re.IGNORECASE)
+    return f"arXiv:{arxiv_id}"
+
+
+async def backfill_paper_full_text(*, kb_id: str, paper_ids: list[str], current_user: User) -> dict[str, Any]:
+    """为只有元数据的论文批量提交公开全文导入任务。
+
+    只处理有 DOI 且尚无原文文件的论文；单篇入队失败只记入 ``failed``，不中断整批。
+    补全后论文行由 ``upsert_for_file`` 就地写回 ``file_id``，不新增重复论文。
+    """
+    await _ensure_access(current_user, kb_id, write=True)
+    selected_ids = list(dict.fromkeys(str(item).strip() for item in paper_ids if str(item).strip()))
+    if not selected_ids:
+        raise AcademicPaperImportError("paper_ids_empty", "请先选择要补全文的论文")
+    if len(selected_ids) > MAX_FULLTEXT_BACKFILL_PAPERS:
+        raise AcademicPaperImportError("paper_ids_too_many", f"一次最多补全 {MAX_FULLTEXT_BACKFILL_PAPERS} 篇论文")
+
+    papers = {
+        paper.paper_id: paper
+        for paper in await AcademicPaperRepository().list_by_paper_ids(kb_id=kb_id, paper_ids=selected_ids)
+    }
+    queued: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    failed: list[dict[str, Any]] = []
+    for paper_id in selected_ids:
+        paper = papers.get(paper_id)
+        if paper is None:
+            skipped.append({"paper_id": paper_id, "reason": "paper_not_found"})
+            continue
+        if paper.file_id:
+            skipped.append({"paper_id": paper_id, "title": paper.title, "reason": "has_fulltext"})
+            continue
+        doi = str(paper.doi or "").strip()
+        if not doi:
+            skipped.append({"paper_id": paper_id, "title": paper.title, "reason": "no_doi"})
+            continue
+        try:
+            task = await import_external_paper(identifier=_doi_identifier(doi), kb_id=kb_id, current_user=current_user)
+        except AcademicPaperImportError as exc:
+            failed.append(
+                {"paper_id": paper_id, "title": paper.title, "error_type": exc.error_type, "message": exc.message}
+            )
+            continue
+        queued.append({"paper_id": paper_id, "title": paper.title, "task_id": task["task_id"]})
+
+    return {
+        "requested": len(selected_ids),
+        "queued": queued,
+        "skipped": skipped,
+        "failed": failed,
+        "note": "补全文在后台任务中下载、解析并建立索引；完成后刷新论文列表查看分块。",
+    }
 
 
 async def _stage_external_paper_import(

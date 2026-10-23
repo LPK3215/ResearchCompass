@@ -1265,6 +1265,14 @@
             <a-button size="small" :loading="screeningExporting" @click="exportScreening">
               导出筛选 CSV
             </a-button>
+            <a-button
+              size="small"
+              :loading="fulltextBackfilling"
+              :disabled="!selectedPaperIds.length"
+              @click="backfillFullText"
+            >
+              批量补全文
+            </a-button>
           </div>
         </section>
 
@@ -1409,6 +1417,31 @@
         :rows="3"
         placeholder="筛选理由（例如：主题不符 / 非同行评审 / 样本量不足）"
       />
+    </a-modal>
+
+    <a-modal
+      v-model:open="fulltextResultOpen"
+      title="批量补全文结果"
+      width="560px"
+      :footer="null"
+      destroy-on-close
+    >
+      <template v-if="fulltextResult">
+        <div class="fulltext-backfill-summary">
+          <a-tag color="blue">已提交 {{ fulltextResult.queued.length }}</a-tag>
+          <a-tag>跳过 {{ fulltextResult.skipped.length }}</a-tag>
+          <a-tag v-if="fulltextResult.failed.length" color="red">
+            失败 {{ fulltextResult.failed.length }}
+          </a-tag>
+        </div>
+        <ul v-if="fulltextBackfillRows.length" class="fulltext-backfill-list">
+          <li v-for="row in fulltextBackfillRows" :key="row.key">
+            <a-tag :color="row.color">{{ row.label }}</a-tag>
+            <span class="fulltext-backfill-title">{{ row.title }}</span>
+          </li>
+        </ul>
+        <p class="fulltext-backfill-note">{{ fulltextResult.note }}</p>
+      </template>
     </a-modal>
 
     <a-modal
@@ -1667,6 +1700,9 @@ const screeningExporting = ref(false)
 const screeningModalOpen = ref(false)
 const screeningDecision = ref('included')
 const screeningReason = ref('')
+const fulltextBackfilling = ref(false)
+const fulltextResultOpen = ref(false)
+const fulltextResult = ref(null)
 const selectedPaperIds = ref([])
 const graphExportLoading = ref(false)
 const externalImportOpen = ref(false)
@@ -2163,6 +2199,54 @@ const exportScreening = async () => {
     message.error(error.message || '筛选结果导出失败')
   } finally {
     screeningExporting.value = false
+  }
+}
+
+const fulltextSkipReasons = {
+  paper_not_found: '论文不存在',
+  has_fulltext: '已有全文',
+  no_doi: '缺少 DOI'
+}
+
+const fulltextBackfillRows = computed(() => {
+  const result = fulltextResult.value
+  if (!result) return []
+  return [
+    ...result.queued.map((item) => ({
+      key: `queued-${item.paper_id}`,
+      label: '已提交',
+      color: 'blue',
+      title: item.title
+    })),
+    ...result.skipped.map((item) => ({
+      key: `skipped-${item.paper_id}`,
+      label: fulltextSkipReasons[item.reason] || item.reason,
+      color: 'default',
+      title: item.title || item.paper_id
+    })),
+    ...result.failed.map((item) => ({
+      key: `failed-${item.paper_id}`,
+      label: '失败',
+      color: 'red',
+      title: `${item.title || item.paper_id}：${item.message || item.error_type}`
+    }))
+  ]
+})
+
+const backfillFullText = async () => {
+  if (!selectedKbId.value || selectedPaperIds.value.length === 0 || fulltextBackfilling.value) return
+  const kbId = selectedKbId.value
+  fulltextBackfilling.value = true
+  try {
+    const result = await researchApi.backfillPaperFullText(kbId, selectedPaperIds.value)
+    if (kbId !== selectedKbId.value) return
+    fulltextResult.value = result
+    fulltextResultOpen.value = true
+    selectedPaperIds.value = []
+  } catch (error) {
+    message.error(error.message || '批量补全文提交失败')
+  } finally {
+    fulltextBackfilling.value = false
   }
 }
 
@@ -4809,6 +4893,42 @@ onBeforeUnmount(() => {
   margin: 0 0 12px;
   color: var(--color-text-secondary);
   font-size: 13px;
+}
+
+.fulltext-backfill-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.fulltext-backfill-list {
+  max-height: 320px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+
+  li {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--gray-100);
+    font-size: 13px;
+  }
+}
+
+.fulltext-backfill-title {
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.fulltext-backfill-note {
+  margin: 12px 0 0;
+  color: var(--color-text-secondary);
+  font-size: 12px;
 }
 
 .manifest-hint {

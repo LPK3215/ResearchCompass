@@ -132,6 +132,7 @@ kb_tools = get_common_kb_tools()
 | `research_get_analysis_evaluation` | 读取分析对比汇总报告（仅统计真实人工评分） |
 | `research_search_external_papers` | 在 Semantic Scholar 搜索公开论文 |
 | `research_import_external_paper` | 按标题或 DOI 导入公开论文（需审批） |
+| `research_backfill_paper_fulltext` | 为只有元数据的论文批量提交公开全文导入任务，返回已提交/跳过/失败 |
 | `research_list_eval_datasets` | 查询 RAG 评估基准（仅管理员） |
 | `research_run_eval` | 基于评估基准发起 RAG 评估（仅管理员） |
 | `research_get_eval_run` | 读取评估逐题结果与指标（仅管理员） |

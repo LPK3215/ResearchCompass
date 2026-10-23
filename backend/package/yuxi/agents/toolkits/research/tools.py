@@ -404,6 +404,10 @@ class ImportExternalPaperInput(BaseModel):
     identifier: str = Field(min_length=1, max_length=500, description="论文标题或 DOI")
 
 
+class BackfillPaperFullTextInput(BaseModel):
+    paper_ids: list[str] = Field(min_length=1, max_length=50, description="需要补全文的论文 ID（仅有元数据的条目）")
+
+
 class RunEvalInput(BaseModel):
     dataset_id: str = Field(min_length=1, max_length=64)
     name: str | None = Field(default=None, max_length=100)
@@ -2164,6 +2168,21 @@ async def research_import_external_paper(identifier: str, runtime: ToolRuntime) 
 
 @tool(
     category="research",
+    tags=["科研", "外部论文", "补全文"],
+    display_name="批量补全文",
+    args_schema=BackfillPaperFullTextInput,
+)
+async def research_backfill_paper_fulltext(paper_ids: list[str], runtime: ToolRuntime) -> dict[str, Any]:
+    """为只有元数据的论文批量提交公开全文导入任务，返回已提交、跳过与失败条目。"""
+    from yuxi.services.academic_paper_import_service import backfill_paper_full_text
+
+    context = _research_context(runtime)
+    user = await _current_user(runtime)
+    return await _call(backfill_paper_full_text(kb_id=context["kb_id"], paper_ids=paper_ids, current_user=user))
+
+
+@tool(
+    category="research",
     tags=["科研", "评估"],
     display_name="查询评估基准",
     args_schema=EmptyInput,
@@ -3002,6 +3021,7 @@ RESEARCH_TOOLS = [
     research_get_analysis_evaluation,
     research_search_external_papers,
     research_import_external_paper,
+    research_backfill_paper_fulltext,
     research_list_eval_datasets,
     research_upload_eval_dataset,
     research_create_eval_experiment,

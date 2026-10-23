@@ -174,6 +174,7 @@ RESEARCH_COPILOT_TOOL_SLUGS = [
     "research_get_analysis_evaluation",
     "research_search_external_papers",
     "research_import_external_paper",
+    "research_backfill_paper_fulltext",
     "research_list_eval_datasets",
     "research_upload_eval_dataset",
     "research_create_eval_experiment",
