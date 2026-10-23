@@ -10,6 +10,12 @@
 
 ## Unreleased
 
+- 知识库列表顺序确定化（2026-10-24）：`KnowledgeBaseRepository.get_all()` 原本没有排序，列表顺序随数据库堆顺序漂移，而科研罗盘默认取列表首个知识库——所以“最近一次被集成测试创建、又没清理干净”的 `pytest_*` 库会成为新用户一进来就看到的工作区。现在统一按创建时间倒序（`id` 兜底）返回，默认库稳定落在最新创建的真实库；冒烟脚本选样时同时跳过 `pytest_` / `py_test` 开头的夹具库，不再把验收导入写进临时库。
+
+- 论文对照翻译改为后台任务（2026-10-24）：原来一次对照翻译同步占用请求约 97 秒，页面必须保持打开；现在改为 `research_paper_translation` 后台任务，新增 `POST /papers/{paper_id}/translate/tasks`（提交，同一论文进行中任务复用）、`GET .../translate/tasks/{task_id}` 与 `GET .../translate/tasks/latest`（只允许发起人查看），任务按批上报进度（5→95，完成 100）并把结果写进任务记录，抽屉改为进度条 + 2 秒轮询，重新打开抽屉可恢复进行中任务或上次结果；模型连不上时单独给出 `translation_model_unreachable`（“翻译模型连接失败，请确认模型服务是否可用”），不再统一报“模型调用失败”。同步入口保留给 AI 工具（`research_translate_paper`），两条入口共用同一批处理与结果组装；译文仍不落库、不进证据库；工具清单不变（parity 98/98）。
+
+- 参考文献批量补全文（2026-10-24）：论文库筛选栏新增“批量补全文”，对勾选的仅元数据论文按 DOI（arXiv 的 `10.48550/arxiv.*` 自动转 `arXiv:` 标识符）提交开放获取下载任务，与详情页逐篇补全文复用同一外部导入链路；接口返回逐篇 `queued` / `skipped` / `failed`，跳过原因显式为 `has_fulltext`、`no_doi`、`paper_not_found`，单篇入队失败不中断整批；单次上限 50 篇。AI 研究助手对应工具 `research_backfill_paper_fulltext`，与界面共用同一 service 与权限校验（`research_*` 工具 98 个，`defined=98 enabled=98`）。补全后由 `upsert_for_file` 就地写回 `file_id`，保留原 `paper_id`，不产生重复论文。冒烟脚本新增 `papers/backfill-fulltext` 检查项（只允许命中跳过分支，不允许真的提交下载）；浏览器验收：未选中时按钮禁用、弹窗计数与「已有全文」跳过条目正确、控制台零报错。
+
 - 文档与开源规范收口（2026-10-22）：`README.md` 改为英文主版，新增 `README.zh-CN.md` 中文配套版；新增 `FAQ.md`、`SECURITY.md`、`AUTHORS`、`.pre-commit-config.yaml`、`backend/README.md`；补充 `Makefile` 的测试 / 冒烟 / 固定语料评测 / 文档构建目标；更新 `LICENSE` 版权行、`.gitignore` / `.gitattributes`、`backend/pyproject.toml`、`web/package.json`、`docs/package.json` 元数据。
 - README 开场与可视化（2026-10-22）：新增 `docs/assets/banner.svg`（生成脚本 `scripts/visualization/generate_banner.mjs`），两版 README 增加居中横幅、shields.io 徽章、章节导航、可视化与 FAQ 章节，并链接 `docs/archify/` 下的交互式架构 / 工作流 / 时序 / 数据流图；两版章节结构与语言互链保持对齐。
 - 项目全景观览页（2026-10-22）：新增 `docs/index.html` 入口、`docs/.nojekyll` 与 `docs/project_overview/`（`index.html` / `style.css` / `script.js` / `charts.js`），覆盖架构、方法、技术栈、目录树、快速开始、评测图表、API、质量、文档索引、贡献与许可；按 GitHub Pages 经典模式使用相对路径。
