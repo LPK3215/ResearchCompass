@@ -10,8 +10,11 @@ from yuxi.storage.postgres.models_knowledge import KnowledgeBase
 
 class KnowledgeBaseRepository:
     async def get_all(self) -> list[KnowledgeBase]:
+        """按创建时间倒序返回，保证列表顺序确定（科研罗盘默认取列表首个知识库）。"""
         async with pg_manager.get_async_session_context() as session:
-            result = await session.execute(select(KnowledgeBase))
+            result = await session.execute(
+                select(KnowledgeBase).order_by(KnowledgeBase.created_at.desc(), KnowledgeBase.id.desc())
+            )
             return list(result.scalars().all())
 
     async def get_by_kb_id(self, kb_id: str) -> KnowledgeBase | None:

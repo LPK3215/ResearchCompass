@@ -81,7 +81,8 @@
 当前约定：
 
 - `backend/test/integration/conftest.py`
-  - 管理 `test_client`、`admin_headers`、`standard_user`、`knowledge_database`
+  - 管理 `test_client`、`admin_headers`、`standard_user`、`knowledge_database`、`kb_registry`
+  - 用例内直接 POST 建知识库时必须用 `kb_registry(kb_id)` 登记：只靠 session 级 HTTP 清理，在断言失败、进程被杀或接口不可用时都会留下 `pytest_*` 库，而测试库创建时间最新，会抢走科研罗盘的默认知识库
 
 - `backend/test/e2e/conftest.py`
   - 管理 `e2e_client`、`e2e_headers`、`e2e_agent_context`

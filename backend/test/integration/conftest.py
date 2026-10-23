@@ -9,7 +9,7 @@ import os
 import subprocess
 import sys
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from pathlib import Path
 
 import anyio
@@ -321,6 +321,34 @@ async def knowledge_database(
                     print(f"Warning: Failed to cleanup knowledge database {kb_id}: {delete_response.text}")
             except Exception as exc:
                 print(f"Warning: Exception during cleanup of {kb_id}: {exc}")
+
+
+@pytest_asyncio.fixture(scope="function")
+async def kb_registry(
+    test_client: httpx.AsyncClient,
+    admin_headers: dict[str, str],
+) -> AsyncGenerator[Callable[[str], None], None]:
+    """登记用例内直接创建的知识库，用例结束（含断言失败）时逐个删除。
+
+    这些用例不走 `knowledge_database` fixture，只靠 session 级 HTTP 清理会在
+    进程被杀或接口不可用时留下 `pytest_*` 库；测试库一旦遗留，会成为创建时间
+    最新的知识库而抢走科研罗盘的默认位置。
+    """
+    created: list[str] = []
+
+    def register(kb_id: str) -> None:
+        if kb_id:
+            created.append(kb_id)
+
+    yield register
+
+    for kb_id in created:
+        try:
+            response = await test_client.delete(f"/api/knowledge/databases/{kb_id}", headers=admin_headers)
+            if response.status_code not in (200, 404):
+                print(f"Warning: Failed to cleanup knowledge database {kb_id}: {response.text}")
+        except Exception as exc:
+            print(f"Warning: Exception during cleanup of {kb_id}: {exc}")
 
 
 @pytest_asyncio.fixture(scope="function")

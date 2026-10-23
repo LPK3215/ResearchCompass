@@ -125,6 +125,17 @@ class SmokeRun:
         return ok, response
 
 
+def _validate_backfill_fulltext(response: httpx.Response) -> tuple[bool, str]:
+    """批量补全文只允许命中跳过分支：冒烟不应真的提交下载任务。"""
+    payload = response.json()
+    if payload.get("queued"):
+        return False, f"queued={len(payload['queued'])} 不应提交新任务"
+    reasons = {str(item.get("reason")) for item in payload.get("skipped") or [] if isinstance(item, dict)}
+    if "paper_not_found" not in reasons:
+        return False, "缺少 paper_not_found 跳过记录"
+    return True, f"skipped={','.join(sorted(reasons))}"
+
+
 def _payload_items(payload: Any) -> list[dict[str, Any]]:
     if isinstance(payload, dict):
         for key in ("items", "databases", "data"):
@@ -329,7 +340,8 @@ async def main() -> int:
         smallest_total = None
         for item in databases:
             probe_kb = str(item.get("kb_id") or "")
-            if not probe_kb:
+            # pytest 夹具的知识库不参与选样：既不该当参照库被写入验收数据，也不该当报告库。
+            if not probe_kb or str(item.get("name") or "").startswith(("pytest_", "py_test")):
                 continue
             ok, probe = await run.check(
                 "knowledge",
@@ -383,6 +395,17 @@ async def main() -> int:
             "GET",
             f"/api/research/databases/{kb_id}/papers/export/bibtex",
             params={"paper_ids": paper_id},
+        )
+        full_text_paper = next((item for item in papers if item.get("has_fulltext")), None)
+        backfill_ids = [str(full_text_paper["paper_id"])] if full_text_paper else []
+        backfill_ids.append("paper-smoke-missing")
+        await run.check(
+            "papers",
+            "backfill-fulltext",
+            "POST",
+            f"/api/research/databases/{kb_id}/papers/backfill-fulltext",
+            json={"paper_ids": backfill_ids},
+            validate=_validate_backfill_fulltext,
         )
 
         note_id = ""

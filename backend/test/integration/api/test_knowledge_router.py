@@ -144,7 +144,38 @@ async def test_document_exists_returns_false_for_missing_relative_path(test_clie
     assert response.json() == {"kb_id": kb_id, "filename": filename, "exists": False}
 
 
-async def test_create_database_with_chunk_preset(test_client, admin_headers):
+async def test_knowledge_databases_listed_newest_first(test_client, admin_headers, kb_registry):
+    """列表按创建时间倒序返回。
+
+    科研罗盘取列表首个知识库作为默认库；顺序不确定时，新建的临时库（例如被中断的
+    测试或用例直接创建的库）会抢到默认位置，所以这个顺序需要回归保护。
+    """
+    created_ids: list[str] = []
+    for index in range(2):
+        response = await test_client.post(
+            "/api/knowledge/databases",
+            json={
+                "database_name": f"pytest_order_{index}_{uuid.uuid4().hex[:6]}",
+                "description": "List order regression",
+                "embedding_model_spec": "siliconflow-cn:BAAI/bge-m3",
+                "kb_type": "milvus",
+                "additional_params": {},
+            },
+            headers=admin_headers,
+        )
+        assert response.status_code == 200, response.text
+        kb_id = response.json()["kb_id"]
+        kb_registry(kb_id)
+        created_ids.append(kb_id)
+
+    response = await test_client.get("/api/knowledge/databases", headers=admin_headers)
+    assert response.status_code == 200, response.text
+    listed_ids = [entry["kb_id"] for entry in response.json()["databases"]]
+
+    assert listed_ids.index(created_ids[1]) < listed_ids.index(created_ids[0]), listed_ids[:5]
+
+
+async def test_create_database_with_chunk_preset(test_client, admin_headers, kb_registry):
     db_name = f"pytest_chunk_preset_{uuid.uuid4().hex[:6]}"
     payload = {
         "database_name": db_name,
@@ -157,6 +188,7 @@ async def test_create_database_with_chunk_preset(test_client, admin_headers):
     create_response = await test_client.post("/api/knowledge/databases", json=payload, headers=admin_headers)
     assert create_response.status_code == 200, create_response.text
     kb_id = create_response.json()["kb_id"]
+    kb_registry(kb_id)
 
     info_response = await test_client.get(f"/api/knowledge/databases/{kb_id}", headers=admin_headers)
     assert info_response.status_code == 200, info_response.text
@@ -240,10 +272,10 @@ async def test_knowledge_routes_enforce_permissions(test_client, standard_user, 
     _assert_forbidden_response(forbidden_exists)
 
 
-async def test_admin_can_create_vector_db_with_reranker(test_client, admin_headers):
+async def test_admin_can_create_vector_db_with_reranker(test_client, admin_headers, kb_registry):
     """测试创建向量库并配置 reranker 参数（通过 query_params.options）
 
-    注意：数据库清理由 conftest.py 中的 session fixture 自动处理。
+    注意：数据库清理由 `kb_registry` fixture 在用例结束时处理。
     """
     db_name = f"pytest_rerank_{uuid.uuid4().hex[:6]}"
     payload = {
@@ -259,6 +291,7 @@ async def test_admin_can_create_vector_db_with_reranker(test_client, admin_heade
 
     db_payload = create_response.json()
     kb_id = db_payload["kb_id"]
+    kb_registry(kb_id)
 
     # 获取查询参数配置
     params_response = await test_client.get(f"/api/knowledge/databases/{kb_id}/query-params", headers=admin_headers)
@@ -311,7 +344,7 @@ async def test_admin_can_create_vector_db_with_reranker(test_client, admin_heade
     assert use_reranker_option2.get("default") is True  # 保存的值
 
 
-async def test_create_dify_database_success(test_client, admin_headers):
+async def test_create_dify_database_success(test_client, admin_headers, kb_registry):
     db_name = f"pytest_dify_{uuid.uuid4().hex[:6]}"
     payload = {
         "database_name": db_name,
@@ -328,6 +361,7 @@ async def test_create_dify_database_success(test_client, admin_headers):
     assert create_response.status_code == 200, create_response.text
     created_payload = create_response.json()
     kb_id = created_payload["kb_id"]
+    kb_registry(kb_id)
     assert created_payload["embedding_model_spec"] is None
     assert "chunk_preset_id" not in created_payload["metadata"]
 
@@ -423,7 +457,7 @@ async def test_update_dify_database_invalid_api_url_returns_400(test_client, adm
         await test_client.delete(f"/api/knowledge/databases/{kb_id}", headers=admin_headers)
 
 
-async def test_dify_query_params_and_documents_readonly(test_client, admin_headers):
+async def test_dify_query_params_and_documents_readonly(test_client, admin_headers, kb_registry):
     payload = {
         "database_name": f"pytest_dify_ro_{uuid.uuid4().hex[:6]}",
         "description": "Dify readonly routes",
@@ -438,6 +472,7 @@ async def test_dify_query_params_and_documents_readonly(test_client, admin_heade
     create_response = await test_client.post("/api/knowledge/databases", json=payload, headers=admin_headers)
     assert create_response.status_code == 200, create_response.text
     kb_id = create_response.json()["kb_id"]
+    kb_registry(kb_id)
 
     params_response = await test_client.get(f"/api/knowledge/databases/{kb_id}/query-params", headers=admin_headers)
     assert params_response.status_code == 200, params_response.text
@@ -774,10 +809,10 @@ async def test_create_lightrag_knowledge_base_is_unsupported(test_client, admin_
     assert "Unsupported knowledge base type: lightrag" in response.json()["detail"]
 
 
-async def test_create_milvus_knowledge_base(test_client, admin_headers):
+async def test_create_milvus_knowledge_base(test_client, admin_headers, kb_registry):
     """测试创建 Milvus 知识库
 
-    注意：数据库清理由 conftest.py 中的 session fixture 自动处理。
+    注意：数据库清理由 `kb_registry` fixture 在用例结束时处理。
     """
     db_name = f"pytest_milvus_{uuid.uuid4().hex[:6]}"
     payload = {
@@ -793,6 +828,7 @@ async def test_create_milvus_knowledge_base(test_client, admin_headers):
 
     db_payload = create_response.json()
     assert db_payload["kb_type"] == "milvus"
+    kb_registry(db_payload["kb_id"])
 
 
 async def test_sample_questions_endpoints(test_client, admin_headers, knowledge_database):
